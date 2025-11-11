@@ -14,7 +14,7 @@ export class Mailbox {
     if (!provider) throw new Error(`No provider for protocol: ${toUrl.protocol}`);
 
     const message: MailMessage = {
-      id: crypto.randomUUID(),
+      id: mail.id ?? provider.generateId(),
       from: fromUrl,
       to: toUrl,
       body: mail.body,
