@@ -1,14 +1,14 @@
+import { MailboxProvider } from './MailboxProvider';
 import {
-  AckableMailMessage,
-  IMailboxProvider,
-  MailboxStatus,
   MailMessage,
-  Subscription,
+  AckableMailMessage,
+  MailboxStatus,
 } from '../interfaces';
 
 type Listener = (message: MailMessage) => void | Promise<void>;
 
 // A simple in-memory event bus to simulate message passing between different instances.
+// This remains largely unchanged as it represents the "transport medium".
 class MemoryEventBus {
   private static instance: MemoryEventBus;
   private topics: Map<string, Listener[]> = new Map();
@@ -88,62 +88,43 @@ class MemoryEventBus {
   }
 }
 
+
 function getTopic(address: URL): string {
   const userInfo = address.username ? `${address.username}@` : '';
   return `${address.protocol}//${userInfo}${address.host}${address.pathname}`;
 }
 
-export class MemoryProvider implements IMailboxProvider {
-  public protocol = 'mem';
+export class MemoryProvider extends MailboxProvider {
   private bus = MemoryEventBus.getInstance();
 
-  async send(message: MailMessage): Promise<void> {
+  constructor() {
+    super('mem');
+  }
+
+  protected async _send(message: MailMessage): Promise<void> {
     const topic = getTopic(message.to);
-
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1));
-
-    this.bus.publish(topic, {
-      ...message,
-      headers: {
-        ...message.headers,
-        'x-sent-at': new Date().toISOString(),
-      },
-    });
+    this.bus.publish(topic, message);
   }
 
-  subscribe(
+  protected _subscribe(
     address: URL,
-    onReceive: (message: MailMessage) => void | Promise<void>,
-  ): Subscription {
+    onReceive: (message: MailMessage) => Promise<void>,
+  ): any {
     const topic = getTopic(address);
-    const id = crypto.randomUUID();
-
-    const unsubscribe = this.bus.subscribe(topic, onReceive);
-
-    const subscription: Subscription = {
-      id,
-      address,
-      status: 'active',
-      unsubscribe: async () => {
-        unsubscribe();
-        (subscription as { status: 'closed' }).status = 'closed';
-      },
-    };
-
-    return subscription;
+    // The returned unsubscribe function is the "unsubscribeHandle"
+    return this.bus.subscribe(topic, onReceive);
   }
 
-  // Add overloads to the implementation to match the interface
-  fetch(
-    address: URL,
-    options: { manualAck: true },
-  ): Promise<AckableMailMessage | null>;
-  fetch(
-    address: URL,
-    options?: { manualAck?: false },
-  ): Promise<MailMessage | null>;
-  async fetch(
+  protected async _unsubscribe(
+    subscriptionId: string,
+    unsubscribeHandle: any,
+  ): Promise<void> {
+    if (typeof unsubscribeHandle === 'function') {
+      unsubscribeHandle();
+    }
+  }
+
+  protected async _fetch(
     address: URL,
     options?: { manualAck?: boolean },
   ): Promise<MailMessage | AckableMailMessage | null> {
@@ -155,11 +136,10 @@ export class MemoryProvider implements IMailboxProvider {
     }
 
     if (options?.manualAck) {
-      const ackableMessage: AckableMailMessage = {
+      return {
         ...message,
         ack: async () => {
-          // In a real scenario, this would confirm the message removal.
-          // In our memory queue, dequeue already removed it, so this is a no-op.
+          // Dequeue already removed it, so this is a no-op.
         },
         nack: async (requeue = false) => {
           if (requeue) {
@@ -167,13 +147,12 @@ export class MemoryProvider implements IMailboxProvider {
           }
         },
       };
-      return ackableMessage;
     }
 
     return message;
   }
 
-  async status(address: URL): Promise<MailboxStatus> {
+  protected async _status(address: URL): Promise<MailboxStatus> {
     const topic = getTopic(address);
     const { unreadCount, lastActivityTime, subscriberCount } =
       this.bus.getStatus(topic);
@@ -184,5 +163,19 @@ export class MemoryProvider implements IMailboxProvider {
       lastActivityTime,
       subscriberCount,
     };
+  }
+
+  protected async _ack(message: MailMessage): Promise<void> {
+    // For subscribe mode, ACK is implicit and a no-op in memory provider.
+  }
+
+  protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
+    // Requeuing a pushed message isn't directly applicable,
+    // but we can add it back to the fetch queue if needed.
+    if (requeue) {
+      const topic = getTopic(message.to);
+      this.bus.requeue(topic, message);
+    }
+    // Otherwise, the message is simply dropped.
   }
 }
