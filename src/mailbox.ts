@@ -1,4 +1,3 @@
-// @isdk/mailbox/src/mailbox.ts
 import { IMailboxProvider, MailMessage, OutgoingMail, Subscription, AckableMailMessage, MailboxStatus } from './interfaces';
 
 export class Mailbox {

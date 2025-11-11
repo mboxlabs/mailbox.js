@@ -1,5 +1,3 @@
-// @isdk/mailbox/src/interfaces.ts
-
 /**
  * 代表一个活跃的订阅会话。
  */
