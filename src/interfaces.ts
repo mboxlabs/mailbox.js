@@ -13,10 +13,15 @@ export interface Subscription {
  * 这是用户在调用 post() 方法时需要构建的对象。
  */
 export interface OutgoingMail {
+  id?: string;
   from: URL | string;
   to:URL | string;
   body: any;
-  headers?: { [key: string]: any; };
+  headers?: {
+    'x-req-id'?: string;
+    'x-sent-at'?: string;
+    [key: string]: any;
+  };
 }
 
 /**
@@ -99,10 +104,15 @@ export interface IMailboxProvider {
   fetch(address: URL, options?: { manualAck?: boolean }): Promise<MailMessage | AckableMailMessage | null>;
 
   /**
-   * [新增] 查询指定地址的状态。
+   * 查询指定地址的状态。
    * 这是一个可选实现的方法。如果 Provider 不支持，可以抛出 "Not Implemented" 错误或返回一个默认状态。
    * @param address 要查询状态的地址。
    * @returns 返回地址的状态信息。
    */
   status?(address: URL): Promise<MailboxStatus>;
+
+  /**
+   * 创建一个唯一标识符。主要是用于生成邮件的 ID。
+   */
+  generateId(): string;
 }
