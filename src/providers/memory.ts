@@ -165,10 +165,6 @@ export class MemoryProvider extends MailboxProvider {
     };
   }
 
-  protected async _ack(message: MailMessage): Promise<void> {
-    // For subscribe mode, ACK is implicit and a no-op in memory provider.
-  }
-
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
     // Requeuing a pushed message isn't directly applicable,
     // but we can add it back to the fetch queue if needed.

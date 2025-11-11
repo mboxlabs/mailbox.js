@@ -37,6 +37,8 @@
   },
   "dependencies": {
     "@isdk/common-error": "^0.2.0",
+    "@isdk/hash": "workspace:^",
+    "@isdk/util": "workspace:^",
     "lodash-es": "^4.17.21",
     "util-ex": "^2.4.0"
   },
