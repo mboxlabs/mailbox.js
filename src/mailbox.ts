@@ -7,7 +7,7 @@ export class Mailbox {
     this.providers.set(provider.protocol, provider);
   }
 
-  public async post(mail: OutgoingMail): Promise<void> {
+  public async post(mail: OutgoingMail) {
     const toUrl = new URL(mail.to);
     const fromUrl = new URL(mail.from);
     const provider = this.providers.get(toUrl.protocol.slice(0, -1));
@@ -21,7 +21,7 @@ export class Mailbox {
       headers: mail.headers || {},
     };
 
-    await provider.send(message);
+    return await provider.send(message);
   }
 
   public subscribe(address: string | URL, onReceive: (message: MailMessage) => void): Subscription {
