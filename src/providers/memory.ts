@@ -1,6 +1,7 @@
 import {
   AckableMailMessage,
   IMailboxProvider,
+  MailboxStatus,
   MailMessage,
   Subscription,
 } from '../interfaces';
@@ -12,6 +13,7 @@ class MemoryEventBus {
   private static instance: MemoryEventBus;
   private topics: Map<string, Listener[]> = new Map();
   private queue: Map<string, MailMessage[]> = new Map(); // For fetch/pull model
+  private lastActivity: Map<string, string> = new Map(); // For status
 
   private constructor() {}
 
@@ -28,6 +30,7 @@ class MemoryEventBus {
       this.topics.set(topic, []);
     }
     this.topics.get(topic)!.push(listener);
+    this.lastActivity.set(topic, new Date().toISOString());
     return () => {
       const listeners = this.topics.get(topic);
       if (listeners) {
@@ -41,6 +44,7 @@ class MemoryEventBus {
 
   // For send/post
   public publish(topic: string, message: MailMessage): void {
+    this.lastActivity.set(topic, new Date().toISOString());
     // For push subscribers
     const listeners = this.topics.get(topic);
     if (listeners) {
@@ -56,6 +60,9 @@ class MemoryEventBus {
   // For fetch/pull model
   public dequeue(topic: string): MailMessage | undefined {
     const messages = this.queue.get(topic);
+    if (messages && messages.length > 0) {
+      this.lastActivity.set(topic, new Date().toISOString());
+    }
     return messages?.shift();
   }
 
@@ -64,6 +71,20 @@ class MemoryEventBus {
       this.queue.set(topic, []);
     }
     this.queue.get(topic)!.unshift(message); // Add back to the front
+  }
+
+  public getStatus(topic: string): {
+    unreadCount: number;
+    lastActivityTime?: string;
+    subscriberCount: number;
+  } {
+    const queue = this.queue.get(topic) || [];
+    const listeners = this.topics.get(topic) || [];
+    return {
+      unreadCount: queue.length,
+      lastActivityTime: this.lastActivity.get(topic),
+      subscriberCount: listeners.length,
+    };
   }
 }
 
@@ -150,5 +171,18 @@ export class MemoryProvider implements IMailboxProvider {
     }
 
     return message;
+  }
+
+  async status(address: URL): Promise<MailboxStatus> {
+    const topic = getTopic(address);
+    const { unreadCount, lastActivityTime, subscriberCount } =
+      this.bus.getStatus(topic);
+
+    return {
+      state: 'online',
+      unreadCount,
+      lastActivityTime,
+      subscriberCount,
+    };
   }
 }

@@ -123,54 +123,6 @@ await cancel(); // 停止 Actor
 
 ---
 
-
-## 🧩 核心类型
-
-### `MailMessage`
-
-```ts
-interface MailMessage {
-  id: string;       // 唯一的信件ID
-  from: URL;        // 发件人地址
-  to: URL;          // 目标地址
-  body: any;        // 信件内容
-  headers?: {
-    'x-req-id'?: string; // RPC 请求/响应模式的关联 ID
-    [key: string]: any;
-  };
-  sentAt: Date;     // 发送时间
-}
-```
-
-
-## 🧪 使用场景
-
-### Provider 实现者
-
-```ts
-import type { Provider, Message } from '@org/mailbox-types';
-
-export class MyProvider implements Provider {
-  scheme = 'my';
-
-  async send(msg: Message) { ... }
-  // ...
-}
-```
-
-### 应用开发者
-
-```ts
-import { TransientError } from '@org/mailbox-types';
-
-function riskyOperation() {
-  if (Math.random() < 0.5) {
-    throw new TransientError('Network glitch');
-  }
-}
-```
----
-
 ## 📄 `packages/mailbox/README.md`（核心包）
 
 ```markdown
@@ -462,9 +414,8 @@ async function processOrder(order: Order) {
 ### 命名约定
 | 类型 | 规则 | 示例 |
 |------|------|------|
-| 地址 | `scheme://authority` | `mem://group/user` |
+| 地址 | `scheme://user@domain` | `mem://greet@util.fn` |
 | Headers | `x-` 前缀 + 小写连字符 | `x-reply-to` |
-| 错误类 | `*Error` 后缀 | `TransientError` |
 
 ## 🧪 测试要求
 
@@ -472,7 +423,6 @@ async function processOrder(order: Order) {
 | 场景 | 测试类型 | 示例 |
 |------|----------|------|
 | `fetch({ peek: true })` | 单元测试 | 消息未被删除 |
-| `TransientError` 重试 | 集成测试 | 回调被调用 ≥2 次 |
 | 订阅取消 | 单元测试 | 取消后不再接收消息 |
 
 ### Vitest 最佳实践
@@ -620,27 +570,3 @@ src/
 ```
 
 ---
-
-## 🌟 为什么这样设计？
-
-| 文档 | 用户价值 |
-|------|----------|
-| **根 README** | 用 Erlang 故事吸引开发者，5 分钟上手建立信心 |
-| **包 README** | 精准定位用户角色（类型使用者/核心开发者/应用开发者） |
-| **统一 CONTRIBUTING** | 降低贡献门槛，明确“什么能做，什么不能做” |
-| **包 CONTRIBUTING** | 深度定制规范，保障包质量 |
-
-> ✅ **真实效果**：
->
-> - 新手看到根 README → 被 Erlang 故事吸引 → 尝试 5 分钟示例 → 成功 → 愿意深入
-> - 贡献者阅读包 CONTRIBUTING → 清晰知道核心包的“神圣不可侵犯”原则 → 避免无效 PR
-
----
-
-需要我提供：
-
-- **`docs/erlang-inspiration.md` 完整内容**（技术深度文章）
-- **GitHub Actions CI 配置**（自动化测试 + 发布）
-- **VS Code 推荐设置**（`.vscode/settings.json`）
-
-请随时告知！

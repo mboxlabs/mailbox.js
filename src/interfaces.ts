@@ -53,6 +53,30 @@ export interface Ackable {
 export type AckableMailMessage = MailMessage & Ackable;
 
 /**
+ * 代表一个邮箱地址的状态信息。
+ */
+export interface MailboxStatus {
+  /**
+   * 提供者自身的连接或运行状态。
+   */
+  state: 'online' | 'offline' | 'degraded' | 'unknown';
+  /**
+   * 队列中未被消费的消息数量。
+   */
+  unreadCount?: number;
+  /**
+   * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)。
+   */
+  lastActivityTime?: string;
+
+  /**
+   * 索引签名，允许 MailboxStatus 包含任意其他字符串键的属性。
+   * 这些属性将作为提供者特定的扩展信息。
+   */
+  [key: string]: any;
+}
+
+/**
  * 定义了所有具体通信方式必须实现的接口。
  * Provider 在发送时，有责任向 headers 中注入 `x-sent-at` 时间戳 (ISO 8601 格式)。
  */
@@ -75,4 +99,12 @@ export interface IMailboxProvider {
   fetch(address: URL, options: { manualAck: true }): Promise<AckableMailMessage | null>;
   fetch(address: URL, options?: { manualAck?: false }): Promise<MailMessage | null>;
   fetch(address: URL, options?: { manualAck?: boolean }): Promise<MailMessage | AckableMailMessage | null>;
+
+  /**
+   * [新增] 查询指定地址的状态。
+   * 这是一个可选实现的方法。如果 Provider 不支持，可以抛出 "Not Implemented" 错误或返回一个默认状态。
+   * @param address 要查询状态的地址。
+   * @returns 返回地址的状态信息。
+   */
+  status?(address: URL): Promise<MailboxStatus>;
 }

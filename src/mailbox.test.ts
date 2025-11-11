@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Mailbox } from './mailbox';
 import { MemoryProvider } from './providers/memory';
-import type { MailMessage, AckableMailMessage } from './interfaces';
+import type { MailMessage, AckableMailMessage, IMailboxProvider } from './interfaces';
 
 describe('Mailbox', () => {
   let mailbox: Mailbox;
@@ -173,5 +173,71 @@ describe('Mailbox', () => {
     const receivedMessage: MailMessage = user1OnReceive.mock.calls[0][0];
     expect(receivedMessage.body).toEqual(messageBody);
     expect(receivedMessage.to.toString()).toBe(user1Address);
+  });
+});
+
+describe('status', () => {
+  let mailbox: Mailbox;
+  let memoryProvider: MemoryProvider;
+
+  beforeEach(() => {
+    mailbox = new Mailbox();
+    memoryProvider = new MemoryProvider();
+    mailbox.registerProvider(memoryProvider);
+  });
+
+  it('should return status for MemoryProvider', async () => {
+    const address = 'mem://test/status';
+
+    // 1. Initial status
+    const initialStatus = await mailbox.status(address);
+    expect(initialStatus.state).toBe('online');
+    expect(initialStatus.unreadCount).toBe(0);
+    expect(initialStatus.subscriberCount).toBe(0);
+    expect(initialStatus.lastActivityTime).toBeUndefined();
+
+    // 2. Post a message and check status
+    await mailbox.post({ from: 'mem://a', to: address, body: 'status check 1' });
+    const afterPostStatus = await mailbox.status(address);
+    expect(afterPostStatus.unreadCount).toBe(1);
+    expect(afterPostStatus.lastActivityTime).toBeTypeOf('string');
+
+    // 3. Subscribe and check status
+    const subscription = mailbox.subscribe(address, () => {});
+    const afterSubscribeStatus = await mailbox.status(address);
+    expect(afterSubscribeStatus.subscriberCount).toBe(1);
+
+    // 4. Fetch message and check status
+    await mailbox.fetch(address);
+    const afterFetchStatus = await mailbox.status(address);
+    expect(afterFetchStatus.unreadCount).toBe(0);
+
+    // 5. Unsubscribe and check status
+    await subscription.unsubscribe();
+    // Note: MemoryProvider doesn't track subscriber count decrease in this simple model,
+    // but we can test that the core logic runs. The bus still holds the topic.
+    const finalStatus = await mailbox.status(address);
+    expect(finalStatus.subscriberCount).toBe(0); // This will pass because the listener is removed.
+  });
+
+  it('should return a default status for providers without status implementation', async () => {
+    // 1. Create a mock provider without status()
+    const mockProvider: IMailboxProvider = {
+      protocol: 'mock',
+      send: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn(),
+      fetch: vi.fn().mockResolvedValue(null),
+    };
+
+    // 2. Register it
+    mailbox.registerProvider(mockProvider);
+
+    // 3. Query its status
+    const address = 'mock://test/status';
+    const status = await mailbox.status(address);
+
+    // 4. Assert the default response
+    expect(status.state).toBe('unknown');
+    expect(status.message).toBe("The 'mock' provider does not support status queries.");
   });
 });

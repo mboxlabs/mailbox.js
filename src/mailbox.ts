@@ -1,5 +1,5 @@
 // @isdk/mailbox/src/mailbox.ts
-import { IMailboxProvider, MailMessage, OutgoingMail, Subscription, AckableMailMessage } from './interfaces';
+import { IMailboxProvider, MailMessage, OutgoingMail, Subscription, AckableMailMessage, MailboxStatus } from './interfaces';
 
 export class Mailbox {
   private providers: Map<string, IMailboxProvider> = new Map();
@@ -40,5 +40,28 @@ export class Mailbox {
     const provider = this.providers.get(addrUrl.protocol.slice(0, -1));
     if (!provider) throw new Error(`No provider for protocol: ${addrUrl.protocol}`);
     return provider.fetch(addrUrl, options);
+  }
+
+  /**
+   * 查询指定地址的状态信息。
+   * @param address 要查询的地址。
+   * @returns 返回该地址的邮箱状态。
+   */
+  public async status(address: string | URL): Promise<MailboxStatus> {
+    const addrUrl = new URL(address);
+    const provider = this.providers.get(addrUrl.protocol.slice(0, -1));
+    if (!provider) {
+      throw new Error(`No provider for protocol: ${addrUrl.protocol}`);
+    }
+
+    if (!provider.status) {
+      // 如果 Provider 没有实现 status 方法，返回一个默认的未知状态。
+      return {
+        state: 'unknown',
+        message: `The '${provider.protocol}' provider does not support status queries.`
+      };
+    }
+
+    return provider.status(addrUrl);
   }
 }
