@@ -1,3 +1,4 @@
+import { nanoid } from '@isdk/hash';
 import {
   IMailboxProvider,
   MailMessage,
@@ -33,23 +34,24 @@ export abstract class MailboxProvider implements IMailboxProvider {
   // --- Public API (implements IMailboxProvider) ---
 
   /**
-   * [Template Method] Sends a mail message.
-   * This method handles common logic (like adding a timestamp) and then
-   * calls the concrete `_send` method for protocol-specific delivery.
+   * Sends a mail message.
+   * This method handles common logic (like adding a timestamp and injecting x-req-sent-at for replies)
+   * and then calls the concrete `_send` method for protocol-specific delivery.
    */
   public async send(message: MailMessage): Promise<void> {
-    const messageToSend = {
+    const messageToSend: MailMessage = {
       ...message,
       headers: {
         ...message.headers,
-        'x-sent-at': new Date().toISOString(),
+        'x-sent-at': new Date().toISOString(), // Always inject x-sent-at for outgoing messages
       },
     };
-    return this._send(messageToSend);
+
+    await this._send(messageToSend);
   }
 
   /**
-   * [Template Method] Subscribes to an address.
+   * Subscribes to an address.
    * This method manages the creation and lifecycle of the subscription object,
    * including wrapping the callback for implicit ACK and centralized error handling.
    */
@@ -57,14 +59,14 @@ export abstract class MailboxProvider implements IMailboxProvider {
     address: URL,
     onReceive: (message: MailMessage) => void | Promise<void>
   ): Subscription {
-    const subId = crypto.randomUUID();
+    const subId = this.generateId();
 
     // Wrap the onReceive callback to implement implicit ACK and unified error handling.
     const wrappedOnReceive = async (message: MailMessage): Promise<void> => {
       try {
         await onReceive(message);
         // On successful execution, implicitly acknowledge the message.
-        await this._ack(message);
+        await this.ack(message);
       } catch (error) {
         // Handle the error according to the defined strategy.
         this._handleReceiveError(error, message);
@@ -86,20 +88,21 @@ export abstract class MailboxProvider implements IMailboxProvider {
   }
 
   /**
-   * [Template Method] Fetches a message.
+   * Fetches a message.
    * Delegates directly to the concrete provider's implementation.
    */
-  public fetch(address: URL, options: { manualAck: true }): Promise<AckableMailMessage | null>;
-  public fetch(address: URL, options?: { manualAck?: false }): Promise<MailMessage | null>;
-  public fetch(
+  public async fetch(address: URL, options: { manualAck: true }): Promise<AckableMailMessage | null>;
+  public async fetch(address: URL, options?: { manualAck?: false }): Promise<MailMessage | null>;
+  public async fetch(
     address: URL,
     options?: { manualAck?: boolean }
   ): Promise<MailMessage | AckableMailMessage | null> {
-    return this._fetch(address, options);
+    const message = await this._fetch(address, options);
+    return message;
   }
 
   /**
-   * [Template Method] Queries the status of an address.
+   * Queries the status of an address.
    * If the concrete provider implements `_status`, it will be called;
    * otherwise, a default "unknown" status is returned.
    */
@@ -111,6 +114,18 @@ export abstract class MailboxProvider implements IMailboxProvider {
       state: 'unknown',
       message: `The '${this.protocol}' provider does not support status queries.`,
     };
+  }
+
+  public generateId(): string {
+    return nanoid();
+  }
+
+  protected async ack(message: MailMessage) {
+    this._ack?.(message);
+  }
+
+  protected async nack(message: MailMessage, requeue: boolean) {
+    this._nack?.(message, requeue);
   }
 
   // --- Protected Abstract Methods (to be implemented by subclasses) ---
@@ -146,12 +161,12 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
    * For providers that don't support ACK (like in-memory), this can be an empty async function.
    */
-  protected abstract _ack(message: MailMessage): Promise<void>;
+  protected _ack?(message: MailMessage): Promise<void>;
 
   /**
    * [Subclass Responsibility - Optional] Provides NACK capability.
    */
-  protected abstract _nack(message: MailMessage, requeue: boolean): Promise<void>;
+  protected _nack?(message: MailMessage, requeue: boolean): Promise<void>;
 
   /**
    * [Subclass Responsibility - Optional] Performs the actual status query logic.
@@ -183,16 +198,16 @@ export abstract class MailboxProvider implements IMailboxProvider {
   protected _handleReceiveError(error: any, message: MailMessage): void {
     console.error(`[${this.protocol}] Error processing message ${message.id}:`, error);
 
-    const isRetriable = this._isErrorRetriable(error);
+    const isRetriable = this._isRetriable(error);
 
     // Crucial: NACK the message first to prevent reprocessing, then handle other tasks.
-    this._nack(message, isRetriable)
+    this.nack(message, isRetriable)
       .catch(nackError => {
         console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${message.id}. Risk of message duplication.`, nackError);
       });
   }
 
-  private _isErrorRetriable(error: any): boolean {
+  private _isRetriable(error: any): boolean {
     if (error) {
       if (error.isRetriable === true) return true;
       if (error.code && [503, 504, 'ECONNRESET', 'ETIMEDOUT'].includes(error.code)) {
