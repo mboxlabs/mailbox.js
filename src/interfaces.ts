@@ -86,7 +86,7 @@ export interface MailboxStatus {
 export interface IMailboxProvider {
   protocol: string;
 
-  send(message: MailMessage): Promise<void>;
+  send(message: MailMessage): Promise<MailMessage>;
 
   /**
    * 【订阅模式】订阅一个地址，当有信件到达时触发回调。

@@ -38,7 +38,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * This method handles common logic (like adding a timestamp and injecting x-req-sent-at for replies)
    * and then calls the concrete `_send` method for protocol-specific delivery.
    */
-  public async send(message: MailMessage): Promise<void> {
+  public async send(message: MailMessage) {
     const messageToSend: MailMessage = {
       ...message,
       headers: {
@@ -48,6 +48,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
     };
 
     await this._send(messageToSend);
+    return messageToSend;
   }
 
   /**
