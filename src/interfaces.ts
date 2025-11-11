@@ -18,7 +18,7 @@ export interface OutgoingMail {
   to:URL | string;
   body: any;
   headers?: {
-    'x-req-id'?: string;
+    'x-reply-to'?: string;
     'x-sent-at'?: string;
     [key: string]: any;
   };
