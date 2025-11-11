@@ -13,6 +13,10 @@ describe('Mailbox', () => {
     mailbox.registerProvider(memoryProvider);
   });
 
+  afterEach(() => {
+    vi.useRealTimers(); // Restore real timers after each test
+  });
+
   it('should register a provider', () => {
     const newMailbox = new Mailbox();
     const provider = new MemoryProvider();
@@ -227,6 +231,7 @@ describe('status', () => {
       send: vi.fn().mockResolvedValue(undefined),
       subscribe: vi.fn(),
       fetch: vi.fn().mockResolvedValue(null),
+      generateId: () => crypto.randomUUID(),
     };
 
     // 2. Register it
