@@ -1,58 +1,101 @@
-# 🤝 Contributing
+# 🤝 Contribution Guide
 
-## 🧭 贡献流程
+We warmly welcome and appreciate all forms of contributions, whether it's reporting a bug, submitting a new feature, improving documentation, or making suggestions. This guide will help you get involved in the project smoothly.
 
-### 1. 选择贡献类型
+## 🧭 Contribution Workflow
 
-| 类型 | 适合人群 | 入口 |
-|------|----------|------|
-| 🐞 Bug 修复 | 所有开发者 | [Good First Issues](https://github.com/isdk/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
-| 📚 文档改进 | 新手友好 | [Documentation Issues](https://github.com/isdk/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation) |
-| 🧩 新 Provider | 有特定协议经验 | [Provider Request](https://github.com/isdk/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider) |
-| 💡 新特性 | 深度用户 | [Feature Request](https://github.com/isdk/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement) |
+### 1. Preparation
 
-### 2. 开发前必读
+Before you start, please ensure you have:
 
-### 3. 提交 PR
+1. **Installed [pnpm](https://pnpm.io/installation)**: This project uses pnpm as its package manager.
+2. **Forked this repository**: Click the "Fork" button in the upper right corner of the page.
+3. **Cloned your fork**: `git clone https://github.com/YOUR_USERNAME/mailbox.js.git`
+4. **Installed dependencies**: Run `pnpm install` in the project root directory.
 
-1. Fork 仓库
-2. 创建特性分支：`feat/your-feature`
-3. 编写测试（Vitest）
-4. 提交符合 [Conventional Commits](https://www.conventionalcommits.org/)
-5. 提交 PR
+### 2. Choose a Contribution Type
 
-## 📏 代码规范（所有包通用）
+Based on your interests and experience, you can start with any of the following:
 
-### 命名约定
+| Type | Suitable For | Entry Point |
+| :--- | :--- | :--- |
+| 🐞 **Bug Fixes** | All developers | [View Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
+| 📚 **Documentation** | Beginner-friendly | [View Documentation Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation) |
+| 🧩 **New Provider** | Experience with specific protocols | [Propose a Provider](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider) |
+| 💡 **New Feature** | Power users | [Propose a New Feature](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement) |
 
-## 🧪 测试要求
+### 3. Development and Submission
 
-### 必须覆盖
+1. **Create a branch**: Create a descriptive branch from the `main` branch, such as `feat/add-new-provider` or `fix/login-bug`.
 
-| 场景 | 测试类型 | 示例 |
-|------|----------|------|
-| 订阅取消 | 单元测试 | 取消后不再接收消息 |
+    ```shell
+    git checkout -b feat/your-feature-name
+    ```
 
-### Vitest 最佳实践
+2. **Implement your changes**: Make your code modifications. Please follow the coding standards below.
+3. **Write tests**: Add or update unit tests for your changes. All core logic, edge cases, and error handling should be covered.
+4. **Run checks**: Ensure all tests and style checks pass.
 
+    ```shell
+    pnpm test
+    pnpm style
+    ```
 
-## 📝 提交规范
+5. **Commit your code**: Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
+6. **Open a Pull Request**: Push your branch to GitHub and create a Pull Request to the `main` branch of the main repository. Please clearly describe the changes you have made in the PR description.
 
-```
+## 📏 Coding Standards
+
+### Naming Conventions
+
+- **Variables and Functions**: Use `camelCase`, e.g., `myVariable`.
+- **Classes, Interfaces, and Types**: Use `PascalCase`, e.g., `MyClass`, `MailboxProvider`.
+- **Constants**: Use `UPPER_CASE`, e.g., `DEFAULT_TIMEOUT`.
+- **Private Properties/Methods**: Use an underscore prefix, e.g., `_privateMethod`.
+
+### Code Style
+
+The project uses Prettier and ESLint to enforce a consistent code style. Before committing, please run `pnpm style:fix` to automatically format your code.
+
+## 🧪 Testing Requirements
+
+We use [Vitest](https://vitest.dev/) for unit testing.
+
+### Required Coverage
+
+- **Core Functionality**: Ensure your modified or added core logic has corresponding tests.
+- **Edge Cases**: For example, empty inputs, max/min values, etc.
+- **Error Handling**: Simulate and test all expected error paths.
+- **Asynchronous Operations**: Ensure Promises are resolved and rejected correctly.
+
+### Vitest Best Practices
+
+- Use `describe` to logically group your tests.
+- The description of a test case (`it` or `test`'s first argument) should be clear and concise.
+- Prefer `vi.fn()` or `vi.spyOn()` for mocking functions and objects.
+- Use `beforeEach` and `afterEach` to clean up the test environment where appropriate.
+
+## 📝 Commit Message Specification
+
+We follow the Conventional Commits specification. The format is as follows:
+
+```sh
 <type>(<scope>): <description>
 
 [optional body]
 ```
 
-| 类型 | 说明 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | Bug 修复 |
-| `docs` | 文档更新 |
-| `test` | 测试相关 |
-| `chore` | 构建/工具 |
+| Type | Description |
+| :--- | :--- |
+| `feat` | A new feature |
+| `fix` | A bug fix |
+| `docs` | Documentation only changes |
+| `test` | Adding missing tests or correcting existing tests |
+| `refactor` | A code change that neither fixes a bug nor adds a feature |
+| `style` | Changes that do not affect the meaning of the code (white-space, formatting, etc) |
+| `chore` | Changes to the build process or auxiliary tools and libraries |
 
-**示例**：
+**Example**:
 
 ```text
 feat(mailbox): add xxx option to fetch
@@ -61,19 +104,14 @@ feat(mailbox): add xxx option to fetch
 - Default: xxx=false (semantics)
 ```
 
-Please feel free to file GitHub Issues or propose Pull Requests. We're always happy to discuss improvements to this library!
+## 📦 Release Process (for Maintainers)
 
-## Testing
-
-```shell
-pnpm test
-```
-
-## Releasing
-
-Releases are supposed to be done from master, version bumping is automated through [`standard-version`](https://github.com/absolute-version/commit-and-tag-version):
+The release process is automated by `standard-version`, which generates the `CHANGELOG.md` and tags the version based on Conventional Commits.
 
 ```shell
-pnpm release -- --dry-run  # verify output manually
-pnpm release               # follow the instructions from the output of this command
+# Preview the upcoming version and changelog
+pnpm release -- --dry-run
+
+# Official release
+pnpm release
 ```

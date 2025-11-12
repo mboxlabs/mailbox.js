@@ -1,4 +1,4 @@
-# 📮 Mailbox — 像 Erlang 一样思考异步编程
+# 📮 Mailbox — 重新思考异步编程
 
 > 轻量可插拔的“邮箱/队列”内核，把一切通信看作“给某个地址投递一封信”。每个地址背后是一个邮箱（队列），由不同 Provider 适配：mem://（内存）、mailto://（电子邮件）、slack://（聊天）……
 > 用邮箱（Mailbox）进行异步通讯，构建容错、分布式、人机协同系统。
@@ -77,106 +77,72 @@ flowchart LR
   end
 ```
 
-## 🚀 5 分钟上手
+## 🚀 快速开始
+
+只需三步，即可体验 Mailbox 的核心魅力：
+
+1. **安装**
+
+   ```bash
+   npm install @mboxlabs/mailbox
+   ```
+
+2. **编写代码**
+
+   ```ts
+   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox';
+
+   // 1. 创建邮箱实例并注册一个内存提供者
+   const mailbox = new Mailbox();
+   mailbox.registerProvider(new MemoryProvider());
+
+   // 2. 订阅一个地址，并定义如何处理消息
+   const subscription = mailbox.subscribe('mem://service/inbox', message => {
+     console.log(`收到消息！来自: ${message.from}`);
+     console.log(`内容:`, message.body);
+   });
+
+   console.log("邮箱已建立，正在监听 'mem://service/inbox'...");
+
+   // 3. 向该地址投递一封邮件
+   await mailbox.post({
+     from: 'mem://client/user-1',
+     to: 'mem://service/inbox',
+     body: { text: '你好，Mailbox！' },
+   });
+
+   // 清理
+   await subscription.unsubscribe();
+   ```
+
+3. **运行**
+
+如果使用 `ts-node` 或类似工具运行上述代码，你将看到：
+
+```sh
+邮箱已建立，正在监听 'mem://service/inbox'...
+收到消息！来自: mem://client/user-1
+内容: { text: '你好，Mailbox！' }
+```
+
+这个例子展示了 Mailbox 的基本循环：**订阅地址 -> 投递消息 -> 接收处理**。`mem://` 协议表示这是一条在内存中传递的消息，非常适合入门和测试。
 
 ## 📦 生态系统
 
 | 包 | 说明  |
 |-----|------|
-| [`@isdk/mailbox`](https://github.com/isdk/mailbox.js) | 核心邮箱系统 |
-| [`@isdk/mailbox-ui`](https://github.com/isdk/mailbox-email.js) | 邮箱提供者：电子邮件(SMTP, IMAP/POP3) |
-| [`@isdk/mailbox-email`](https://github.com/isdk/mailbox-email.js) | 邮箱提供者：电子邮件(SMTP, IMAP/POP3) |
-
-> 💡 **新手建议**：从 `@org/mailbox` 开始，理解 Actor 模型本质
+| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js) | 核心邮箱系统 |
+| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | 输入提供者：人机输入交互抽象类 |
+| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | 邮箱提供者：电子邮件(SMTP, IMAP/POP3) |
 
 ## 📚 深入学习
 
-- [Erlang 灵感详解](docs/erlang-inspiration.md)
-- [5 个真实场景示例](examples/)
-- [API 速查手册](https://mailbox.js.org/docs)
+- [Erlang 灵感详解](erlang-inspiration.md)
+- [5 个真实场景示例](examples.md)
+- [API 速查手册](docs/)
 
 ## 🤝 贡献指南
 
-详见 [CONTRIBUTING.md](CONTRIBUTING.md) —— 我们欢迎所有贡献者！
+详见 [CONTRIBUTING.cn.md](CONTRIBUTING.cn.md) —— 我们欢迎所有贡献者！
 
 > **记住**：在 Mailbox 的世界里，**每个邮箱都是一个独立宇宙，消息是穿越时空的信使** 🌌
-
----
-
-## 📄 `packages/mailbox/README.md`（核心包）
-
-```markdown
-# 📮 @org/mailbox — Actor 模型的核心引擎
-
-> **“每个 Actor 有一个邮箱，消息是唯一的通信方式”**
-> 实现 Erlang 的 `!`（发送）和 `receive`（接收），但用 TypeScript 的 `async/await` 书写。
-
-## 🌟 核心概念（Erlang 对照）
-
-| Erlang | Mailbox | 说明 |
-|--------|---------|------|
-| `Pid ! Msg` | `svc.send({ to: pid, body: msg })` | 发送消息 |
-| `receive ... end` | `svc.subscribe(pid, handler)` | 接收消息 |
-| `self()` | `from: 'mem://current'` | 当前 Actor 地址 |
-| `spawn` | `svc.subscribe(newAddr, handler)` | 创建新 Actor |
-
-## 🚀 快速开始
-
-### 1. 创建邮箱服务
-```ts
-import { createMailboxService, InMemoryProvider } from '@org/mailbox';
-
-const svc = createMailboxService();
-svc.register(new InMemoryProvider()); // 内存实现（开发用）
-```
-
-### 2. 创建一个 Actor
-
-```ts
-// Actor 地址 = mem://greeter@utils.fn
-const cancel = await svc.subscribe('mem://greeter@utils.fn', async (msg) => {
-  console.log(`Hello, ${msg.body}!`);
-
-  // 回信（像 Erlang 的 reply）
-  await svc.send({
-    to: msg.from,
-    from: 'mem://greeter@utils.fn',
-    body: `Hello back, ${msg.body}!`,
-    headers: { 'x-reply-to': msg.id }
-  });
-});
-```
-
-### 3. 发送消息
-
-```ts
-// 发送并等待回复
-const reqId = await svc.send({
-  to: 'mem://greeter',
-  from: 'mem://main@app.fn',
-  body: 'Alice'
-});
-
-// 监听回复
-svc.subscribe('mem://main@app.fn', (reply) => {
-  if (reply.headers['x-reply-to'] === reqId) {
-    console.log(reply.body); // "Hello back, Alice!"
-  }
-});
-// 或者
-svc.once('mem://main@app.fn', reqId, (reply) => {
-  console.log(reply.body); // "Hello back, Alice!"
-});
-```
-
-## 📦 API 详解
-
-
-## 🌐 扩展 Provider
-
-
-## 📚 学习资源
-
-> **记住**：在 Mailbox 中，**崩溃不是失败，而是设计的一部分** —— 抛出异常，系统会处理重试或回信。
-
----
