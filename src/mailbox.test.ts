@@ -108,6 +108,28 @@ describe('Mailbox', () => {
     expect(shouldBeNull).toBeNull();
   });
 
+  it('should hold a message in-flight when fetched with manual-ack until ack/nack', async () => {
+    const address = 'mem://test/fetch-in-flight';
+    const mail = { from: 'mem://a', to: address, body: 'hold me in flight' };
+    await mailbox.post(mail);
+
+    // Fetch the message with manualAck
+    const received1 = await mailbox.fetch(address, { manualAck: true }) as AckableMailMessage;
+    expect(received1).not.toBeNull();
+    expect(received1.body).toBe('hold me in flight');
+
+    // Attempt to fetch again immediately - it should not be available as it's in-flight
+    const shouldBeNull = await mailbox.fetch(address, { manualAck: true });
+    expect(shouldBeNull).toBeNull();
+
+    // Now, ack the message
+    await received1.ack();
+
+    // After ack, it should still not be available
+    const shouldStillBeNull = await mailbox.fetch(address, { manualAck: true });
+    expect(shouldStillBeNull).toBeNull();
+  });
+
   it('should fetch a message with manual-ack and nack(requeue=true) it', async () => {
     const address = 'mem://test/fetch-manual-nack-requeue';
     const mail = { from: 'mem://a', to: address, body: 'nack and requeue me' };
@@ -147,6 +169,44 @@ describe('Mailbox', () => {
     // The message should be gone
     const shouldBeNull = await mailbox.fetch(address, { manualAck: true });
     expect(shouldBeNull).toBeNull();
+  });
+
+  it('should requeue a message if not acked within a timeout', async () => {
+    vi.useFakeTimers();
+    const address = 'mem://test/fetch-timeout';
+    const ACK_TIMEOUT = 30000; // 30 seconds
+
+    // 1. Post a message
+    await mailbox.post({ from: 'mem://a', to: address, body: 'timeout me' });
+
+    // 2. Fetch it, simulating a consumer that will crash (i.e., not ack)
+    const received1 = (await mailbox.fetch(address, {
+      manualAck: true,
+      ackTimeout: ACK_TIMEOUT,
+    })) as AckableMailMessage;
+    expect(received1).not.toBeNull();
+
+    // 3. Verify it's in-flight (not available for immediate fetch)
+    const shouldBeNull = await mailbox.fetch(address, { manualAck: true });
+    expect(shouldBeNull).toBeNull();
+
+    // 4. Advance time past the timeout
+    vi.advanceTimersByTime(ACK_TIMEOUT + 100);
+
+    // 5. Try to fetch again. The provider should find the stale message and requeue it.
+    const received2 = (await mailbox.fetch(address, {
+      manualAck: true,
+      ackTimeout: ACK_TIMEOUT,
+    })) as AckableMailMessage;
+
+    // 6. Assert that the message was recovered
+    expect(received2).not.toBeNull();
+    expect(received2.id).toBe(received1.id);
+
+    // Clean up
+    await received2.ack();
+    // 这个其实没用，因为一旦出错，这就不会执行，所以我放到了 afterEach，强制每次测试后useRealTimers
+    // vi.useRealTimers();
   });
 
   it('should correctly route messages based on user@host address', async () => {
