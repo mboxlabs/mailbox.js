@@ -1,12 +1,12 @@
 {
-  "name": "@isdk/mailbox",
+  "name": "@mboxlabs/mailbox",
   "version": "0.1.0",
   "license": "MIT",
   "author": "Riceball LEE <snowyu.lee@gmail.com>",
-  "homepage": "https://github.com/isdk/mailbox-fn.js",
+  "homepage": "https://github.com/mboxlabs/mailbox.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/isdk/mailbox-fn.js.git"
+    "url": "git://github.com/mboxlabs/mailbox.js.git"
   },
   "description": "A flexible and secure asynchronous message transport layer based on the Mailbox/Actor model.",
   "main": "./dist/index.js",
