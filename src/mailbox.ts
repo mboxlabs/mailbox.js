@@ -1,5 +1,18 @@
 import { IMailboxProvider, MailMessage, OutgoingMail, Subscription, AckableMailMessage, MailboxStatus } from './interfaces';
 
+export interface MailBoxFetchOptions {
+  manualAck?: boolean;
+  [name: string]: any;
+}
+
+interface ManualAckedMailBoxFetchOptions extends MailBoxFetchOptions {
+  manualAck: true;
+}
+
+interface AutoAckedMailBoxFetchOptions extends MailBoxFetchOptions {
+  manualAck?: false;
+}
+
 export class Mailbox {
   private providers: Map<string, IMailboxProvider> = new Map();
 
@@ -32,9 +45,9 @@ export class Mailbox {
     return provider.subscribe(addrUrl, onReceive);
   }
 
-  public async fetch(address: string | URL, options: { manualAck: true }): Promise<AckableMailMessage | null>;
-  public async fetch(address: string | URL, options?: { manualAck?: false }): Promise<MailMessage | null>;
-  public async fetch(address: string | URL, options?: { manualAck?: boolean }): Promise<MailMessage | AckableMailMessage | null> {
+  public async fetch(address: string | URL, options: ManualAckedMailBoxFetchOptions): Promise<AckableMailMessage | null>;
+  public async fetch(address: string | URL, options?: AutoAckedMailBoxFetchOptions): Promise<MailMessage | null>;
+  public async fetch(address: string | URL, options?: MailBoxFetchOptions): Promise<MailMessage | AckableMailMessage | null> {
     const addrUrl = new URL(address);
     const provider = this.providers.get(addrUrl.protocol.slice(0, -1));
     if (!provider) throw new Error(`No provider for protocol: ${addrUrl.protocol}`);
