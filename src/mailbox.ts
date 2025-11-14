@@ -32,6 +32,7 @@ export class Mailbox {
       to: toUrl,
       body: mail.body,
       headers: mail.headers || {},
+      meta: mail.meta || {},
     };
 
     return await provider.send(message);

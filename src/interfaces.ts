@@ -13,15 +13,28 @@ export interface Subscription {
  * 这是用户在调用 post() 方法时需要构建的对象。
  */
 export interface OutgoingMail {
+  /**
+   * 可选的消息 ID。如果未提供，Mailbox 将自动生成。
+   */
   id?: string;
   from: URL | string;
   to:URL | string;
   body: any;
+  /**
+   * Mailbox 框架自身需要的用于消息路由、认证、关联、内容类型等控制信息，用于指导消息的传输和处理。
+   * 这是框架自身和 Provider 关心的“控制平面”数据。本质上它与消息的业务内容无关。
+   * 例如: mbx-reply-to, Authorization
+   */
   headers?: {
     'mbx-reply-to'?: string;
     'mbx-sent-at'?: string;
     [key: string]: any;
   };
+  /**
+   * 本邮件消息的附加数据（邮件的数据平面），是消息的业务内容的补充元信息，由业务应用自定义和使用。
+   * 系统只负责透传，不进行解析和干预。本质上是邮件的一部分。
+   */
+  meta?: { [key: string]: any; };
 }
 
 /**
