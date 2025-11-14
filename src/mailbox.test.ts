@@ -57,7 +57,7 @@ describe('Mailbox', () => {
     expect(receivedMessage.body).toEqual(messageBody);
     expect(receivedMessage.from.toString()).toBe(`${fromAddress}`);
     expect(receivedMessage.to.toString()).toBe(toAddress);
-    expect(receivedMessage.headers).toHaveProperty('x-sent-at');
+    expect(receivedMessage.headers).toHaveProperty('mbx-sent-at');
   });
 
   it('should allow unsubscribing from an address', async () => {

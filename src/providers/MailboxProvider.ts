@@ -43,7 +43,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
       ...message,
       headers: {
         ...message.headers,
-        'x-sent-at': new Date().toISOString(), // Always inject x-sent-at for outgoing messages
+        'mbx-sent-at': new Date().toISOString(), // Always inject mbx-sent-at for outgoing messages
       },
     };
 

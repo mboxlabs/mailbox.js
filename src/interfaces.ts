@@ -18,8 +18,8 @@ export interface OutgoingMail {
   to:URL | string;
   body: any;
   headers?: {
-    'x-reply-to'?: string;
-    'x-sent-at'?: string;
+    'mbx-reply-to'?: string;
+    'mbx-sent-at'?: string;
     [key: string]: any;
   };
 }
@@ -81,7 +81,7 @@ export interface MailboxStatus {
 
 /**
  * 定义了所有具体通信方式必须实现的接口。
- * Provider 在发送时，有责任向 headers 中注入 `x-sent-at` 时间戳 (ISO 8601 格式)。
+ * Provider 在发送时，有责任向 headers 中注入 `mbx-sent-at` 时间戳 (ISO 8601 格式)。
  */
 export interface IMailboxProvider {
   protocol: string;
