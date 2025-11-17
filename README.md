@@ -1,6 +1,6 @@
 # 📮 Mailbox — Rethinking Asynchronous Programming
 
-> A lightweight, pluggable "mailbox/queue" kernel that treats all communication as "delivering a letter to an address." Behind each address is a mailbox (queue), adapted by different Providers: mem:// (memory), mailto:// (email), slack:// (chat)...
+> A lightweight, pluggable "mailbox/queue" kernel that treats all communication as "delivering a letter to an address." An address represents a unique mailbox, which can be accessed through various transport protocols (e.g., `mem:`, `mailto:`, `slack:`) handled by different Providers.
 > Use Mailbox for asynchronous communication to build fault-tolerant, distributed, human-computer collaborative systems.
 
 [![npm](https://img.shields.io/npm/v/@mboxlabs/mailbox)](https://www.npmjs.com/package/@mboxlabs/mailbox)
@@ -27,7 +27,7 @@ Mailbox is **deeply inspired by the Erlang Actor Model**, but we've made key evo
 
 | Erlang (1986) | Mailbox (Today) | Why It Matters |
 |---|---|---|
-| `Pid ! Message` | `send({ to: 'xxx://address' })` | **Address is Protocol**: URI for unified identity + transport |
+| `Pid ! Message` | `send({ to: 'protocol://address' })` | **Address as Identity, Protocol as Route**: The `address` part is the mailbox's unique ID. The `protocol` (e.g., `mem`, `mailto`) is for routing. The same address can be reached via different protocols. |
 | In-process FIFO Mailbox | Pluggable Providers | **Transport Agnostic**: Seamlessly switch between memory/email/WeChat/Mastodon |
 | Intra-node Communication | Cross-network, Cross-organization | **Truly Distributed**: Humans and machines participate as equals |
 
@@ -77,6 +77,19 @@ flowchart LR
   end
 ```
 
+## 📪 The Mailbox Address
+
+A Mailbox address, or **MailAddress**, is the cornerstone of the system, acting as a unique, universal identifier for any destination. It follows the [RFC 3986](https://tools.ietf.org/html/rfc3986) URI specification.
+
+- **Format**: `protocol:user@physical_address[/logical_address]`
+- **Example**: `mailto:api@myservice.com/utils/greeter`
+
+A MailAddress is composed of three parts:
+
+- **`protocol`**: Specifies the transport method (e.g., `mailto` for email, `mem` for in-memory bus). It tells the Mailbox which provider should handle the message.
+- **`user@physical_address`**: The **Physical Mailbox Address**. This is the globally unique, protocol-independent ID for a logical mailbox or service. The same physical address can be accessed via different protocols (e.g., `mem:api@myservice.com` and `mailto:api@myservice.com` point to the same logical entity).
+- **`/logical_address`** (Optional): An optional path that can be used for internal routing. For example, when used with `tool-rpc`, this can route a message to a specific tool within a larger service, allowing one physical address to serve as a unified gateway for multiple logical functions.
+
 ## 🚀 Quick Start
 
 Get a taste of Mailbox's core power in just three steps:
@@ -97,17 +110,17 @@ Get a taste of Mailbox's core power in just three steps:
     mailbox.registerProvider(new MemoryProvider());
 
     // 2. Subscribe to an address and define how to handle messages
-    const subscription = mailbox.subscribe('mem://service/inbox', message => {
+    const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
       console.log(`Message received! From: ${message.from}`);
       console.log(`Body:`, message.body);
     });
 
-    console.log("Mailbox is set up, listening on 'mem://service/inbox'...");
+    console.log("Mailbox is set up, listening on 'mem:service@example.com/inbox'...");
 
     // 3. Post a mail to that address
     await mailbox.post({
-      from: 'mem://client/user-1',
-      to: 'mem://service/inbox',
+      from: 'mem:client@example.com/user-1',
+      to: 'mem:service@example.com/inbox',
       body: { text: 'Hello, Mailbox!' },
     });
 
@@ -120,12 +133,12 @@ Get a taste of Mailbox's core power in just three steps:
 If you run the code above using `ts-node` or a similar tool, you'll see:
 
 ```sh
-Mailbox is set up, listening on 'mem://service/inbox'...
-Message received! From: mem://client/user-1
+Mailbox is set up, listening on 'mem:service@example.com/inbox'...
+Message received! From: mem:client@example.com/user-1
 Body: { text: 'Hello, Mailbox!' }
 ```
 
-This example demonstrates the basic loop of Mailbox: **Subscribe to an address -> Post a message -> Receive and process**. The `mem://` protocol signifies that this is an in-memory message, perfect for getting started and for tests.
+This example demonstrates the basic loop of Mailbox: **Subscribe to an address -> Post a message -> Receive and process**. The address `mem:service@example.com/inbox` tells the Mailbox to use the `mem` (in-memory) protocol to deliver the message to the physical address `service@example.com` at the logical path `/inbox`. This format allows for clear and flexible routing.
 
 ## 📦 Ecosystem
 

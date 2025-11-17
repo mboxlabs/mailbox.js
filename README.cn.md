@@ -1,6 +1,6 @@
 # 📮 Mailbox — 重新思考异步编程
 
-> 轻量可插拔的“邮箱/队列”内核，把一切通信看作“给某个地址投递一封信”。每个地址背后是一个邮箱（队列），由不同 Provider 适配：mem://（内存）、mailto://（电子邮件）、slack://（聊天）……
+> 轻量可插拔的“邮箱/队列”内核，把一切通信看作“给某个地址投递一封信”。一个地址代表一个唯一的邮箱，它可以通过不同的 Provider 适配的多种传输协议（如 `mem:`、`mailto:`、`slack:`）来访问。
 > 用邮箱（Mailbox）进行异步通讯，构建容错、分布式、人机协同系统。
 
 [![npm](https://img.shields.io/npm/v/@mboxlabs/mailbox)](https://www.npmjs.com/package/@mboxlabs/mailbox)
@@ -27,7 +27,7 @@ Mailbox **深受 Erlang Actor 模型启发**，但我们做了关键演进：
 
 | Erlang (1986) | Mailbox (Today) | 为什么重要 |
 |---------------|-----------------|------------|
-| `Pid ! Message` | `send({ to: 'xxx://address' })` | **地址即协议**：URI 统一标识 + 传输 |
+| `Pid ! Message` | `send({ to: 'protocol://address' })` | **地址即身份，协议即路由**：`address` 部分是邮箱的唯一 ID。`protocol`（例如 `mem`, `mailto`）决定路由方式。同一地址可通过不同协议访问。 |
 | 进程内 FIFO 邮箱 | Provider 可插拔 | **传输无关**：内存/邮件/Wechat/Mastodon 无缝切换 |
 | 同一节点内通信 | 跨网络、跨组织 | **真正分布式**：人类和机器平等参与 |
 
@@ -77,6 +77,19 @@ flowchart LR
   end
 ```
 
+## 📪 邮箱地址
+
+邮箱地址（**MailAddress**）是整个系统的基石，作为任何目的地的唯一通用标识符。它遵循 [RFC 3986](https://tools.ietf.org/html/rfc3986) URI 规范。
+
+- **格式**: `protocol:user@physical_address[/logical_address]`
+- **示例**: `mailto:api@myservice.com/utils/greeter`
+
+一个邮箱地址由三部分组成：
+
+- **`protocol`（协议）**: 指定消息的**传输方式**（例如 `mailto` 代表通过邮件发送，`mem` 代表通过内存总线发送）。它告诉 `Mailbox` 应该由哪个提供者处理消息。
+- **`user@physical_address`（物理邮箱地址）**: 这是逻辑邮箱或服务的**全球唯一、与协议无关的 ID**。同一个物理地址可以通过不同的协议访问（例如 `mem:api@myservice.com` 和 `mailto:api@myservice.com` 指向同一个逻辑实体）。
+- **`/logical_address`（逻辑地址）** (可选): 一个可选的路径，可用于内部路由。例如，当与 `tool-rpc` 结合使用时，它可以将消息路由到更庞大服务中的特定工具，允许一个物理地址作为多个逻辑功能的统一网关。
+
 ## 🚀 快速开始
 
 只需三步，即可体验 Mailbox 的核心魅力：
@@ -97,17 +110,17 @@ flowchart LR
    mailbox.registerProvider(new MemoryProvider());
 
    // 2. 订阅一个地址，并定义如何处理消息
-   const subscription = mailbox.subscribe('mem://service/inbox', message => {
+   const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
      console.log(`收到消息！来自: ${message.from}`);
      console.log(`内容:`, message.body);
    });
 
-   console.log("邮箱已建立，正在监听 'mem://service/inbox'...");
+   console.log("邮箱已建立，正在监听 'mem:service@example.com/inbox'...");
 
    // 3. 向该地址投递一封邮件
    await mailbox.post({
-     from: 'mem://client/user-1',
-     to: 'mem://service/inbox',
+     from: 'mem:client@example.com/user-1',
+     to: 'mem:service@example.com/inbox',
      body: { text: '你好，Mailbox！' },
    });
 
@@ -117,15 +130,15 @@ flowchart LR
 
 3. **运行**
 
-如果使用 `ts-node` 或类似工具运行上述代码，你将看到：
+   如果使用 `ts-node` 或类似工具运行上述代码，你将看到：
 
-```sh
-邮箱已建立，正在监听 'mem://service/inbox'...
-收到消息！来自: mem://client/user-1
-内容: { text: '你好，Mailbox！' }
-```
+   ```sh
+   邮箱已建立，正在监听 'mem:service@example.com/inbox'...
+   收到消息！来自: mem:client@example.com/user-1
+   内容: { text: '你好，Mailbox！' }
+   ```
 
-这个例子展示了 Mailbox 的基本循环：**订阅地址 -> 投递消息 -> 接收处理**。`mem://` 协议表示这是一条在内存中传递的消息，非常适合入门和测试。
+   这个例子展示了 Mailbox 的基本循环：**订阅地址 -> 投递消息 -> 接收处理**。地址 `mem:service@example.com/inbox` 告诉 Mailbox 使用 `mem`（内存）协议，将消息投递到物理地址 `service@example.com` 的逻辑路径 `/inbox` 下。这种格式使得路由清晰而灵活。
 
 ## 📦 生态系统
 
