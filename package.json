@@ -8,7 +8,7 @@
     "type": "git",
     "url": "git://github.com/mboxlabs/mailbox.js.git"
   },
-  "description": "A flexible and secure asynchronous message transport layer based on the Mailbox/Actor model.",
+  "description": "A lightweight, pluggable mailbox kernel inspired by the Erlang Actor Model. It treats all communication as delivering a message to an address, enabling fault-tolerant, distributed, and human-computer collaborative systems.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "exports": {
