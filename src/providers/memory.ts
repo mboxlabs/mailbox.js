@@ -3,7 +3,7 @@ import {
   MailMessage,
   MailboxStatus,
 } from '../interfaces';
-import { MessageQueue, Ackable } from '../lib/MessageQueue';
+import { MailMessageQueue, MailMessageAckable } from '../lib/MessageQueue';
 import { getCanonicalMailboxAddressIdentifier } from '../lib/utils';
 
 type Listener = (message: MailMessage) => void | Promise<void>;
@@ -12,7 +12,7 @@ type Listener = (message: MailMessage) => void | Promise<void>;
 class MemoryEventBus {
   private static instance: MemoryEventBus;
   private topics: Map<string, Listener[]> = new Map();
-  private messageQueue = new MessageQueue<MailMessage>();
+  private messageQueue = new MailMessageQueue<MailMessage>();
   private lastActivity: Map<string, string> = new Map(); // For status
 
   private constructor() {}
@@ -88,7 +88,7 @@ class MemoryEventBus {
   public fetchForAck(
     topic: string,
     options?: { staleTimeout?: number },
-  ): Ackable<MailMessage> | undefined {
+  ): MailMessageAckable<MailMessage> | undefined {
     this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
     return this.messageQueue.dequeue(topic, { manualAck: true, ackTimeout: options?.staleTimeout || 0 }) || undefined;
   }
@@ -168,7 +168,7 @@ export class MemoryProvider extends MailboxProvider {
   protected async _fetch(
     address: URL,
     options?: { manualAck?: boolean; ackTimeout?: number },
-  ): Promise<MailMessage | Ackable<MailMessage> | null> { // Updated return type
+  ): Promise<MailMessage | MailMessageAckable<MailMessage> | null> { // Updated return type
     const topic = getCanonicalMailboxAddressIdentifier(address);
 
     if (!options?.manualAck) {

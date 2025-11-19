@@ -4,7 +4,7 @@
  * Represents a message that can be manually acknowledged or negatively acknowledged.
  * @template T The type of the message payload.
  */
-export type Ackable<T> = T & {
+export type MailMessageAckable<T> = T & {
   /**
    * Acknowledges the message, confirming successful processing.
    */
@@ -30,7 +30,7 @@ export type Ackable<T> = T & {
  *
  * @template T The type of messages in the queue. Must have an `id` property of type string.
  */
-export class MessageQueue<T extends { id: string }> {
+export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
   // Stores in-flight messages with their original topic for reliable requeueing.
   private inFlight: Map<string, { message: T; timestamp: number; topic: string }> = new Map();
@@ -65,7 +65,7 @@ export class MessageQueue<T extends { id: string }> {
   public dequeue(
     topic: string,
     options: { manualAck: true; ackTimeout: number }
-  ): Ackable<T> | null;
+  ): MailMessageAckable<T> | null;
   public dequeue(
     topic: string,
     options?: { manualAck?: false }
@@ -73,7 +73,7 @@ export class MessageQueue<T extends { id: string }> {
   public dequeue(
     topic: string,
     options?: { manualAck?: boolean; ackTimeout?: number }
-  ): T | Ackable<T> | null {
+  ): T | MailMessageAckable<T> | null {
     // Requeue stale messages if manualAck is enabled and timeout is provided
     if (options?.manualAck && options?.ackTimeout) {
       this.requeueStale(topic, options.ackTimeout);
@@ -142,7 +142,7 @@ export class MessageQueue<T extends { id: string }> {
       unreadCount: queue.length,
     };
   }
-  
+
   /**
    * Adds a message back to the front of its queue. Used for requeueing.
    * @param topic The topic of the queue.

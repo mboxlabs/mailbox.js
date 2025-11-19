@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MessageQueue, Ackable } from './MessageQueue';
+import { MailMessageQueue, MailMessageAckable } from './MessageQueue';
 
 // Define a simple message type for testing
 interface TestMessage {
@@ -8,7 +8,7 @@ interface TestMessage {
 }
 
 describe('MessageQueue', () => {
-  let queue: MessageQueue<TestMessage>;
+  let queue: MailMessageQueue<TestMessage>;
   const topic1 = 'topic-1';
   const topic2 = 'topic-2';
   const msg1: TestMessage = { id: 'msg-1', payload: 'message 1' };
@@ -16,7 +16,7 @@ describe('MessageQueue', () => {
   const msg3: TestMessage = { id: 'msg-3', payload: 'message 3' };
 
   beforeEach(() => {
-    queue = new MessageQueue<TestMessage>();
+    queue = new MailMessageQueue<TestMessage>();
     vi.useFakeTimers();
   });
 
@@ -81,8 +81,8 @@ describe('MessageQueue', () => {
 
       expect(result).not.toBeNull();
       expect(result!.id).toBe(msg1.id);
-      expect(typeof (result as Ackable<TestMessage>).ack).toBe('function');
-      expect(typeof (result as Ackable<TestMessage>).nack).toBe('function');
+      expect(typeof (result as MailMessageAckable<TestMessage>).ack).toBe('function');
+      expect(typeof (result as MailMessageAckable<TestMessage>).nack).toBe('function');
     });
 
     it('should move the message to in-flight, making it unavailable for dequeue', () => {
@@ -96,7 +96,7 @@ describe('MessageQueue', () => {
 
     it('ack() should permanently remove the message', async () => {
       queue.enqueue(topic1, msg1);
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as Ackable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
 
       await ackableMsg.ack();
 
@@ -108,7 +108,7 @@ describe('MessageQueue', () => {
 
     it('nack(false) should permanently remove the message', async () => {
       queue.enqueue(topic1, msg1);
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as Ackable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
 
       await ackableMsg.nack(false); // Do not requeue
 
@@ -119,13 +119,13 @@ describe('MessageQueue', () => {
     it('nack(true) should add the message back to the front of the queue', async () => {
       queue.enqueue(topic1, msg1);
       queue.enqueue(topic1, msg2); // msg2 is now at the end
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as Ackable<TestMessage>; // Dequeues msg1
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>; // Dequeues msg1
       expect(ackableMsg.id).toBe(msg1.id);
-      
+
       await ackableMsg.nack(true); // Requeue msg1
 
       expect(queue.getStatus(topic1).unreadCount).toBe(2);
-      
+
       const nextMsg = queue.dequeue(topic1); // Should be msg1 again
       expect(nextMsg!.id).toBe(msg1.id);
 
@@ -137,7 +137,7 @@ describe('MessageQueue', () => {
       queue.enqueue(topic1, msg1);
 
       // Dequeue a message and let it go stale
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as Ackable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
       expect(ackableMsg).not.toBeNull();
       expect(queue.getStatus(topic1).unreadCount).toBe(0);
 
@@ -154,15 +154,15 @@ describe('MessageQueue', () => {
     it('should not requeue a stale message from a different topic', () => {
         queue.enqueue(topic1, msg1);
         queue.enqueue(topic2, msg2);
-  
+
         // Dequeue from topic1 and let it go stale
         queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT });
         vi.advanceTimersByTime(ACK_TIMEOUT + 1);
-  
+
         // Dequeue from topic2 - this should NOT trigger a requeue for topic1
         const resultFromTopic2 = queue.dequeue(topic2, { manualAck: true, ackTimeout: ACK_TIMEOUT });
         expect(resultFromTopic2!.id).toBe(msg2.id);
-        
+
         // Topic1's queue should still be empty as requeueStale wasn't triggered for it
         expect(queue.getStatus(topic1).unreadCount).toBe(0);
 
