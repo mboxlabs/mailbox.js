@@ -1,9 +1,10 @@
 import { MailboxProvider } from './MailboxProvider';
 import {
   MailMessage,
-  AckableMailMessage,
   MailboxStatus,
 } from '../interfaces';
+import { MessageQueue, Ackable } from '../lib/MessageQueue';
+import { getCanonicalMailboxAddressIdentifier } from '../lib/utils';
 
 type Listener = (message: MailMessage) => void | Promise<void>;
 
@@ -11,10 +12,7 @@ type Listener = (message: MailMessage) => void | Promise<void>;
 class MemoryEventBus {
   private static instance: MemoryEventBus;
   private topics: Map<string, Listener[]> = new Map();
-  private queue: Map<string, MailMessage[]> = new Map(); // For fetch/pull model
-  // For messages being processed, with a timestamp for stale checks
-  private inFlight: Map<string, { message: MailMessage; timestamp: number }> =
-    new Map();
+  private messageQueue = new MessageQueue<MailMessage>();
   private lastActivity: Map<string, string> = new Map(); // For status
 
   private constructor() {}
@@ -67,10 +65,7 @@ class MemoryEventBus {
       listeners.forEach(listener => listener(message));
     }
     // For pull/fetch subscribers
-    if (!this.queue.has(topic)) {
-      this.queue.set(topic, []);
-    }
-    this.queue.get(topic)!.push(message);
+    this.messageQueue.enqueue(topic, message);
   }
 
   /**
@@ -79,30 +74,8 @@ class MemoryEventBus {
    * @returns The message, or undefined if the queue is empty.
    */
   public fetchAndForget(topic: string): MailMessage | undefined {
-    const messages = this.queue.get(topic);
-    if (messages && messages.length > 0) {
-      this.lastActivity.set(topic, new Date().toISOString());
-    }
-    return messages?.shift();
-  }
-
-  /**
-   * Requeues messages that have been in-flight for longer than the specified timeout.
-   * @param topic The topic to check for stale messages.
-   * @param timeout The timeout in milliseconds.
-   */
-  private requeueStale(topic: string, timeout: number): void {
-    const now = Date.now();
-    for (const [
-      messageId,
-      { message, timestamp },
-    ] of this.inFlight.entries()) {
-      // Check if the message belongs to the topic we are fetching from and is stale
-      if (getCanonicalMailboxAddressIdentifier(message.to) === topic && now - timestamp > timeout) {
-        this.inFlight.delete(messageId);
-        this.requeue(topic, message);
-      }
-    }
+    this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
+    return this.messageQueue.dequeue(topic) || undefined;
   }
 
   /**
@@ -115,20 +88,9 @@ class MemoryEventBus {
   public fetchForAck(
     topic: string,
     options?: { staleTimeout?: number },
-  ): MailMessage | undefined {
-    // Before fetching, check for and requeue any stale messages.
-    if (options?.staleTimeout) {
-      this.requeueStale(topic, options.staleTimeout);
-    }
-
-    const messages = this.queue.get(topic);
-    if (!messages || messages.length === 0) {
-      return undefined;
-    }
-    this.lastActivity.set(topic, new Date().toISOString());
-    const message = messages.shift()!;
-    this.inFlight.set(message.id, { message, timestamp: Date.now() });
-    return message;
+  ): Ackable<MailMessage> | undefined {
+    this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
+    return this.messageQueue.dequeue(topic, { manualAck: true, ackTimeout: options?.staleTimeout || 0 }) || undefined;
   }
 
   /**
@@ -137,7 +99,7 @@ class MemoryEventBus {
    * @param messageId The ID of the message to acknowledge.
    */
   public ack(messageId: string): void {
-    this.inFlight.delete(messageId);
+    this.messageQueue.ack(messageId);
   }
 
   /**
@@ -148,25 +110,7 @@ class MemoryEventBus {
    * @param requeue If true, the message is added back to the front of the queue.
    */
   public nack(messageId: string, topic: string, requeue: boolean): void {
-    const flight = this.inFlight.get(messageId);
-    if (flight) {
-      this.inFlight.delete(messageId);
-      if (requeue) {
-        this.requeue(topic, flight.message);
-      }
-    }
-  }
-
-  /**
-   * Adds a message back to the front of the queue.
-   * @param topic The topic to requeue the message to.
-   * @param message The message to requeue.
-   */
-  public requeue(topic: string, message: MailMessage): void {
-    if (!this.queue.has(topic)) {
-      this.queue.set(topic, []);
-    }
-    this.queue.get(topic)!.unshift(message); // Add back to the front
+    this.messageQueue.nack(messageId, topic, requeue);
   }
 
   /**
@@ -179,30 +123,17 @@ class MemoryEventBus {
     lastActivityTime?: string;
     subscriberCount: number;
   } {
-    const queue = this.queue.get(topic) || [];
+    const { unreadCount } = this.messageQueue.getStatus(topic);
     const listeners = this.topics.get(topic) || [];
     return {
-      unreadCount: queue.length,
+      unreadCount,
       lastActivityTime: this.lastActivity.get(topic),
       subscriberCount: listeners.length,
     };
   }
 }
 
-/**
- * Generates a canonical string identifier for a mailbox address.
- * This function normalizes the input URL by stripping sensitive information (like password)
- * and irrelevant parts (like search parameters and hash fragments). This ensures that
- * different URL representations of the same conceptual mailbox address resolve to
- * the same unique identifier within the messaging system.
- *
- * @param address The URL object representing the mailbox address.
- * @returns A canonical string identifier for the mailbox address.
- */
-function getCanonicalMailboxAddressIdentifier(address: URL): string {
-  const userInfo = address.username ? `${address.username}@` : '';
-  return `${address.protocol}//${userInfo}${address.host}${address.pathname}`;
-}
+
 
 export class MemoryProvider extends MailboxProvider {
   private bus = MemoryEventBus.getInstance();
@@ -237,7 +168,7 @@ export class MemoryProvider extends MailboxProvider {
   protected async _fetch(
     address: URL,
     options?: { manualAck?: boolean; ackTimeout?: number },
-  ): Promise<MailMessage | AckableMailMessage | null> {
+  ): Promise<MailMessage | Ackable<MailMessage> | null> { // Updated return type
     const topic = getCanonicalMailboxAddressIdentifier(address);
 
     if (!options?.manualAck) {
@@ -245,22 +176,10 @@ export class MemoryProvider extends MailboxProvider {
       return message || null;
     }
 
-    const message = this.bus.fetchForAck(topic, {
+    const ackableMessage = this.bus.fetchForAck(topic, {
       staleTimeout: options?.ackTimeout,
     });
-    if (!message) {
-      return null;
-    }
-
-    return {
-      ...message,
-      ack: async () => {
-        this.bus.ack(message.id);
-      },
-      nack: async (requeue = false) => {
-        this.bus.nack(message.id, topic, requeue);
-      },
-    };
+    return ackableMessage || null;
   }
 
   protected async _status(address: URL): Promise<MailboxStatus> {
@@ -277,12 +196,8 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
-    // Requeuing a pushed message isn't directly applicable,
-    // but we can add it back to the fetch queue if needed.
-    if (requeue) {
-      const topic = getCanonicalMailboxAddressIdentifier(message.to);
-      this.bus.requeue(topic, message);
-    }
-    // Otherwise, the message is simply dropped.
+    // For subscribed messages, nack typically means the message is dropped.
+    // The MessageQueue handles requeuing for fetched messages.
+    // No explicit action is needed here.
   }
 }
