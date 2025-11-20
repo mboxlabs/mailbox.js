@@ -13,7 +13,7 @@ describe('MessageQueue', () => {
   const topic2 = 'topic-2';
   const msg1: TestMessage = { id: 'msg-1', payload: 'message 1' };
   const msg2: TestMessage = { id: 'msg-2', payload: 'message 2' };
-  const msg3: TestMessage = { id: 'msg-3', payload: 'message 3' };
+  // const msg3: TestMessage = { id: 'msg-3', payload: 'message 3' };
 
   beforeEach(() => {
     queue = new MailMessageQueue<TestMessage>();
@@ -152,23 +152,23 @@ describe('MessageQueue', () => {
     });
 
     it('should not requeue a stale message from a different topic', () => {
-        queue.enqueue(topic1, msg1);
-        queue.enqueue(topic2, msg2);
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic2, msg2);
 
-        // Dequeue from topic1 and let it go stale
-        queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT });
-        vi.advanceTimersByTime(ACK_TIMEOUT + 1);
+      // Dequeue from topic1 and let it go stale
+      queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT });
+      vi.advanceTimersByTime(ACK_TIMEOUT + 1);
 
-        // Dequeue from topic2 - this should NOT trigger a requeue for topic1
-        const resultFromTopic2 = queue.dequeue(topic2, { manualAck: true, ackTimeout: ACK_TIMEOUT });
-        expect(resultFromTopic2!.id).toBe(msg2.id);
+      // Dequeue from topic2 - this should NOT trigger a requeue for topic1
+      const resultFromTopic2 = queue.dequeue(topic2, { manualAck: true, ackTimeout: ACK_TIMEOUT });
+      expect(resultFromTopic2!.id).toBe(msg2.id);
 
-        // Topic1's queue should still be empty as requeueStale wasn't triggered for it
-        expect(queue.getStatus(topic1).unreadCount).toBe(0);
+      // Topic1's queue should still be empty as requeueStale wasn't triggered for it
+      expect(queue.getStatus(topic1).unreadCount).toBe(0);
 
-        // Now, dequeue from topic1 to trigger its own stale check
-        const resultFromTopic1 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT });
-        expect(resultFromTopic1!.id).toBe(msg1.id);
-      });
+      // Now, dequeue from topic1 to trigger its own stale check
+      const resultFromTopic1 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT });
+      expect(resultFromTopic1!.id).toBe(msg1.id);
+    });
   });
 });
