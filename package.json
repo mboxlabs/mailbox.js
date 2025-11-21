@@ -40,6 +40,7 @@
     "@isdk/hash": "workspace:^",
     "@isdk/util": "workspace:^",
     "@jsonforms/core": "^3.6.0",
+    "date-fns": "^4.1.0",
     "lodash-es": "^4.17.21",
     "util-ex": "^2.4.0"
   },
