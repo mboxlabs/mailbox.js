@@ -28,7 +28,7 @@ Mailbox is **deeply inspired by the Erlang Actor Model**, but we've made key evo
 | Erlang (1986) | Mailbox (Today) | Why It Matters |
 |---|---|---|
 | `Pid ! Message` | `send({ to: 'protocol://address' })` | **Address as Identity, Protocol as Route**: The `address` part is the mailbox's unique ID. The `protocol` (e.g., `mem`, `mailto`) is for routing. The same address can be reached via different protocols. |
-| In-process FIFO Mailbox | Pluggable Providers | **Transport Agnostic**: Seamlessly switch between memory/email/WeChat/Mastodon |
+| In-process FIFO Mailbox | Pluggable Providers | **Transport Agnostic**: Seamlessly switch between memory/email/telegram/Mastodon |
 | Intra-node Communication | Cross-network, Cross-organization | **Truly Distributed**: Humans and machines participate as equals |
 
 > 💡 **Our Position**:
