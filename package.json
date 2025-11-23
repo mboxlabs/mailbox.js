@@ -80,8 +80,7 @@
     "message-queue",
     "async",
     "rpc",
-    "transport",
-    "isdk"
+    "transport"
   ],
   "maintainers": [
     "Riceball LEE <snowyu.lee@gmail.com>"
