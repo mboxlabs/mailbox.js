@@ -99,6 +99,16 @@ export interface MailboxStatus {
 export interface IMailboxProvider {
   protocol: string;
 
+  /**
+   * 初始化 Provider。用于建立连接、验证配置等。
+   */
+  init?(): Promise<void>;
+
+  /**
+   * 关闭 Provider。用于释放资源、断开连接等。
+   */
+  close?(): Promise<void>;
+
   send(message: MailMessage): Promise<MailMessage>;
 
   /**

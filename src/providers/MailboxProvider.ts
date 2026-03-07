@@ -34,6 +34,37 @@ export abstract class MailboxProvider implements IMailboxProvider {
   // --- Public API (implements IMailboxProvider) ---
 
   /**
+   * 初始化 Provider。子类可重写此方法以建立真实的连接。
+   */
+  public async init(): Promise<void> {
+    // 默认不执行任何操作。
+  }
+
+  /**
+   * 关闭 Provider。
+   * 此方法会自动取消该 Provider 下所有活跃的订阅，然后调用子类的 `_close` 进行具体清理。
+   */
+  public async close(): Promise<void> {
+    // 1. 自动清理所有活跃订阅
+    const subscriptions = Array.from(this.subscriptions.values());
+    if (subscriptions.length > 0) {
+      await Promise.all(
+        subscriptions.map(async (sub) => {
+          try {
+            await this._unsubscribe(sub.id, sub.unsubscribeHandle);
+          } catch (e) {
+            console.error(`[${this.protocol}] Error unsubscribing ${sub.id} during close:`, e);
+          }
+        })
+      );
+      this.subscriptions.clear();
+    }
+
+    // 2. 调用具体的清理逻辑
+    await this._close?.();
+  }
+
+  /**
    * Sends a mail message.
    * This method handles common logic (like adding a timestamp and injecting x-req-sent-at for replies)
    * and then calls the concrete `_send` method for protocol-specific delivery.
@@ -157,6 +188,11 @@ export abstract class MailboxProvider implements IMailboxProvider {
     address: URL,
     options?: { manualAck?: boolean }
   ): Promise<MailMessage | AckableMailMessage | null>;
+
+  /**
+   * [Subclass Responsibility - Optional] Specific closing logic.
+   */
+  protected async _close?(): Promise<void>;
 
   /**
    * [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.

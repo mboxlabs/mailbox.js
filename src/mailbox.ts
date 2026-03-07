@@ -16,6 +16,24 @@ interface AutoAckedMailBoxFetchOptions extends MailBoxFetchOptions {
 export class Mailbox {
   private providers: Map<string, IMailboxProvider> = new Map();
 
+  /**
+   * 启动所有注册的 Provider。
+   * 建议在应用初始化阶段调用此方法，以确保所有通信通道准备就绪。
+   */
+  public async start(): Promise<void> {
+    const providers = Array.from(this.providers.values());
+    await Promise.all(providers.map(p => p.init?.()));
+  }
+
+  /**
+   * 关闭所有注册的 Provider，并释放资源。
+   * 建议在应用关闭阶段调用此方法。
+   */
+  public async stop(): Promise<void> {
+    const providers = Array.from(this.providers.values());
+    await Promise.all(providers.map(p => p.close?.()));
+  }
+
   public registerProvider(provider: IMailboxProvider): void {
     this.providers.set(provider.protocol, provider);
   }

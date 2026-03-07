@@ -105,42 +105,56 @@ flowchart LR
    ```ts
    import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox';
 
-   // 1. 创建邮箱实例并注册一个内存提供者
+   // 1. 创建 Mailbox 实例并注册内存 Provider
    const mailbox = new Mailbox();
    mailbox.registerProvider(new MemoryProvider());
 
-   // 2. 订阅一个地址，并定义如何处理消息
+   // 2. 启动 Mailbox (初始化 Provider)
+   await mailbox.start();
+
+   // 3. 订阅一个地址并定义消息处理方式
    const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
      console.log(`收到消息！来自: ${message.from}`);
-     console.log(`内容:`, message.body);
+     console.log(`正文:`, message.body);
    });
 
-   console.log("邮箱已建立，正在监听 'mem:service@example.com/inbox'...");
+   console.log("Mailbox 已就绪，正在监听 'mem:service@example.com/inbox'...");
 
-   // 3. 向该地址投递一封邮件
+   // 4. 发送一封邮件到该地址
    await mailbox.post({
      from: 'mem:client@example.com/user-1',
      to: 'mem:service@example.com/inbox',
-     body: { text: '你好，Mailbox！' },
+     body: { text: 'Hello, Mailbox!' },
    });
 
-   // 清理
+   // 清理：取消订阅并停止 Mailbox (释放资源)
    await subscription.unsubscribe();
+   await mailbox.stop();
    ```
 
-3. **运行**
+   1. **运行**
 
-   如果使用 `ts-node` 或类似工具运行上述代码，你将看到：
+   如果你使用 `ts-node` 或类似工具运行上述代码，你将看到：
 
    ```sh
-   邮箱已建立，正在监听 'mem:service@example.com/inbox'...
+   Mailbox 已就绪，正在监听 'mem:service@example.com/inbox'...
    收到消息！来自: mem:client@example.com/user-1
-   内容: { text: '你好，Mailbox！' }
+   正文: { text: 'Hello, Mailbox!' }
    ```
 
-   这个例子展示了 Mailbox 的基本循环：**订阅地址 -> 投递消息 -> 接收处理**。地址 `mem:service@example.com/inbox` 告诉 Mailbox 使用 `mem`（内存）协议，将消息投递到物理地址 `service@example.com` 的逻辑路径 `/inbox` 下。这种格式使得路由清晰而灵活。
+   该示例演示了 Mailbox 的基本闭环：**初始化 -> 启动 -> 订阅 -> 发送 -> 停止**。
 
-## 📦 生态系统
+   ## 🔄 生命周期管理
+
+   对于健壮的生产系统，显式的生命周期管理至关重要：
+
+   - **`mailbox.start()`**: 并行初始化所有已注册的 Provider。使用它来预热连接（如 Redis、RabbitMQ）并在处理流量前验证配置。
+   - **`mailbox.stop()`**: 并行关闭所有 Provider。它会自动执行以下操作：
+   - 取消该 Mailbox 实例下所有活跃的订阅。
+   - 释放底层资源（TCP 连接、文件句柄等）。
+   - 确保通信层的优雅关闭（Graceful Shutdown）。
+
+   ## 📦 生态系统
 
 | 包 | 说明  |
 |-----|------|

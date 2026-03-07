@@ -7,14 +7,46 @@ describe('Mailbox', () => {
   let mailbox: Mailbox;
   let memoryProvider: MemoryProvider;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mailbox = new Mailbox();
     memoryProvider = new MemoryProvider();
     mailbox.registerProvider(memoryProvider);
+    await mailbox.start();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await mailbox.stop();
     vi.useRealTimers(); // Restore real timers after each test
+  });
+
+  it('should call init on all providers during start', async () => {
+    const mockProvider: IMailboxProvider = {
+      protocol: 'mock',
+      init: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn(),
+      subscribe: vi.fn(),
+      fetch: vi.fn(),
+      generateId: () => 'id',
+    };
+    const newMailbox = new Mailbox();
+    newMailbox.registerProvider(mockProvider);
+    await newMailbox.start();
+    expect(mockProvider.init).toHaveBeenCalled();
+  });
+
+  it('should call close on all providers during stop and cleanup subscriptions', async () => {
+    const address = 'mem://test/stop-cleanup';
+    const onReceive = vi.fn();
+    const subscription = mailbox.subscribe(address, onReceive);
+    expect(subscription.status).toBe('active');
+
+    await mailbox.stop();
+    expect(subscription.status).toBe('closed');
+
+    // After stop, posting a message should not trigger the callback
+    await mailbox.post({ from: 'mem://a', to: address, body: 'after stop' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(onReceive).not.toHaveBeenCalled();
   });
 
   it('should register a provider', () => {
@@ -244,10 +276,15 @@ describe('status', () => {
   let mailbox: Mailbox;
   let memoryProvider: MemoryProvider;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mailbox = new Mailbox();
     memoryProvider = new MemoryProvider();
     mailbox.registerProvider(memoryProvider);
+    await mailbox.start();
+  });
+
+  afterEach(async () => {
+    await mailbox.stop();
   });
 
   it('should return status for MemoryProvider', async () => {
