@@ -53,7 +53,6 @@ describe('Mailbox', () => {
     const newMailbox = new Mailbox();
     const provider = new MemoryProvider();
     newMailbox.registerProvider(provider);
-    // @ts-expect-error - accessing private property for test
     expect(newMailbox.providers.get('mem')).toBe(provider);
   });
 
@@ -269,6 +268,28 @@ describe('Mailbox', () => {
     const receivedMessage: MailMessage = user1OnReceive.mock.calls[0][0];
     expect(receivedMessage.body).toEqual(messageBody);
     expect(receivedMessage.to.toString()).toBe(user1Address);
+  });
+
+  describe('Provider access', () => {
+    it('should expose providers via getter', () => {
+      expect(mailbox.providers).toBeInstanceOf(Map);
+      expect(mailbox.providers.has('mem')).toBe(true);
+      expect(mailbox.providers.get('mem')).toBe(memoryProvider);
+    });
+
+    it('should return a provider via getProvider', () => {
+      // Test with and without colon
+      expect(mailbox.getProvider('mem')).toBe(memoryProvider);
+      expect(mailbox.getProvider('mem:')).toBe(memoryProvider);
+    });
+
+    it('should return undefined if provider not found and raiseErrorIfFailed is false', () => {
+      expect(mailbox.getProvider('unknown')).toBeUndefined();
+    });
+
+    it('should throw error if provider not found and raiseErrorIfFailed is true', () => {
+      expect(() => mailbox.getProvider('unknown', true)).toThrow('No provider for protocol: unknown');
+    });
   });
 });
 

@@ -145,6 +145,35 @@ flowchart LR
 
    该示例演示了 Mailbox 的基本闭环：**初始化 -> 启动 -> 订阅 -> 发送 -> 停止**。
 
+   ## 🎯 核心功能
+
+   ### 1. 状态查询
+
+   ```ts
+   const status = await mailbox.status('mem:service@example.com/inbox');
+   console.log(`状态: ${status.state}`);
+   console.log(`未读数量: ${status.unreadCount}`);
+   ```
+
+   ### 2. 访问 Provider
+
+   你可以通过 `providers` Getter 或 `getProvider` 方法优雅地访问已注册的 Provider：
+
+   ```ts
+   // 获取所有 Provider (返回一个 ReadonlyMap)
+   const allProviders = mailbox.providers;
+   if (allProviders.has('mem')) {
+     console.log('内存 Provider 已注册');
+   }
+
+   // 获取特定 Provider
+   // protocol 可以是 "mem" 或 "mem:"
+   const provider = mailbox.getProvider('mem');
+
+   // 获取 Provider，如果不存在则抛出错误
+   const slackProvider = mailbox.getProvider('slack', true);
+   ```
+
    ## 🔄 生命周期管理
 
    对于健壮的生产系统，显式的生命周期管理至关重要：

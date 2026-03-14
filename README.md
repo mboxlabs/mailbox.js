@@ -144,6 +144,35 @@ Body: { text: 'Hello, Mailbox!' }
 
 This example demonstrates the basic loop of Mailbox: **Initialize -> Start -> Subscribe -> Post -> Stop**.
 
+## 🎯 Core Features
+
+### 1. Status Query
+
+```ts
+const status = await mailbox.status('mem:service@example.com/inbox');
+console.log(`State: ${status.state}`);
+console.log(`Unread count: ${status.unreadCount}`);
+```
+
+### 2. Accessing Providers
+
+You can gracefully access registered providers via the `providers` getter or `getProvider` method:
+
+```ts
+// Get all providers (returns a ReadonlyMap)
+const allProviders = mailbox.providers;
+if (allProviders.has('mem')) {
+  console.log('Memory provider is registered');
+}
+
+// Get a specific provider
+// protocol can be "mem" or "mem:"
+const provider = mailbox.getProvider('mem');
+
+// Get provider or throw error if not found
+const slackProvider = mailbox.getProvider('slack', true);
+```
+
 ## 🔄 Lifecycle Management
 
 For robust production systems, explicit lifecycle management is crucial:
