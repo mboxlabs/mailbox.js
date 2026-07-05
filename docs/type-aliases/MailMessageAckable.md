@@ -8,13 +8,13 @@
 
 > **MailMessageAckable**\<`T`\> = `T` & `object`
 
-Defined in: [lib/MessageQueue.ts:7](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L7)
+Defined in: [lib/MessageQueue.ts:7](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L7)
 
 Represents a message that can be manually acknowledged or negatively acknowledged.
 
 ## Type Declaration
 
-### ack()
+### ack
 
 > **ack**: () => `Promise`\<`void`\>
 
@@ -24,7 +24,7 @@ Acknowledges the message, confirming successful processing.
 
 `Promise`\<`void`\>
 
-### nack()
+### nack
 
 > **nack**: (`requeue?`) => `Promise`\<`void`\>
 

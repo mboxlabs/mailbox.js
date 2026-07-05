@@ -6,7 +6,7 @@
 
 # Class: Mailbox
 
-Defined in: [mailbox.ts:16](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L16)
+Defined in: [mailbox.ts:16](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L16)
 
 ## Constructors
 
@@ -18,21 +18,37 @@ Defined in: [mailbox.ts:16](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 `Mailbox`
 
+## Accessors
+
+### providers
+
+#### Get Signature
+
+> **get** **providers**(): `ReadonlyMap`\<`string`, [`IMailboxProvider`](../interfaces/IMailboxProvider.md)\>
+
+Defined in: [mailbox.ts:22](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L22)
+
+获取所有已注册的 Provider。返回只读 Map 以确保安全性。
+
+##### Returns
+
+`ReadonlyMap`\<`string`, [`IMailboxProvider`](../interfaces/IMailboxProvider.md)\>
+
 ## Methods
 
 ### fetch()
 
 #### Call Signature
 
-> **fetch**(`address`, `options`): `Promise`\<`null` \| [`AckableMailMessage`](../type-aliases/AckableMailMessage.md)\>
+> **fetch**(`address`, `options`): `Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
-Defined in: [mailbox.ts:49](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L49)
+Defined in: [mailbox.ts:88](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L88)
 
 ##### Parameters
 
 ###### address
 
-`string` | `URL`
+`string` \| `URL`
 
 ###### options
 
@@ -40,19 +56,19 @@ Defined in: [mailbox.ts:49](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 ##### Returns
 
-`Promise`\<`null` \| [`AckableMailMessage`](../type-aliases/AckableMailMessage.md)\>
+`Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
 #### Call Signature
 
-> **fetch**(`address`, `options?`): `Promise`\<`null` \| [`MailMessage`](../interfaces/MailMessage.md)\>
+> **fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| `null`\>
 
-Defined in: [mailbox.ts:50](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L50)
+Defined in: [mailbox.ts:89](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L89)
 
 ##### Parameters
 
 ###### address
 
-`string` | `URL`
+`string` \| `URL`
 
 ###### options?
 
@@ -60,7 +76,63 @@ Defined in: [mailbox.ts:50](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 ##### Returns
 
-`Promise`\<`null` \| [`MailMessage`](../interfaces/MailMessage.md)\>
+`Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| `null`\>
+
+***
+
+### getProvider()
+
+#### Call Signature
+
+> **getProvider**(`protocol`, `raiseErrorIfFailed`): [`IMailboxProvider`](../interfaces/IMailboxProvider.md)
+
+Defined in: [mailbox.ts:31](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L31)
+
+根据协议名获取指定的 Provider。
+
+##### Parameters
+
+###### protocol
+
+`string`
+
+协议名（例如 "memory" 或 "memory:"）
+
+###### raiseErrorIfFailed
+
+`true`
+
+如果为 true，且找不到 Provider 时抛出错误。默认为 false。
+
+##### Returns
+
+[`IMailboxProvider`](../interfaces/IMailboxProvider.md)
+
+#### Call Signature
+
+> **getProvider**(`protocol`, `raiseErrorIfFailed?`): [`IMailboxProvider`](../interfaces/IMailboxProvider.md) \| `undefined`
+
+Defined in: [mailbox.ts:32](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L32)
+
+根据协议名获取指定的 Provider。
+
+##### Parameters
+
+###### protocol
+
+`string`
+
+协议名（例如 "memory" 或 "memory:"）
+
+###### raiseErrorIfFailed?
+
+`boolean`
+
+如果为 true，且找不到 Provider 时抛出错误。默认为 false。
+
+##### Returns
+
+[`IMailboxProvider`](../interfaces/IMailboxProvider.md) \| `undefined`
 
 ***
 
@@ -68,7 +140,7 @@ Defined in: [mailbox.ts:50](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 > **post**(`mail`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)\>
 
-Defined in: [mailbox.ts:23](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L23)
+Defined in: [mailbox.ts:64](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L64)
 
 #### Parameters
 
@@ -86,7 +158,7 @@ Defined in: [mailbox.ts:23](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 > **registerProvider**(`provider`): `void`
 
-Defined in: [mailbox.ts:19](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L19)
+Defined in: [mailbox.ts:60](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L60)
 
 #### Parameters
 
@@ -100,11 +172,26 @@ Defined in: [mailbox.ts:19](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 ***
 
+### start()
+
+> **start**(): `Promise`\<`void`\>
+
+Defined in: [mailbox.ts:46](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L46)
+
+启动所有注册的 Provider。
+建议在应用初始化阶段调用此方法，以确保所有通信通道准备就绪。
+
+#### Returns
+
+`Promise`\<`void`\>
+
+***
+
 ### status()
 
 > **status**(`address`): `Promise`\<[`MailboxStatus`](../interfaces/MailboxStatus.md)\>
 
-Defined in: [mailbox.ts:63](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L63)
+Defined in: [mailbox.ts:101](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L101)
 
 查询指定地址的状态信息。
 
@@ -112,9 +199,9 @@ Defined in: [mailbox.ts:63](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 ##### address
 
-要查询的地址。
+`string` \| `URL`
 
-`string` | `URL`
+要查询的地址。
 
 #### Returns
 
@@ -124,17 +211,32 @@ Defined in: [mailbox.ts:63](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de
 
 ***
 
+### stop()
+
+> **stop**(): `Promise`\<`void`\>
+
+Defined in: [mailbox.ts:55](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L55)
+
+关闭所有注册的 Provider，并释放资源。
+建议在应用关闭阶段调用此方法。
+
+#### Returns
+
+`Promise`\<`void`\>
+
+***
+
 ### subscribe()
 
 > **subscribe**(`address`, `onReceive`): [`Subscription`](../interfaces/Subscription.md)
 
-Defined in: [mailbox.ts:41](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L41)
+Defined in: [mailbox.ts:81](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L81)
 
 #### Parameters
 
 ##### address
 
-`string` | `URL`
+`string` \| `URL`
 
 ##### onReceive
 

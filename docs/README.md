@@ -113,7 +113,10 @@ Get a taste of Mailbox's core power in just three steps:
     const mailbox = new Mailbox();
     mailbox.registerProvider(new MemoryProvider());
 
-    // 2. Subscribe to an address and define how to handle messages
+    // 2. Start the mailbox (initializes providers)
+    await mailbox.start();
+
+    // 3. Subscribe to an address and define how to handle messages
     const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
       console.log(`Message received! From: ${message.from}`);
       console.log(`Body:`, message.body);
@@ -121,15 +124,16 @@ Get a taste of Mailbox's core power in just three steps:
 
     console.log("Mailbox is set up, listening on 'mem:service@example.com/inbox'...");
 
-    // 3. Post a mail to that address
+    // 4. Post a mail to that address
     await mailbox.post({
       from: 'mem:client@example.com/user-1',
       to: 'mem:service@example.com/inbox',
       body: { text: 'Hello, Mailbox!' },
     });
 
-    // Clean up
+    // Clean up: Unsubscribe and Stop the mailbox (releases resources)
     await subscription.unsubscribe();
+    await mailbox.stop();
     ```
 
 3. **Run It**
@@ -142,7 +146,46 @@ Message received! From: mem:client@example.com/user-1
 Body: { text: 'Hello, Mailbox!' }
 ```
 
-This example demonstrates the basic loop of Mailbox: **Subscribe to an address -> Post a message -> Receive and process**. The address `mem:service@example.com/inbox` tells the Mailbox to use the `mem` (in-memory) protocol to deliver the message to the physical address `service@example.com` at the logical path `/inbox`. This format allows for clear and flexible routing.
+This example demonstrates the basic loop of Mailbox: **Initialize -> Start -> Subscribe -> Post -> Stop**.
+
+## 🎯 Core Features
+
+### 1. Status Query
+
+```ts
+const status = await mailbox.status('mem:service@example.com/inbox');
+console.log(`State: ${status.state}`);
+console.log(`Unread count: ${status.unreadCount}`);
+```
+
+### 2. Accessing Providers
+
+You can gracefully access registered providers via the `providers` getter or `getProvider` method:
+
+```ts
+// Get all providers (returns a ReadonlyMap)
+const allProviders = mailbox.providers;
+if (allProviders.has('mem')) {
+  console.log('Memory provider is registered');
+}
+
+// Get a specific provider
+// protocol can be "mem" or "mem:"
+const provider = mailbox.getProvider('mem');
+
+// Get provider or throw error if not found
+const slackProvider = mailbox.getProvider('slack', true);
+```
+
+## 🔄 Lifecycle Management
+
+For robust production systems, explicit lifecycle management is crucial:
+
+- **`mailbox.start()`**: Parallelly initializes all registered providers. Use this to pre-warm connections (e.g., Redis, RabbitMQ) and validate configurations before processing traffic.
+- **`mailbox.stop()`**: Parallelly closes all providers. It automatically:
+  - Cancels all active subscriptions.
+  - Releases underlying resources (TCP connections, file handles).
+  - Ensures a graceful shutdown of your communication layer.
 
 ## 📦 Ecosystem
 

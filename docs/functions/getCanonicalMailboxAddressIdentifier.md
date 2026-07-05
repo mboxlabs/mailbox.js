@@ -8,7 +8,7 @@
 
 > **getCanonicalMailboxAddressIdentifier**(`address`): `string`
 
-Defined in: [lib/utils.ts:12](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/utils.ts#L12)
+Defined in: [lib/utils.ts:12](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/utils.ts#L12)
 
 Generates a canonical string identifier for a mailbox address.
 This function normalizes the input URL by stripping sensitive information (like password)

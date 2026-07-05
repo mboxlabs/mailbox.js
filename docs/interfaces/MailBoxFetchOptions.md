@@ -6,16 +6,16 @@
 
 # Interface: MailBoxFetchOptions
 
-Defined in: [mailbox.ts:3](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L3)
+Defined in: [mailbox.ts:3](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L3)
 
 ## Indexable
 
-\[`name`: `string`\]: `any`
+> \[`name`: `string`\]: `any`
 
 ## Properties
 
 ### manualAck?
 
-> `optional` **manualAck**: `boolean`
+> `optional` **manualAck?**: `boolean`
 
-Defined in: [mailbox.ts:4](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/mailbox.ts#L4)
+Defined in: [mailbox.ts:4](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/mailbox.ts#L4)

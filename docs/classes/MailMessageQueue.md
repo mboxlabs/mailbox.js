@@ -6,7 +6,7 @@
 
 # Class: MailMessageQueue\<T\>
 
-Defined in: [lib/MessageQueue.ts:33](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L33)
+Defined in: [lib/MessageQueue.ts:33](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L33)
 
 A generic, in-memory message queue that supports topic-based queuing and manual acknowledgement.
 
@@ -43,7 +43,7 @@ The type of messages in the queue. Must have an `id` property of type string.
 
 > **ack**(`messageId`): `void`
 
-Defined in: [lib/MessageQueue.ts:112](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L112)
+Defined in: [lib/MessageQueue.ts:112](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L112)
 
 Acknowledges a message, permanently removing it from the in-flight state.
 
@@ -65,9 +65,9 @@ The ID of the message to acknowledge.
 
 #### Call Signature
 
-> **dequeue**(`topic`, `options`): `null` \| [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<`T`\>
+> **dequeue**(`topic`, `options`): [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<`T`\> \| `null`
 
-Defined in: [lib/MessageQueue.ts:65](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L65)
+Defined in: [lib/MessageQueue.ts:65](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L65)
 
 Dequeues a message from the front of a specific topic's queue.
 
@@ -103,15 +103,15 @@ If true, enables manual acknowledgement mode. Defaults to false.
 
 ##### Returns
 
-`null` \| [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<`T`\>
+[`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<`T`\> \| `null`
 
 An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or `null` if the queue is empty.
 
 #### Call Signature
 
-> **dequeue**(`topic`, `options?`): `null` \| `T`
+> **dequeue**(`topic`, `options?`): `T` \| `null`
 
-Defined in: [lib/MessageQueue.ts:69](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L69)
+Defined in: [lib/MessageQueue.ts:69](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L69)
 
 Dequeues a message from the front of a specific topic's queue.
 
@@ -140,7 +140,7 @@ If true, enables manual acknowledgement mode. Defaults to false.
 
 ##### Returns
 
-`null` \| `T`
+`T` \| `null`
 
 An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or `null` if the queue is empty.
 
@@ -150,7 +150,7 @@ An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or 
 
 > **enqueue**(`topic`, `message`): `void`
 
-Defined in: [lib/MessageQueue.ts:43](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L43)
+Defined in: [lib/MessageQueue.ts:43](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L43)
 
 Adds a message to the end of a specific topic's queue.
 
@@ -178,7 +178,7 @@ The message to enqueue.
 
 > **getStatus**(`topic`): `object`
 
-Defined in: [lib/MessageQueue.ts:139](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L139)
+Defined in: [lib/MessageQueue.ts:139](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L139)
 
 Gets the current status of a topic's queue.
 
@@ -206,7 +206,7 @@ An object containing status information, like the number of unread messages.
 
 > **nack**(`messageId`, `topic`, `requeue`): `void`
 
-Defined in: [lib/MessageQueue.ts:123](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/lib/MessageQueue.ts#L123)
+Defined in: [lib/MessageQueue.ts:123](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L123)
 
 Negatively acknowledges a message, removing it from the in-flight state.
 If `requeue` is true, the message is added back to the front of its original queue.

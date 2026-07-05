@@ -8,4 +8,4 @@
 
 > **AckableMailMessage** = [`MailMessage`](../interfaces/MailMessage.md) & [`Ackable`](../interfaces/Ackable.md)
 
-Defined in: [interfaces.ts:69](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/interfaces.ts#L69)
+Defined in: [interfaces.ts:82](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L82)

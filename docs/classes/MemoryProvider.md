@@ -6,7 +6,7 @@
 
 # Class: MemoryProvider
 
-Defined in: [providers/memory.ts:138](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L138)
+Defined in: [providers/memory.ts:138](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L138)
 
 定义了所有具体通信方式必须实现的接口。
 Provider 在发送时，有责任向 headers 中注入 `mbx-sent-at` 时间戳 (ISO 8601 格式)。
@@ -21,7 +21,7 @@ Provider 在发送时，有责任向 headers 中注入 `mbx-sent-at` 时间戳 (
 
 > **new MemoryProvider**(): `MemoryProvider`
 
-Defined in: [providers/memory.ts:141](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L141)
+Defined in: [providers/memory.ts:141](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L141)
 
 #### Returns
 
@@ -37,7 +37,7 @@ Defined in: [providers/memory.ts:141](https://github.com/isdk/mailbox.js/blob/1e
 
 > `readonly` **protocol**: `string`
 
-Defined in: [providers/MailboxProvider.ts:24](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L24)
+Defined in: [providers/MailboxProvider.ts:24](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L24)
 
 #### Inherited from
 
@@ -49,7 +49,7 @@ Defined in: [providers/MailboxProvider.ts:24](https://github.com/isdk/mailbox.js
 
 > `protected` `readonly` **subscriptions**: `Map`\<`string`, `ManagedSubscription`\>
 
-Defined in: [providers/MailboxProvider.ts:25](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L25)
+Defined in: [providers/MailboxProvider.ts:25](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L25)
 
 #### Inherited from
 
@@ -61,7 +61,7 @@ Defined in: [providers/MailboxProvider.ts:25](https://github.com/isdk/mailbox.js
 
 > `protected` `optional` **\_ack**(`message`): `Promise`\<`void`\>
 
-Defined in: [providers/MailboxProvider.ts:165](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L165)
+Defined in: [providers/MailboxProvider.ts:201](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L201)
 
 [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
 For providers that don't support ACK (like in-memory), this can be an empty async function.
@@ -82,11 +82,29 @@ For providers that don't support ACK (like in-memory), this can be an empty asyn
 
 ***
 
+### \_close()?
+
+> `protected` `optional` **\_close**(): `Promise`\<`void`\>
+
+Defined in: [providers/MailboxProvider.ts:195](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L195)
+
+[Subclass Responsibility - Optional] Specific closing logic.
+
+#### Returns
+
+`Promise`\<`void`\>
+
+#### Inherited from
+
+[`MailboxProvider`](MailboxProvider.md).[`_close`](MailboxProvider.md#_close)
+
+***
+
 ### \_fetch()
 
-> `protected` **\_fetch**(`address`, `options?`): `Promise`\<`null` \| [`MailMessage`](../interfaces/MailMessage.md) \| [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<[`MailMessage`](../interfaces/MailMessage.md)\>\>
+> `protected` **\_fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<[`MailMessage`](../interfaces/MailMessage.md)\> \| `null`\>
 
-Defined in: [providers/memory.ts:168](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L168)
+Defined in: [providers/memory.ts:168](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L168)
 
 [Subclass Responsibility] Performs the actual message fetching logic.
 
@@ -108,7 +126,7 @@ Defined in: [providers/memory.ts:168](https://github.com/isdk/mailbox.js/blob/1e
 
 #### Returns
 
-`Promise`\<`null` \| [`MailMessage`](../interfaces/MailMessage.md) \| [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<[`MailMessage`](../interfaces/MailMessage.md)\>\>
+`Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<[`MailMessage`](../interfaces/MailMessage.md)\> \| `null`\>
 
 #### Overrides
 
@@ -120,7 +138,7 @@ Defined in: [providers/memory.ts:168](https://github.com/isdk/mailbox.js/blob/1e
 
 > `protected` **\_handleReceiveError**(`error`, `message`): `void`
 
-Defined in: [providers/MailboxProvider.ts:199](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L199)
+Defined in: [providers/MailboxProvider.ts:235](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L235)
 
 #### Parameters
 
@@ -146,7 +164,7 @@ Defined in: [providers/MailboxProvider.ts:199](https://github.com/isdk/mailbox.j
 
 > `protected` **\_nack**(`message`, `requeue`): `Promise`\<`void`\>
 
-Defined in: [providers/memory.ts:198](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L198)
+Defined in: [providers/memory.ts:198](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L198)
 
 [Subclass Responsibility - Optional] Provides NACK capability.
 
@@ -174,7 +192,7 @@ Defined in: [providers/memory.ts:198](https://github.com/isdk/mailbox.js/blob/1e
 
 > `protected` **\_send**(`message`): `Promise`\<`void`\>
 
-Defined in: [providers/memory.ts:145](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L145)
+Defined in: [providers/memory.ts:145](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L145)
 
 [Subclass Responsibility] Performs the actual sending logic.
 
@@ -198,7 +216,7 @@ Defined in: [providers/memory.ts:145](https://github.com/isdk/mailbox.js/blob/1e
 
 > `protected` **\_status**(`address`): `Promise`\<[`MailboxStatus`](../interfaces/MailboxStatus.md)\>
 
-Defined in: [providers/memory.ts:185](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L185)
+Defined in: [providers/memory.ts:185](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L185)
 
 [Subclass Responsibility - Optional] Performs the actual status query logic.
 
@@ -222,7 +240,7 @@ Defined in: [providers/memory.ts:185](https://github.com/isdk/mailbox.js/blob/1e
 
 > `protected` **\_subscribe**(`address`, `onReceive`): `any`
 
-Defined in: [providers/memory.ts:150](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L150)
+Defined in: [providers/memory.ts:150](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L150)
 
 [Subclass Responsibility] Performs the actual subscription logic.
 
@@ -252,7 +270,7 @@ A handle that can be used later to unsubscribe (e.g., a listener function, a sub
 
 > `protected` **\_unsubscribe**(`subscriptionId`, `unsubscribeHandle`): `Promise`\<`void`\>
 
-Defined in: [providers/memory.ts:159](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/memory.ts#L159)
+Defined in: [providers/memory.ts:159](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/memory.ts#L159)
 
 [Subclass Responsibility] Performs the actual un-subscription logic.
 
@@ -280,7 +298,7 @@ Defined in: [providers/memory.ts:159](https://github.com/isdk/mailbox.js/blob/1e
 
 > `protected` **ack**(`message`): `Promise`\<`void`\>
 
-Defined in: [providers/MailboxProvider.ts:124](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L124)
+Defined in: [providers/MailboxProvider.ts:155](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L155)
 
 #### Parameters
 
@@ -298,13 +316,32 @@ Defined in: [providers/MailboxProvider.ts:124](https://github.com/isdk/mailbox.j
 
 ***
 
+### close()
+
+> **close**(): `Promise`\<`void`\>
+
+Defined in: [providers/MailboxProvider.ts:47](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L47)
+
+关闭 Provider。
+此方法会自动取消该 Provider 下所有活跃的订阅，然后调用子类的 `_close` 进行具体清理。
+
+#### Returns
+
+`Promise`\<`void`\>
+
+#### Inherited from
+
+[`MailboxProvider`](MailboxProvider.md).[`close`](MailboxProvider.md#close)
+
+***
+
 ### fetch()
 
 #### Call Signature
 
-> **fetch**(`address`, `options`): `Promise`\<`null` \| [`AckableMailMessage`](../type-aliases/AckableMailMessage.md)\>
+> **fetch**(`address`, `options`): `Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
-Defined in: [providers/MailboxProvider.ts:95](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L95)
+Defined in: [providers/MailboxProvider.ts:126](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L126)
 
 Fetches a message.
 Delegates directly to the concrete provider's implementation.
@@ -323,7 +360,7 @@ Delegates directly to the concrete provider's implementation.
 
 ##### Returns
 
-`Promise`\<`null` \| [`AckableMailMessage`](../type-aliases/AckableMailMessage.md)\>
+`Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
 ##### Inherited from
 
@@ -331,9 +368,9 @@ Delegates directly to the concrete provider's implementation.
 
 #### Call Signature
 
-> **fetch**(`address`, `options?`): `Promise`\<`null` \| [`MailMessage`](../interfaces/MailMessage.md)\>
+> **fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| `null`\>
 
-Defined in: [providers/MailboxProvider.ts:96](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L96)
+Defined in: [providers/MailboxProvider.ts:127](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L127)
 
 Fetches a message.
 Delegates directly to the concrete provider's implementation.
@@ -352,7 +389,7 @@ Delegates directly to the concrete provider's implementation.
 
 ##### Returns
 
-`Promise`\<`null` \| [`MailMessage`](../interfaces/MailMessage.md)\>
+`Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| `null`\>
 
 ##### Inherited from
 
@@ -364,7 +401,7 @@ Delegates directly to the concrete provider's implementation.
 
 > **generateId**(): `string`
 
-Defined in: [providers/MailboxProvider.ts:120](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L120)
+Defined in: [providers/MailboxProvider.ts:151](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L151)
 
 创建一个唯一标识符。主要是用于生成邮件的 ID。
 
@@ -378,11 +415,29 @@ Defined in: [providers/MailboxProvider.ts:120](https://github.com/isdk/mailbox.j
 
 ***
 
+### init()
+
+> **init**(): `Promise`\<`void`\>
+
+Defined in: [providers/MailboxProvider.ts:39](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L39)
+
+初始化 Provider。子类可重写此方法以建立真实的连接。
+
+#### Returns
+
+`Promise`\<`void`\>
+
+#### Inherited from
+
+[`MailboxProvider`](MailboxProvider.md).[`init`](MailboxProvider.md#init)
+
+***
+
 ### nack()
 
 > `protected` **nack**(`message`, `requeue`): `Promise`\<`void`\>
 
-Defined in: [providers/MailboxProvider.ts:128](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L128)
+Defined in: [providers/MailboxProvider.ts:159](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L159)
 
 #### Parameters
 
@@ -408,7 +463,7 @@ Defined in: [providers/MailboxProvider.ts:128](https://github.com/isdk/mailbox.j
 
 > **send**(`message`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)\>
 
-Defined in: [providers/MailboxProvider.ts:41](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L41)
+Defined in: [providers/MailboxProvider.ts:72](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L72)
 
 Sends a mail message.
 This method handles common logic (like adding a timestamp and injecting x-req-sent-at for replies)
@@ -434,7 +489,7 @@ and then calls the concrete `_send` method for protocol-specific delivery.
 
 > **status**(`address`): `Promise`\<[`MailboxStatus`](../interfaces/MailboxStatus.md)\>
 
-Defined in: [providers/MailboxProvider.ts:110](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L110)
+Defined in: [providers/MailboxProvider.ts:141](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L141)
 
 Queries the status of an address.
 If the concrete provider implements `_status`, it will be called;
@@ -460,7 +515,7 @@ otherwise, a default "unknown" status is returned.
 
 > **subscribe**(`address`, `onReceive`): [`Subscription`](../interfaces/Subscription.md)
 
-Defined in: [providers/MailboxProvider.ts:59](https://github.com/isdk/mailbox.js/blob/1e8a61dbb4de95dd24f8cbd844f69aacb91df06c/src/providers/MailboxProvider.ts#L59)
+Defined in: [providers/MailboxProvider.ts:90](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/providers/MailboxProvider.ts#L90)
 
 Subscribes to an address.
 This method manages the creation and lifecycle of the subscription object,
