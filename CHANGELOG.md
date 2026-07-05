@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.0.0](https://github.com/mboxlabs/mailbox.js/compare/v0.2.0...v1.0.0) (2026-07-05)
+
+
+### Features
+
+* add lifecycle management (start/stop/init/close) across all implementations ([c16194a](https://github.com/mboxlabs/mailbox.js/commit/c16194a5b3a61150e366a8a9bc8fb587930c0012))
+* expose providers and add getProvider method ([1b1d89a](https://github.com/mboxlabs/mailbox.js/commit/1b1d89a3dcf8c4639d67b33ce584849ce57c61ef))
+* **interfaces:** refine OutgoingMail headers with detailed architectural semantics ([650c44d](https://github.com/mboxlabs/mailbox.js/commit/650c44dac3b4a70476099bced9ce825572e6e279))
+
 ## 0.2.0 (2025-11-23)
 
 
