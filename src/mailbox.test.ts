@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { Mailbox } from './mailbox';
 import { MemoryProvider } from './providers/memory';
 import type { MailMessage, AckableMailMessage, IMailboxProvider } from './interfaces';
