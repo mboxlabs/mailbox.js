@@ -152,10 +152,120 @@ flowchart LR
    ```ts
    const status = await mailbox.status('mem:service@example.com/inbox');
    console.log(`状态: ${status.state}`);
-   console.log(`未读数量: ${status.unreadCount}`);
+   console.log(`未读数量: ${status.unreadCount}`);   // 仍在队列里等待
+   console.log(`in-flight: ${status.inFlightCount}`); // 已取出、尚未 ack/nack
+   console.log(`订阅数: ${status.subscriberCount}`);
    ```
 
-   ### 2. 访问 Provider
+   `unreadCount` 只统计队列里等待的消息。用 `manualAck: true` 取出的消息已经离开队列但尚未
+   处理完，它单独计入 `inFlightCount`；如果一直不 ack，会回到队列。
+
+   ### 2. 取消息的两种方式：订阅与取回
+
+   三个动作对应三个 API，文档与代码里统一用这三个词：
+
+   | 动作 | API | 谁在做 |
+   | --- | --- | --- |
+   | **发布** | `post()` / `send()` | 生产者把一封信写进地址 |
+   | **订阅** | `subscribe()` | 消费者登记回调，消息到达时被调用 |
+   | **取回** | `fetch()` | 消费者自己主动取下一条 |
+
+   发布只是写入。一条消息只会进两个入口的**其中一个**，在 `post()` 执行那一刻定：
+
+   | `post()` 执行时地址的状态 | 消息的去向 |
+   | --- | --- |
+   | 至少有一个活跃订阅者 | 交给每个订阅者的回调；**不**入队，所以 `fetch()` 取不到 |
+   | 没有任何订阅者 | 入队；`fetch()` 能取到，订阅者收不到 |
+
+   两条路对同一条消息是互斥的：已经订阅到的消息再也取回不到；已经入队的消息也不会回放给
+   后来才订阅的人。
+
+   两条路都走会让 `unreadCount` 永远增长（订阅者从不取回），还会在退订后把已处理过的消息
+   再交给下一个取回者。
+
+   唯一的例外是回调失败：回调抛可重试错误时消息会回到队列，这时 `fetch()` 能取到——见下一节。
+
+   ```ts
+   // subscribe：消息到达时跑回调
+   const sub = mailbox.subscribe(addr, (message) => {
+     console.log(message.body);
+   });
+
+   // fetch：自己主动取下一条
+   const message = await mailbox.fetch(addr);
+   ```
+
+   ### 3. 订阅失败时
+
+   回调抛出的错误决定消息的去向：
+
+   ```ts
+   mailbox.subscribe(addr, async (message) => {
+     throw Object.assign(new Error('upstream down'), { isRetriable: true }); // → 回到队列
+   });
+
+   mailbox.subscribe(addr, async (message) => {
+     throw new Error('bad payload'); // → 丢弃，避免一条坏消息被无限重试
+   });
+   ```
+
+   可重试指 `error.isRetriable === true`，或 `error.code` 属于 `503 / 504 / ECONNRESET /
+   ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余直接
+   丢弃。Python 与 Rust 两个移植版行为一致——Rust 端回调返回 `Result<()>`，由
+   `MailboxError::is_retriable()` 做同样的判定。
+
+   ### 4. 订阅重试（opt-in）
+
+   默认行为下，可重试失败只是把消息退回队列：没有任何东西会再次调用订阅回调，后续怎么办由
+   `fetch()` 消费者决定。想让库自己重投，就显式开启重试：
+
+   ```ts
+   import { MemoryProvider } from '@mboxlabs/mailbox';
+
+   const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }); // 毫秒
+   mailbox.registerProvider(provider);
+   ```
+
+   | | 默认（不传 `retry`） | 传入策略 |
+   |---|---|---|
+   | 可重试失败 | 回队一次，由 `fetch()` 取回 | 按指数退避重新调用回调 |
+   | 尝试次数 | 1 | `maxAttempts`（含首次） |
+   | 次数耗尽 | — | 消息退回队列，由 `fetch()` 取回 |
+
+   两条规则保证它不会造成重复投递：
+
+   - **只重投给失败的那个订阅者。** 订阅是广播；重新广播会让已经成功的订阅者把副作用再跑
+     一次。
+   - **同一条消息不会在队列里出现两份。** `requeue()` 遇到已在队列或已在 in-flight 的消息就
+     跳过，因此 N 个订阅者各自失败也只留一份副本。
+
+   重试是 opt-in 的，因为 AMQP / SQS 这类传输本身就会重投、还自带死信队列，库再重投就是双重
+   投递；自己负责投递的 provider 应当保持关闭。`provider.setRetryPolicy(null)` 回到默认行为，
+   子类可以用 `_onRetryExhausted` 钩子做死信落库或告警。
+
+   Python 端是 `RetryPolicy(max_attempts=3, base_delay=1.0)`（单位：秒），Rust 端是
+   `MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`。
+
+   策略本身也是导出的：`RetryPolicy`、`isRetriableError`、`nextRetryDelay`、`AttemptLedger`——
+   其他包（比如 RPC 传输层）可以直接复用同一套「可重试判定 + 退避」，不必各写一份。
+
+   ### 5. ACK 超时
+
+   `fetch(address, { manualAck: true })` 会把消息置为 in-flight。没有超时的话，崩溃的消费者会
+   永久泄漏这条消息，因此未 ack 的消息默认在 `DEFAULT_ACK_TIMEOUT`（30 秒）后重新入队：
+
+   ```ts
+   import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox';
+
+   await mailbox.fetch(addr, { manualAck: true });                    // 默认 30 秒
+   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }); // 自定义
+   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 });     // 永不重投
+   ```
+
+   Python（`ack_timeout`，`0` = 永不重投）与 Rust（`ack_timeout: Option<Duration>`，
+   `Some(Duration::ZERO)` = 永不重投）两个移植版保持同样的三态语义。
+
+   ### 6. 访问 Provider
 
    你可以通过 `providers` Getter 或 `getProvider` 方法优雅地访问已注册的 Provider：
 

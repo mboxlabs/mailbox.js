@@ -39,6 +39,10 @@
     ```shell
     pnpm test
     pnpm style
+
+    # Python 与 Rust 移植版各自带测试套件；改动涉及三端共有的行为时一并跑
+    (cd python && python3 -m pytest -q)
+    (cd rust && cargo test)
     ```
 
 5. **提交代码**：遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范进行提交。
@@ -60,6 +64,10 @@
 ## 🧪 测试要求
 
 我们使用 [Vitest](https://vitest.dev/) 进行单元测试。
+
+本包同时发布三个移植版：Python 端用 `pytest`（在 `python/` 下跑 `python3 -m pytest -q`），
+Rust 端用 `cargo test`（在 `rust/` 下）。投递语义——订阅与取回二选一、ack/nack 与 in-flight
+超时、回队去重、opt-in 的订阅重试——在三端都有定义，因此改动它们必须在三端都补上对应测试。
 
 ### 必须覆盖的场景
 
