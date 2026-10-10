@@ -6,7 +6,7 @@
 
 # Interface: MailMessage
 
-Defined in: [interfaces.ts:58](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L58)
+Defined in: [interfaces.ts:58](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L58)
 
 代表一封在系统内传递的、带有唯一标识的规范信件。
 这是在 Mailbox 与 Provider 之间传递的主要对象。
@@ -22,7 +22,7 @@ Defined in: [interfaces.ts:58](https://github.com/isdk/mailbox.js/blob/9df3fcab2
 
 > **body**: `any`
 
-Defined in: [interfaces.ts:25](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L25)
+Defined in: [interfaces.ts:25](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L25)
 
 #### Inherited from
 
@@ -34,7 +34,7 @@ Defined in: [interfaces.ts:25](https://github.com/isdk/mailbox.js/blob/9df3fcab2
 
 > `readonly` **from**: `URL`
 
-Defined in: [interfaces.ts:60](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L60)
+Defined in: [interfaces.ts:60](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L60)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [interfaces.ts:60](https://github.com/isdk/mailbox.js/blob/9df3fcab2
 
 > `optional` **headers?**: `object`
 
-Defined in: [interfaces.ts:39](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L39)
+Defined in: [interfaces.ts:39](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L39)
 
 Mailbox 框架及其生态约定的控制信息（控制平面），用于指导消息的传输、路由、认证和关联。
 
@@ -86,7 +86,7 @@ Mailbox 框架及其生态约定的控制信息（控制平面），用于指导
 
 > `readonly` **id**: `string`
 
-Defined in: [interfaces.ts:59](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L59)
+Defined in: [interfaces.ts:59](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L59)
 
 消息的物理唯一标识。如果未提供，Mailbox 将自动生成。
 
@@ -103,7 +103,7 @@ Defined in: [interfaces.ts:59](https://github.com/isdk/mailbox.js/blob/9df3fcab2
 
 > `optional` **meta?**: `object`
 
-Defined in: [interfaces.ts:50](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L50)
+Defined in: [interfaces.ts:50](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L50)
 
 本邮件消息的附加数据（邮件的数据平面），是消息的业务内容的补充元信息，由业务应用自定义和使用。
 系统只负责透传，不进行解析和干预。本质上是邮件的一部分。
@@ -122,4 +122,4 @@ Defined in: [interfaces.ts:50](https://github.com/isdk/mailbox.js/blob/9df3fcab2
 
 > `readonly` **to**: `URL`
 
-Defined in: [interfaces.ts:61](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L61)
+Defined in: [interfaces.ts:61](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L61)

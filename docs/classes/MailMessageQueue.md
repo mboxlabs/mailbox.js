@@ -6,26 +6,13 @@
 
 # Class: MailMessageQueue\<T\>
 
-Defined in: [lib/MessageQueue.ts:33](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L33)
-
-A generic, in-memory message queue that supports topic-based queuing and manual acknowledgement.
-
-This class provides a reliable queuing mechanism for producer-consumer patterns where consumers
-might fail and need to retry messages. It features:
-- Topic-based separation of queues.
-- FIFO (First-In, First-Out) message delivery.
-- Auto-acknowledgement mode (fire-and-forget).
-- Manual acknowledgement mode, which places messages "in-flight" until they are explicitly
-  acknowledged (`ack`) or negatively acknowledged (`nack`).
-- Timeout-based requeueing for stale in-flight messages to prevent message loss.
+Defined in: [lib/MessageQueue.ts:42](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L42)
 
 ## Type Parameters
 
 ### T
 
 `T` *extends* `object`
-
-The type of messages in the queue. Must have an `id` property of type string.
 
 ## Constructors
 
@@ -43,7 +30,7 @@ The type of messages in the queue. Must have an `id` property of type string.
 
 > **ack**(`messageId`): `void`
 
-Defined in: [lib/MessageQueue.ts:112](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L112)
+Defined in: [lib/MessageQueue.ts:128](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L128)
 
 Acknowledges a message, permanently removing it from the in-flight state.
 
@@ -67,7 +54,7 @@ The ID of the message to acknowledge.
 
 > **dequeue**(`topic`, `options`): [`MailMessageAckable`](../type-aliases/MailMessageAckable.md)\<`T`\> \| `null`
 
-Defined in: [lib/MessageQueue.ts:65](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L65)
+Defined in: [lib/MessageQueue.ts:76](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L76)
 
 Dequeues a message from the front of a specific topic's queue.
 
@@ -88,12 +75,14 @@ The topic from which to dequeue a message.
 
 Options for the dequeue operation.
 
-###### ackTimeout
+###### ackTimeout?
 
-`number`
+`number` \| `null`
 
 In manual-ack mode, the time in milliseconds after which an
   unacknowledged message is considered stale and will be requeued on the next dequeue.
+  Omitted (or negative) falls back to [DEFAULT\_ACK\_TIMEOUT](../variables/DEFAULT_ACK_TIMEOUT.md); `0` or `null` disables the
+  stale check entirely (the message stays in-flight until it is ack'd or nack'd).
 
 ###### manualAck
 
@@ -111,7 +100,7 @@ An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or 
 
 > **dequeue**(`topic`, `options?`): `T` \| `null`
 
-Defined in: [lib/MessageQueue.ts:69](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L69)
+Defined in: [lib/MessageQueue.ts:80](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L80)
 
 Dequeues a message from the front of a specific topic's queue.
 
@@ -150,7 +139,7 @@ An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or 
 
 > **enqueue**(`topic`, `message`): `void`
 
-Defined in: [lib/MessageQueue.ts:43](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L43)
+Defined in: [lib/MessageQueue.ts:52](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L52)
 
 Adds a message to the end of a specific topic's queue.
 
@@ -178,7 +167,7 @@ The message to enqueue.
 
 > **getStatus**(`topic`): `object`
 
-Defined in: [lib/MessageQueue.ts:139](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L139)
+Defined in: [lib/MessageQueue.ts:157](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L157)
 
 Gets the current status of a topic's queue.
 
@@ -194,7 +183,13 @@ The topic to query.
 
 `object`
 
-An object containing status information, like the number of unread messages.
+An object containing status information: `unreadCount` (waiting in the queue)
+  and `inFlightCount` (handed to consumers, awaiting ack/nack). Only `unreadCount` is
+  safe to treat as "delivered"; in-flight messages will come back if they are never ack'd.
+
+##### inFlightCount
+
+> **inFlightCount**: `number`
 
 ##### unreadCount
 
@@ -202,11 +197,31 @@ An object containing status information, like the number of unread messages.
 
 ***
 
+### has()
+
+> **has**(`messageId`): `boolean`
+
+Defined in: [lib/MessageQueue.ts:200](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L200)
+
+判断某个消息是否已在队列中等待或已被取走（in-flight）。
+
+#### Parameters
+
+##### messageId
+
+`string`
+
+#### Returns
+
+`boolean`
+
+***
+
 ### nack()
 
 > **nack**(`messageId`, `topic`, `requeue`): `void`
 
-Defined in: [lib/MessageQueue.ts:123](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L123)
+Defined in: [lib/MessageQueue.ts:139](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L139)
 
 Negatively acknowledges a message, removing it from the in-flight state.
 If `requeue` is true, the message is added back to the front of its original queue.
@@ -234,3 +249,37 @@ If true, the message is re-added to the front of the queue.
 #### Returns
 
 `void`
+
+***
+
+### requeue()
+
+> **requeue**(`topic`, `message`): `boolean`
+
+Defined in: [lib/MessageQueue.ts:182](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L182)
+
+Adds a message back to the front of its queue. Used for requeueing.
+
+去重：同一个 `id` 已经在该 topic 队列里、或已被某个消费者取走（in-flight）时，
+不再插入副本。一个地址有多个订阅者时，每个失败的订阅者都会触发一次 nack(requeue)；
+不去重就会在队列里留下 N 份同一消息（实测：2 个订阅者失败 → `unreadCount` 为 2）。
+
+#### Parameters
+
+##### topic
+
+`string`
+
+The topic of the queue.
+
+##### message
+
+`T`
+
+The message to requeue.
+
+#### Returns
+
+`boolean`
+
+true 如果消息确实回到队列；false 如果因为重复而跳过。

@@ -8,7 +8,7 @@
 
 > **MailMessageAckable**\<`T`\> = `T` & `object`
 
-Defined in: [lib/MessageQueue.ts:7](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/lib/MessageQueue.ts#L7)
+Defined in: [lib/MessageQueue.ts:7](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L7)
 
 Represents a message that can be manually acknowledged or negatively acknowledged.
 

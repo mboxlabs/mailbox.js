@@ -39,6 +39,11 @@ Based on your interests and experience, you can start with any of the following:
     ```shell
     pnpm test
     pnpm style
+
+    # The Python and Rust ports ship their own suites; run them too when you touch
+    # behaviour shared across the three implementations
+    (cd python && python3 -m pytest -q)
+    (cd rust && cargo test)
     ```
 
 5. **Commit your code**: Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
@@ -60,6 +65,11 @@ The project uses Prettier and ESLint to enforce a consistent code style. Before 
 ## 🧪 Testing Requirements
 
 We use [Vitest](https://vitest.dev/) for unit testing.
+
+This package ships three ports. The Python port is covered by `pytest` (`python3 -m pytest -q`
+inside `python/`) and the Rust port by `cargo test` (inside `rust/`). Delivery semantics —
+subscribe versus fetch, ack/nack and in-flight timeouts, requeue deduplication, and the opt-in
+retry policy — are specified in all three, so changing them requires matching tests in each.
 
 ### Required Coverage
 

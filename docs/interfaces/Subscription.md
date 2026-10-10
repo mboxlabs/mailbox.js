@@ -6,7 +6,7 @@
 
 # Interface: Subscription
 
-Defined in: [interfaces.ts:4](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L4)
+Defined in: [interfaces.ts:4](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L4)
 
 代表一个活跃的订阅会话。
 
@@ -16,7 +16,7 @@ Defined in: [interfaces.ts:4](https://github.com/isdk/mailbox.js/blob/9df3fcab29
 
 > `readonly` **address**: `URL`
 
-Defined in: [interfaces.ts:6](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L6)
+Defined in: [interfaces.ts:6](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L6)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [interfaces.ts:6](https://github.com/isdk/mailbox.js/blob/9df3fcab29
 
 > `readonly` **id**: `string`
 
-Defined in: [interfaces.ts:5](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L5)
+Defined in: [interfaces.ts:5](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L5)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [interfaces.ts:5](https://github.com/isdk/mailbox.js/blob/9df3fcab29
 
 > **status**: `"active"` \| `"connecting"` \| `"paused"` \| `"closed"`
 
-Defined in: [interfaces.ts:7](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L7)
+Defined in: [interfaces.ts:7](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L7)
 
 ## Methods
 
@@ -40,7 +40,7 @@ Defined in: [interfaces.ts:7](https://github.com/isdk/mailbox.js/blob/9df3fcab29
 
 > **unsubscribe**(): `Promise`\<`void`\>
 
-Defined in: [interfaces.ts:8](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L8)
+Defined in: [interfaces.ts:8](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L8)
 
 #### Returns
 

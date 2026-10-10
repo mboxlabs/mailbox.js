@@ -6,7 +6,7 @@
 
 # Interface: Ackable
 
-Defined in: [interfaces.ts:67](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L67)
+Defined in: [interfaces.ts:67](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L67)
 
 代表一个可被手动确认或拒绝的信件。
 
@@ -16,7 +16,7 @@ Defined in: [interfaces.ts:67](https://github.com/isdk/mailbox.js/blob/9df3fcab2
 
 > **ack**(): `Promise`\<`void`\>
 
-Defined in: [interfaces.ts:72](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L72)
+Defined in: [interfaces.ts:72](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L72)
 
 确认消息已被成功处理。
 Provider 将会通知消息队列彻底删除此消息。
@@ -31,7 +31,7 @@ Provider 将会通知消息队列彻底删除此消息。
 
 > **nack**(`requeue?`): `Promise`\<`void`\>
 
-Defined in: [interfaces.ts:79](https://github.com/isdk/mailbox.js/blob/9df3fcab2962ca4d6c19cdd4e424c87817029df8/src/interfaces.ts#L79)
+Defined in: [interfaces.ts:79](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/interfaces.ts#L79)
 
 拒绝消息。
 

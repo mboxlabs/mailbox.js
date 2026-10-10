@@ -155,10 +155,128 @@ This example demonstrates the basic loop of Mailbox: **Initialize -> Start -> Su
 ```ts
 const status = await mailbox.status('mem:service@example.com/inbox');
 console.log(`State: ${status.state}`);
-console.log(`Unread count: ${status.unreadCount}`);
+console.log(`Unread count: ${status.unreadCount}`);   // still waiting in the queue
+console.log(`In flight: ${status.inFlightCount}`);    // handed out, awaiting ack/nack
+console.log(`Subscribers: ${status.subscriberCount}`);
 ```
 
-### 2. Accessing Providers
+`unreadCount` only counts messages still waiting in the queue. A message taken with
+`manualAck: true` has left the queue but is not yet processed — it is reported separately as
+`inFlightCount`, and it returns to the queue if it is never acknowledged.
+
+### 2. Receiving mail: `subscribe` vs `fetch`
+
+Three verbs, three APIs — use these words consistently:
+
+| Verb | API | Who acts |
+| --- | --- | --- |
+| publish | `post()` / `send()` | the producer writes a message to an address |
+| subscribe | `subscribe()` | the consumer registers a callback; it runs when mail arrives |
+| fetch | `fetch()` | the consumer asks for the next message itself |
+
+Publishing only writes. A published message goes to **one** of the two receiving paths,
+decided at the moment `post()` runs:
+
+| State of the address when `post()` runs | Where the message goes |
+| --- | --- |
+| At least one active subscriber | handed to every subscriber's callback; **not** queued, so `fetch()` gets nothing |
+| No subscriber | queued; `fetch()` gets it, subscribers get nothing |
+
+The two paths are mutually exclusive per message: a message that was handed to a subscriber
+can never be fetched, and a message that is already queued is never replayed to a subscriber
+that appears later.
+
+Firing both paths would make `unreadCount` grow forever (subscribers never call `fetch`) and
+would hand an already-processed message to the next `fetch()` after an unsubscribe.
+
+The one exception is a failing callback: if it throws a retriable error, the message goes back
+to the queue, where `fetch()` can pick it up — see below.
+
+```ts
+// subscribe: the callback runs when mail arrives
+const sub = mailbox.subscribe(addr, (message) => {
+  console.log(message.body);
+});
+
+// fetch: you ask for the next message yourself
+const message = await mailbox.fetch(addr);
+```
+
+### 3. When a subscriber fails
+
+The callback's error decides what happens to the message:
+
+```ts
+mailbox.subscribe(addr, async (message) => {
+  throw Object.assign(new Error('upstream down'), { isRetriable: true }); // → back to the queue
+});
+
+mailbox.subscribe(addr, async (message) => {
+  throw new Error('bad payload'); // → dropped, so one bad message is not retried forever
+});
+```
+
+Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / ECONNRESET /
+ETIMEDOUT`. A retriable failure requeues the message (visible in `unreadCount`, retrievable
+with `fetch()`); anything else is discarded. The Python and Rust ports behave the same way —
+in Rust the callback returns `Result<()>` and `MailboxError::is_retriable()` makes the call.
+
+### 4. Retrying a failed subscriber (opt-in)
+
+By default a retriable failure only goes back to the queue: nothing calls the callback again,
+and a `fetch()` consumer decides what happens next. Opt into automatic redelivery when you
+want the library to retry the callback itself:
+
+```ts
+import { MemoryProvider } from '@mboxlabs/mailbox';
+
+const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }); // milliseconds
+mailbox.registerProvider(provider);
+```
+
+| | Default (`retry` omitted) | With a policy |
+|---|---|---|
+| Retriable failure | requeued once; `fetch()` picks it up | callback re-invoked with exponential backoff |
+| Attempts | 1 | `maxAttempts`, first try included |
+| Budget exhausted | — | message requeued, `fetch()` picks it up |
+
+Two rules keep this safe:
+
+- **Only the failing subscriber is retried.** Subscribing is a broadcast; re-broadcasting
+  would run the side effects of the subscribers that already succeeded a second time.
+- **A message is never queued twice.** `requeue()` skips a message that is already queued or
+  in flight, so N failing subscribers leave exactly one copy in the queue.
+
+Retry is opt-in because AMQP / SQS style transports already redeliver and ship dead-letter
+queues — retrying on top of them would double-deliver. Providers that own redelivery should
+leave it off. `provider.setRetryPolicy(null)` returns to the default, and the
+`_onRetryExhausted` hook is where a subclass can dead-letter or alert.
+
+The same policy exists in Python (`RetryPolicy(max_attempts=3, base_delay=1.0)`, seconds) and
+Rust (`MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`).
+
+The policy math is exported as well — `RetryPolicy`, `isRetriableError`, `nextRetryDelay`,
+`AttemptLedger` — so another package (an RPC transport, say) can reuse the same retriable check
+and backoff instead of writing its own.
+
+### 5. Acknowledgement Timeouts
+
+`fetch(address, { manualAck: true })` moves the message to the in-flight state. Without a
+timeout a crashed consumer leaks the message forever, so an unacknowledged message is
+requeued after `DEFAULT_ACK_TIMEOUT` (30s) by default:
+
+```ts
+import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox';
+
+await mailbox.fetch(addr, { manualAck: true });                    // 30s default
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }); // custom
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 });     // never requeue
+```
+
+The same three-state semantics applies to the Python (`ack_timeout`, `0` = never requeue)
+and Rust (`ack_timeout: Option<Duration>`, `Some(Duration::ZERO)` = never requeue) ports.
+
+### 6. Accessing Providers
 
 You can gracefully access registered providers via the `providers` getter or `getProvider` method:
 
@@ -199,7 +317,7 @@ For robust production systems, explicit lifecycle management is crucial:
 
 - [Erlang Inspiration Deep Dive](erlang-inspiration.md)
 - [5 Real-world Scenario Examples](examples.md)
-- [API Reference](docs/)
+- [API Reference](_media/docs)
 
 ## 🤝 Contributing
 
