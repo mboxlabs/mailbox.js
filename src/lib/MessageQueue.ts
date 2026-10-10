@@ -30,6 +30,15 @@ export type MailMessageAckable<T> = T & {
  *
  * @template T The type of messages in the queue. Must have an `id` property of type string.
  */
+/**
+ * 手动 ACK 模式下未显式指定 `ackTimeout` 时使用的默认超时（毫秒）。
+ *
+ * in-flight 消息必须有界：否则消费者崩溃后既取不回来、也不会在状态里可见，
+ * 等于静默丢失。传 0（或 null）可以显式关闭超时，消息常驻 in-flight 直到 ack/nack。
+ * 该缺省值与 `ackTimeout` 的三态语义在 TS / Python / Rust 三端保持一致。
+ */
+export const DEFAULT_ACK_TIMEOUT = 30_000;
+
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
   // Stores in-flight messages with their original topic for reliable requeueing.
@@ -60,11 +69,13 @@ export class MailMessageQueue<T extends { id: string }> {
    * @param options.manualAck If true, enables manual acknowledgement mode. Defaults to false.
    * @param options.ackTimeout In manual-ack mode, the time in milliseconds after which an
    *   unacknowledged message is considered stale and will be requeued on the next dequeue.
+   *   Omitted (or negative) falls back to {@link DEFAULT_ACK_TIMEOUT}; `0` or `null` disables the
+   *   stale check entirely (the message stays in-flight until it is ack'd or nack'd).
    * @returns An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or `null` if the queue is empty.
    */
   public dequeue(
     topic: string,
-    options: { manualAck: true; ackTimeout: number }
+    options: { manualAck: true; ackTimeout?: number | null }
   ): MailMessageAckable<T> | null;
   public dequeue(
     topic: string,
@@ -72,11 +83,16 @@ export class MailMessageQueue<T extends { id: string }> {
   ): T | null;
   public dequeue(
     topic: string,
-    options?: { manualAck?: boolean; ackTimeout?: number }
+    options?: { manualAck?: boolean; ackTimeout?: number | null }
   ): T | MailMessageAckable<T> | null {
-    // Requeue stale messages if manualAck is enabled and timeout is provided
-    if (options?.manualAck && options?.ackTimeout) {
-      this.requeueStale(topic, options.ackTimeout);
+    // Requeue stale messages whenever manual-ack mode is used. A missing timeout must not
+    // mean "never requeue": that leaked the message forever (invisible in status, unrecoverable).
+    if (options?.manualAck) {
+      const timeout = options.ackTimeout;
+      // 0 / null 是显式关闭 stale 扫描的出口；缺省则用 DEFAULT_ACK_TIMEOUT，不再当作“永不超时”。
+      if (timeout !== null && timeout !== 0) {
+        this.requeueStale(topic, timeout && timeout > 0 ? timeout : DEFAULT_ACK_TIMEOUT);
+      }
     }
 
     const messages = this.queues.get(topic);
@@ -134,25 +150,63 @@ export class MailMessageQueue<T extends { id: string }> {
   /**
    * Gets the current status of a topic's queue.
    * @param topic The topic to query.
-   * @returns An object containing status information, like the number of unread messages.
+   * @returns An object containing status information: `unreadCount` (waiting in the queue)
+   *   and `inFlightCount` (handed to consumers, awaiting ack/nack). Only `unreadCount` is
+   *   safe to treat as "delivered"; in-flight messages will come back if they are never ack'd.
    */
-  public getStatus(topic: string): { unreadCount: number } {
+  public getStatus(topic: string): { unreadCount: number; inFlightCount: number } {
     const queue = this.queues.get(topic) || [];
+    let inFlightCount = 0;
+    for (const { topic: messageTopic } of this.inFlight.values()) {
+      if (messageTopic === topic) {
+        inFlightCount++;
+      }
+    }
     return {
       unreadCount: queue.length,
+      inFlightCount,
     };
   }
 
   /**
    * Adds a message back to the front of its queue. Used for requeueing.
+   *
+   * 去重：同一个 `id` 已经在该 topic 队列里、或已被某个消费者取走（in-flight）时，
+   * 不再插入副本。一个地址有多个订阅者时，每个失败的订阅者都会触发一次 nack(requeue)；
+   * 不去重就会在队列里留下 N 份同一消息（实测：2 个订阅者失败 → `unreadCount` 为 2）。
+   *
    * @param topic The topic of the queue.
    * @param message The message to requeue.
+   * @returns true 如果消息确实回到队列；false 如果因为重复而跳过。
    */
-  private requeue(topic: string, message: T): void {
-    if (!this.queues.has(topic)) {
+  public requeue(topic: string, message: T): boolean {
+    if (this.inFlight.has(message.id)) {
+      return false; // 已有消费者在处理，再插一份就是重复投递
+    }
+    const queue = this.queues.get(topic);
+    if (queue && queue.some((queued) => queued.id === message.id)) {
+      return false; // 已在队列里等待，不需要第二份
+    }
+    if (!queue) {
       this.queues.set(topic, []);
     }
     this.queues.get(topic)!.unshift(message); // Add back to the front
+    return true;
+  }
+
+  /**
+   * 判断某个消息是否已在队列中等待或已被取走（in-flight）。
+   */
+  public has(messageId: string): boolean {
+    if (this.inFlight.has(messageId)) {
+      return true;
+    }
+    for (const queue of this.queues.values()) {
+      if (queue.some((queued) => queued.id === messageId)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

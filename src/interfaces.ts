@@ -90,9 +90,17 @@ export interface MailboxStatus {
    */
   state: 'online' | 'offline' | 'degraded' | 'unknown';
   /**
-   * 队列中未被消费的消息数量。
+   * 队列中未被消费的消息数量（不包含 in-flight）。
    */
   unreadCount?: number;
+
+  /**
+   * 已交给消费者、尚未 ack/nack 的消息数量。
+   *
+   * 不计入 `unreadCount`，否则卡在 in-flight 的消息在状态里完全隐形。
+   * 这些消息超过 ack 超时后会被重新入队。
+   */
+  inFlightCount?: number;
   /**
    * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)。
    */

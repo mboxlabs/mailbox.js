@@ -6,6 +6,13 @@ import {
   AckableMailMessage,
   MailboxStatus,
 } from '../interfaces';
+import {
+  RetryPolicy,
+  AttemptLedger,
+  isRetriableError,
+  nextRetryDelay,
+  resolveRetryPolicy,
+} from '../lib/retry';
 
 /**
  * Represents a subscription record managed internally by the MailboxProvider.
@@ -20,15 +27,36 @@ interface ManagedSubscription {
   unsubscribeHandle?: any;
 }
 
+type PendingRetryTimer = ReturnType<typeof setTimeout>;
+
 export abstract class MailboxProvider implements IMailboxProvider {
   public readonly protocol: string;
   protected readonly subscriptions: Map<string, ManagedSubscription> = new Map();
 
-  constructor(protocol: string) {
+  /**
+   * 订阅失败后的重试策略。`null` 表示不重试（默认）：可重试失败只把消息退回队列，
+   * 由 `fetch()` 兜底。重试是 opt-in 的，因为 AMQP / SQS 这类传输自带重投与死信，
+   * 库再重投就是双重投递。
+   */
+  protected retry: Required<RetryPolicy> | null = null;
+
+  /** 按「订阅者 + 消息」记账尝试次数；订阅是广播，不能混在一起算。 */
+  private readonly attempts = new AttemptLedger();
+  private readonly pendingRetries: Map<string, Map<PendingRetryTimer, MailMessage>> = new Map();
+
+  constructor(protocol: string, retry?: RetryPolicy | null) {
     if (!protocol) {
       throw new Error('Provider protocol cannot be empty.');
     }
     this.protocol = protocol;
+    this.retry = resolveRetryPolicy(retry);
+  }
+
+  /**
+   * 开启 / 关闭订阅重试。传 `null` 回到默认行为（失败只回队、不自动重投）。
+   */
+  public setRetryPolicy(policy: RetryPolicy | null | undefined): void {
+    this.retry = resolveRetryPolicy(policy);
   }
 
   // --- Public API (implements IMailboxProvider) ---
@@ -59,6 +87,12 @@ export abstract class MailboxProvider implements IMailboxProvider {
       );
       this.subscriptions.clear();
     }
+
+    // 关闭时取消所有待重投：进程都在收尾，不再把消息重新喂回回调。
+    for (const subId of Array.from(this.pendingRetries.keys())) {
+      this._cancelPendingRetries(subId);
+    }
+    this.attempts.clear();
 
     // 2. 调用具体的清理逻辑
     await this._close?.();
@@ -99,9 +133,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
         await onReceive(message);
         // On successful execution, implicitly acknowledge the message.
         await this.ack(message);
+        this.attempts.reset(subId, message.id);
       } catch (error) {
         // Handle the error according to the defined strategy.
-        this._handleReceiveError(error, message);
+        this._handleReceiveError(error, message, this.subscriptions.get(subId));
       }
     };
 
@@ -225,6 +260,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
         // Use the captured `provider` context.
         const sub = provider.subscriptions.get(subId);
         if (sub) {
+          provider._cancelPendingRetries(subId);
           await provider._unsubscribe(sub.id, sub.unsubscribeHandle);
           provider.subscriptions.delete(subId);
         }
@@ -232,10 +268,50 @@ export abstract class MailboxProvider implements IMailboxProvider {
     };
   }
 
-  protected _handleReceiveError(error: any, message: MailMessage): void {
+  /**
+   * 订阅回调抛错时的统一处理。
+   *
+   * 默认（`retry === null`）：可重试 → `nack(requeue=true)` 退回队列；不可重试 → 丢弃。
+   * 开启重试后：可重试且未超上限 → 只重投给失败的那个订阅者（不广播给其他已成功的订阅者，
+   * 否则它们的副作用会被执行两次）；超上限 → 清零台账、调 `_onRetryExhausted`，再退回队列
+   * 交给 `fetch()` 兜底。
+   */
+  protected _handleReceiveError(error: any, message: MailMessage, sub?: ManagedSubscription): void {
     console.error(`[${this.protocol}] Error processing message ${message.id}:`, error);
 
     const isRetriable = this._isRetriable(error);
+
+    if (isRetriable && this.retry && sub) {
+      const attempt = this.attempts.record(sub.id, message.id);
+
+      if (attempt < this.retry.maxAttempts && this.subscriptions.has(sub.id)) {
+        const delay = nextRetryDelay(this.retry, attempt);
+        const timer = setTimeout(() => {
+          const pending = this.pendingRetries.get(sub.id);
+          if (pending) {
+            pending.delete(timer);
+          }
+          if (!this.subscriptions.has(sub.id)) {
+            // 等待期间退订了：不重投给已消失的订阅者，退回队列而不是静默丢掉。
+            this.nack(message, true).catch(() => undefined);
+            return;
+          }
+          void sub.wrappedOnReceive(message);
+        }, delay);
+        // 不要因为一个待重投就把 Node 事件循环撑住。
+        (timer as unknown as { unref?: () => void }).unref?.();
+        if (!this.pendingRetries.has(sub.id)) {
+          this.pendingRetries.set(sub.id, new Map());
+        }
+        this.pendingRetries.get(sub.id)!.set(timer, message);
+        return;
+      }
+
+      if (attempt >= this.retry.maxAttempts) {
+        this.attempts.reset(sub.id, message.id);
+        this._onRetryExhausted?.(message, attempt);
+      }
+    }
 
     // Crucial: NACK the message first to prevent reprocessing, then handle other tasks.
     this.nack(message, isRetriable)
@@ -244,13 +320,30 @@ export abstract class MailboxProvider implements IMailboxProvider {
       });
   }
 
-  private _isRetriable(error: any): boolean {
-    if (error) {
-      if (error.isRetriable === true) return true;
-      if (error.code && [503, 504, 'ECONNRESET', 'ETIMEDOUT'].includes(error.code)) {
-        return true;
-      }
+  /**
+   * [Subclass Responsibility - Optional] 重试次数耗尽时的钩子（例如写死信队列 / 告警）。
+   * 调用后消息仍会退回队列，由 `fetch()` 兜底。
+   */
+  protected _onRetryExhausted?(message: MailMessage, attempts: number): void;
+
+  /**
+   * 取消某个订阅者的待重投。
+   *
+   * 取消定时器不等于消息可以消失：每一条被取消的重投都退回队列，由 `fetch()` 兜底。
+   */
+  private _cancelPendingRetries(subscriptionId: string): void {
+    const pending = this.pendingRetries.get(subscriptionId);
+    if (!pending) {
+      return;
     }
-    return false;
+    for (const [timer, message] of pending) {
+      clearTimeout(timer);
+      this.nack(message, true).catch(() => undefined);
+    }
+    this.pendingRetries.delete(subscriptionId);
+  }
+
+  protected _isRetriable(error: any): boolean {
+    return isRetriableError(error);
   }
 }
