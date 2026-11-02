@@ -8,12 +8,12 @@
 
 ## 🌟 为什么 Mailbox？
 
-| 传统方式 | Mailbox 方式 |
-|----------|--------------|
-| ❌ 共享状态 + 锁 | ✅ 独立邮箱 + 消息 |
-| ❌ 回调地狱 | ✅ `async/await` 无缝衔接 |
-| ❌ 人机协作复杂 | ✅ 人 = 一个邮箱地址 |
-| ❌ 离线场景难处理 | ✅ 消息自动缓冲重试 |
+| 传统方式          | Mailbox 方式              |
+| ----------------- | ------------------------- |
+| ❌ 共享状态 + 锁  | ✅ 独立邮箱 + 消息        |
+| ❌ 回调地狱       | ✅ `async/await` 无缝衔接 |
+| ❌ 人机协作复杂   | ✅ 人 = 一个邮箱地址      |
+| ❌ 离线场景难处理 | ✅ 消息自动缓冲重试       |
 
 ### Erlang 灵感
 
@@ -25,11 +25,11 @@
 
 Mailbox **深受 Erlang Actor 模型启发**，但我们做了关键演进：
 
-| Erlang (1986) | Mailbox (Today) | 为什么重要 |
-|---------------|-----------------|------------|
-| `Pid ! Message` | `send({ to: 'protocol://address' })` | **地址即身份，协议即路由**：`address` 部分是邮箱的唯一 ID。`protocol`（例如 `mem`, `mailto`）决定路由方式。同一地址可通过不同协议访问。 |
-| 进程内 FIFO 邮箱 | Provider 可插拔 | **传输无关**：内存/邮件/Wechat/Mastodon 无缝切换 |
-| 同一节点内通信 | 跨网络、跨组织 | **真正分布式**：人类和机器平等参与 |
+| Erlang (1986)    | Mailbox (Today)                      | 为什么重要                                                                                                                              |
+| ---------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Pid ! Message`  | `send({ to: 'protocol://address' })` | **地址即身份，协议即路由**：`address` 部分是邮箱的唯一 ID。`protocol`（例如 `mem`, `mailto`）决定路由方式。同一地址可通过不同协议访问。 |
+| 进程内 FIFO 邮箱 | Provider 可插拔                      | **传输无关**：内存/邮件/Wechat/Mastodon 无缝切换                                                                                        |
+| 同一节点内通信   | 跨网络、跨组织                       | **真正分布式**：人类和机器平等参与                                                                                                      |
 
 > 💡 **我们的定位**：
 > **不是 Erlang 的 JavaScript 复刻，而是 Actor 思想的现代化表达** ——
@@ -39,12 +39,12 @@ Mailbox **深受 Erlang Actor 模型启发**，但我们做了关键演进：
 
 ### 📮 我们解决了什么？
 
-| 传统世界 | Mailbox 世界 |
-|----------|--------------|
-| ❌ “服务必须在线才能调用” | ✅ **投递即成功** —— 不关心对方状态 |
-| ❌ “人类必须实时响应” | ✅ **人类 = 一个地址** —— 按自己节奏处理 |
-| ❌ “跨组织协作需要 API 对接” | ✅ **电子邮件就是 API** —— 零集成成本 |
-| ❌ “移动端离线 = 功能瘫痪” | ✅ **离线是常态** —— 消息自动缓冲等待 |
+| 传统世界                     | Mailbox 世界                             |
+| ---------------------------- | ---------------------------------------- |
+| ❌ “服务必须在线才能调用”    | ✅ **投递即成功** —— 不关心对方状态      |
+| ❌ “人类必须实时响应”        | ✅ **人类 = 一个地址** —— 按自己节奏处理 |
+| ❌ “跨组织协作需要 API 对接” | ✅ **电子邮件就是 API** —— 零集成成本    |
+| ❌ “移动端离线 = 功能瘫痪”   | ✅ **离线是常态** —— 消息自动缓冲等待    |
 
 ### 💡 灵感融合：Erlang 智慧 + 现实世界
 
@@ -104,33 +104,36 @@ flowchart LR
 2. **编写代码**
 
    ```ts
-   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox';
+   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox'
 
    // 1. 创建 Mailbox 实例并注册内存 Provider
-   const mailbox = new Mailbox();
-   mailbox.registerProvider(new MemoryProvider());
+   const mailbox = new Mailbox()
+   mailbox.registerProvider(new MemoryProvider())
 
    // 2. 启动 Mailbox (初始化 Provider)
-   await mailbox.start();
+   await mailbox.start()
 
    // 3. 订阅一个地址并定义消息处理方式
-   const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
-     console.log(`收到消息！来自: ${message.from}`);
-     console.log(`正文:`, message.body);
-   });
+   const subscription = mailbox.subscribe(
+     'mem:service@example.com/inbox',
+     (message) => {
+       console.log(`收到消息！来自: ${message.from}`)
+       console.log(`正文:`, message.body)
+     }
+   )
 
-   console.log("Mailbox 已就绪，正在监听 'mem:service@example.com/inbox'...");
+   console.log("Mailbox 已就绪，正在监听 'mem:service@example.com/inbox'...")
 
    // 4. 发送一封邮件到该地址
    await mailbox.post({
      from: 'mem:client@example.com/user-1',
      to: 'mem:service@example.com/inbox',
      body: { text: 'Hello, Mailbox!' },
-   });
+   })
 
    // 清理：取消订阅并停止 Mailbox (释放资源)
-   await subscription.unsubscribe();
-   await mailbox.stop();
+   await subscription.unsubscribe()
+   await mailbox.stop()
    ```
 
    1. **运行**
@@ -150,11 +153,11 @@ flowchart LR
    ### 1. 状态查询
 
    ```ts
-   const status = await mailbox.status('mem:service@example.com/inbox');
-   console.log(`状态: ${status.state}`);
-   console.log(`未读数量: ${status.unreadCount}`);   // 仍在队列里等待
-   console.log(`in-flight: ${status.inFlightCount}`); // 已取出、尚未 ack/nack
-   console.log(`订阅数: ${status.subscriberCount}`);
+   const status = await mailbox.status('mem:service@example.com/inbox')
+   console.log(`状态: ${status.state}`)
+   console.log(`未读数量: ${status.unreadCount}`) // 仍在队列里等待
+   console.log(`in-flight: ${status.inFlightCount}`) // 已取出、尚未 ack/nack
+   console.log(`订阅数: ${status.subscriberCount}`)
    ```
 
    `unreadCount` 只统计队列里等待的消息。用 `manualAck: true` 取出的消息已经离开队列但尚未
@@ -164,18 +167,18 @@ flowchart LR
 
    三个动作对应三个 API，文档与代码里统一用这三个词：
 
-   | 动作 | API | 谁在做 |
-   | --- | --- | --- |
-   | **发布** | `post()` / `send()` | 生产者把一封信写进地址 |
-   | **订阅** | `subscribe()` | 消费者登记回调，消息到达时被调用 |
-   | **取回** | `fetch()` | 消费者自己主动取下一条 |
+   | 动作     | API                 | 谁在做                           |
+   | -------- | ------------------- | -------------------------------- |
+   | **发布** | `post()` / `send()` | 生产者把一封信写进地址           |
+   | **订阅** | `subscribe()`       | 消费者登记回调，消息到达时被调用 |
+   | **取回** | `fetch()`           | 消费者自己主动取下一条           |
 
    发布只是写入。一条消息只会进两个入口的**其中一个**，在 `post()` 执行那一刻定：
 
-   | `post()` 执行时地址的状态 | 消息的去向 |
-   | --- | --- |
-   | 至少有一个活跃订阅者 | 交给每个订阅者的回调；**不**入队，所以 `fetch()` 取不到 |
-   | 没有任何订阅者 | 入队；`fetch()` 能取到，订阅者收不到 |
+   | `post()` 执行时地址的状态 | 消息的去向                                              |
+   | ------------------------- | ------------------------------------------------------- |
+   | 至少有一个活跃订阅者      | 交给每个订阅者的回调；**不**入队，所以 `fetch()` 取不到 |
+   | 没有任何订阅者            | 入队；`fetch()` 能取到，订阅者收不到                    |
 
    两条路对同一条消息是互斥的：已经订阅到的消息再也取回不到；已经入队的消息也不会回放给
    后来才订阅的人。
@@ -188,11 +191,11 @@ flowchart LR
    ```ts
    // subscribe：消息到达时跑回调
    const sub = mailbox.subscribe(addr, (message) => {
-     console.log(message.body);
-   });
+     console.log(message.body)
+   })
 
    // fetch：自己主动取下一条
-   const message = await mailbox.fetch(addr);
+   const message = await mailbox.fetch(addr)
    ```
 
    ### 3. 订阅失败时
@@ -201,16 +204,16 @@ flowchart LR
 
    ```ts
    mailbox.subscribe(addr, async (message) => {
-     throw Object.assign(new Error('upstream down'), { isRetriable: true }); // → 回到队列
-   });
+     throw Object.assign(new Error('upstream down'), { isRetriable: true }) // → 回到队列
+   })
 
    mailbox.subscribe(addr, async (message) => {
-     throw new Error('bad payload'); // → 丢弃，避免一条坏消息被无限重试
-   });
+     throw new Error('bad payload') // → 丢弃，避免一条坏消息被无限重试
+   })
    ```
 
    可重试指 `error.isRetriable === true`，或 `error.code` 属于 `503 / 504 / ECONNRESET /
-   ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余直接
+ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余直接
    丢弃。Python 与 Rust 两个移植版行为一致——Rust 端回调返回 `Result<()>`，由
    `MailboxError::is_retriable()` 做同样的判定。
 
@@ -220,20 +223,19 @@ flowchart LR
    `fetch()` 消费者决定。想让库自己重投，就显式开启重试：
 
    ```ts
-   import { MemoryProvider } from '@mboxlabs/mailbox';
+   import { MemoryProvider } from '@mboxlabs/mailbox'
 
-   const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }); // 毫秒
-   mailbox.registerProvider(provider);
+   const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }) // 毫秒
+   mailbox.registerProvider(provider)
    ```
 
-   | | 默认（不传 `retry`） | 传入策略 |
-   |---|---|---|
-   | 可重试失败 | 回队一次，由 `fetch()` 取回 | 按指数退避重新调用回调 |
-   | 尝试次数 | 1 | `maxAttempts`（含首次） |
-   | 次数耗尽 | — | 消息退回队列，由 `fetch()` 取回 |
+   |            | 默认（不传 `retry`）        | 传入策略                        |
+   | ---------- | --------------------------- | ------------------------------- |
+   | 可重试失败 | 回队一次，由 `fetch()` 取回 | 按指数退避重新调用回调          |
+   | 尝试次数   | 1                           | `maxAttempts`（含首次）         |
+   | 次数耗尽   | —                           | 消息退回队列，由 `fetch()` 取回 |
 
    两条规则保证它不会造成重复投递：
-
    - **只重投给失败的那个订阅者。** 订阅是广播；重新广播会让已经成功的订阅者把副作用再跑
      一次。
    - **同一条消息不会在队列里出现两份。** `requeue()` 遇到已在队列或已在 in-flight 的消息就
@@ -255,11 +257,11 @@ flowchart LR
    永久泄漏这条消息，因此未 ack 的消息默认在 `DEFAULT_ACK_TIMEOUT`（30 秒）后重新入队：
 
    ```ts
-   import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox';
+   import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
 
-   await mailbox.fetch(addr, { manualAck: true });                    // 默认 30 秒
-   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }); // 自定义
-   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 });     // 永不重投
+   await mailbox.fetch(addr, { manualAck: true }) // 默认 30 秒
+   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // 自定义
+   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // 永不重投
    ```
 
    Python（`ack_timeout`，`0` = 永不重投）与 Rust（`ack_timeout: Option<Duration>`，
@@ -271,23 +273,22 @@ flowchart LR
 
    ```ts
    // 获取所有 Provider (返回一个 ReadonlyMap)
-   const allProviders = mailbox.providers;
+   const allProviders = mailbox.providers
    if (allProviders.has('mem')) {
-     console.log('内存 Provider 已注册');
+     console.log('内存 Provider 已注册')
    }
 
    // 获取特定 Provider
    // protocol 可以是 "mem" 或 "mem:"
-   const provider = mailbox.getProvider('mem');
+   const provider = mailbox.getProvider('mem')
 
    // 获取 Provider，如果不存在则抛出错误
-   const slackProvider = mailbox.getProvider('slack', true);
+   const slackProvider = mailbox.getProvider('slack', true)
    ```
 
    ## 🔄 生命周期管理
 
    对于健壮的生产系统，显式的生命周期管理至关重要：
-
    - **`mailbox.start()`**: 并行初始化所有已注册的 Provider。使用它来预热连接（如 Redis、RabbitMQ）并在处理流量前验证配置。
    - **`mailbox.stop()`**: 并行关闭所有 Provider。它会自动执行以下操作：
    - 取消该 Mailbox 实例下所有活跃的订阅。
@@ -296,10 +297,10 @@ flowchart LR
 
    ## 📦 生态系统
 
-| 包 | 说明  |
-|-----|------|
-| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js) | 核心邮箱系统 |
-| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | 输入提供者：人机输入交互抽象类 |
+| 包                                                                        | 说明                                         |
+| ------------------------------------------------------------------------- | -------------------------------------------- |
+| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)             | 核心邮箱系统                                 |
+| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | 输入提供者：人机输入交互抽象类               |
 | [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | 邮箱提供者：电子邮件(SMTP, IMAP/POP3),待实现 |
 
 ## 📚 深入学习

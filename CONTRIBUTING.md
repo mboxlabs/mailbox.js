@@ -17,34 +17,34 @@ Before you start, please ensure you have:
 
 Based on your interests and experience, you can start with any of the following:
 
-| Type | Suitable For | Entry Point |
-| :--- | :--- | :--- |
-| 🐞 **Bug Fixes** | All developers | [View Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
-| 📚 **Documentation** | Beginner-friendly | [View Documentation Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation) |
-| 🧩 **New Provider** | Experience with specific protocols | [Propose a Provider](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider) |
-| 💡 **New Feature** | Power users | [Propose a New Feature](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement) |
+| Type                 | Suitable For                       | Entry Point                                                                                                                   |
+| :------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| 🐞 **Bug Fixes**     | All developers                     | [View Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
+| 📚 **Documentation** | Beginner-friendly                  | [View Documentation Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation)       |
+| 🧩 **New Provider**  | Experience with specific protocols | [Propose a Provider](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider)                   |
+| 💡 **New Feature**   | Power users                        | [Propose a New Feature](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)             |
 
 ### 3. Development and Submission
 
 1. **Create a branch**: Create a descriptive branch from the `main` branch, such as `feat/add-new-provider` or `fix/login-bug`.
 
-    ```shell
-    git checkout -b feat/your-feature-name
-    ```
+   ```shell
+   git checkout -b feat/your-feature-name
+   ```
 
 2. **Implement your changes**: Make your code modifications. Please follow the coding standards below.
 3. **Write tests**: Add or update unit tests for your changes. All core logic, edge cases, and error handling should be covered.
 4. **Run checks**: Ensure all tests and style checks pass.
 
-    ```shell
-    pnpm test
-    pnpm style
+   ```shell
+   pnpm test
+   pnpm style
 
-    # The Python and Rust ports ship their own suites; run them too when you touch
-    # behaviour shared across the three implementations
-    (cd python && python3 -m pytest -q)
-    (cd rust && cargo test)
-    ```
+   # The Python and Rust ports ship their own suites; run them too when you touch
+   # behaviour shared across the three implementations
+   (cd python && python3 -m pytest -q)
+   (cd rust && cargo test)
+   ```
 
 5. **Commit your code**: Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 6. **Open a Pull Request**: Push your branch to GitHub and create a Pull Request to the `main` branch of the main repository. Please clearly describe the changes you have made in the PR description.
@@ -95,15 +95,15 @@ We follow the Conventional Commits specification. The format is as follows:
 [optional body]
 ```
 
-| Type | Description |
-| :--- | :--- |
-| `feat` | A new feature |
-| `fix` | A bug fix |
-| `docs` | Documentation only changes |
-| `test` | Adding missing tests or correcting existing tests |
-| `refactor` | A code change that neither fixes a bug nor adds a feature |
-| `style` | Changes that do not affect the meaning of the code (white-space, formatting, etc) |
-| `chore` | Changes to the build process or auxiliary tools and libraries |
+| Type       | Description                                                                       |
+| :--------- | :-------------------------------------------------------------------------------- |
+| `feat`     | A new feature                                                                     |
+| `fix`      | A bug fix                                                                         |
+| `docs`     | Documentation only changes                                                        |
+| `test`     | Adding missing tests or correcting existing tests                                 |
+| `refactor` | A code change that neither fixes a bug nor adds a feature                         |
+| `style`    | Changes that do not affect the meaning of the code (white-space, formatting, etc) |
+| `chore`    | Changes to the build process or auxiliary tools and libraries                     |
 
 **Example**:
 

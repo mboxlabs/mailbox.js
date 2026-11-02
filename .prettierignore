@@ -2,3 +2,19 @@ node_modules
 dist
 web
 docs
+.cache
+refs
+
+# 由 commit-and-tag-version 生成
+CHANGELOG.md
+
+# 本地实验目录 / 其构建产物（不属于 npm 包内容）
+python/
+rust/
+wiki/
+.pytest_cache/
+.freebuff/
+.gemini/
+
+# 本地编辑器配置
+.vscode

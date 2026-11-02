@@ -17,33 +17,33 @@
 
 根据您的兴趣和经验，可以选择以下任一方式开始：
 
-| 类型 | 适合人群 | 入口 |
-| :--- | :--- | :--- |
-| 🐞 **Bug 修复** | 所有开发者 | [查看 Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
-| 📚 **文档改进** | 新手友好 | [查看文档相关问题](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation) |
-| 🧩 **新 Provider** | 有特定协议经验 | [提出 Provider 建议](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider) |
-| 💡 **新特性** | 深度用户 | [提出新功能建议](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement) |
+| 类型               | 适合人群       | 入口                                                                                                                          |
+| :----------------- | :------------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| 🐞 **Bug 修复**    | 所有开发者     | [查看 Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
+| 📚 **文档改进**    | 新手友好       | [查看文档相关问题](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation)                |
+| 🧩 **新 Provider** | 有特定协议经验 | [提出 Provider 建议](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider)                   |
+| 💡 **新特性**      | 深度用户       | [提出新功能建议](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)                    |
 
 ### 3. 开发与提交
 
 1. **创建分支**：从 `main` 分支创建一个描述性分支，如 `feat/add-new-provider` 或 `fix/login-bug`。
 
-    ```shell
-    git checkout -b feat/your-feature-name
-    ```
+   ```shell
+   git checkout -b feat/your-feature-name
+   ```
 
 2. **编码实现**：进行代码修改。请遵循下面的代码规范。
 3. **编写测试**：为您的修改添加或更新单元测试。所有核心逻辑、边界情况和错误处理都应被覆盖。
 4. **运行检查**：确保所有测试和代码风格检查通过。
 
-    ```shell
-    pnpm test
-    pnpm style
+   ```shell
+   pnpm test
+   pnpm style
 
-    # Python 与 Rust 移植版各自带测试套件；改动涉及三端共有的行为时一并跑
-    (cd python && python3 -m pytest -q)
-    (cd rust && cargo test)
-    ```
+   # Python 与 Rust 移植版各自带测试套件；改动涉及三端共有的行为时一并跑
+   (cd python && python3 -m pytest -q)
+   (cd rust && cargo test)
+   ```
 
 5. **提交代码**：遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范进行提交。
 6. **发起 Pull Request**：将您的分支推送到 GitHub，并创建一个 Pull Request 到主仓库的 `main` 分支。请在 PR 描述中清晰说明您所做的更改。
@@ -93,15 +93,15 @@ Rust 端用 `cargo test`（在 `rust/` 下）。投递语义——订阅与取�
 [optional body]
 ```
 
-| 类型 | 说明 |
-| :--- | :--- |
-| `feat` | 新功能 |
-| `fix` | Bug 修复 |
-| `docs` | 文档更新 |
-| `test` | 测试相关 |
-| `refactor` | 代码重构 |
-| `style` | 代码格式调整 |
-| `chore` | 构建、工具等杂项 |
+| 类型       | 说明             |
+| :--------- | :--------------- |
+| `feat`     | 新功能           |
+| `fix`      | Bug 修复         |
+| `docs`     | 文档更新         |
+| `test`     | 测试相关         |
+| `refactor` | 代码重构         |
+| `style`    | 代码格式调整     |
+| `chore`    | 构建、工具等杂项 |
 
 **示例**：
 

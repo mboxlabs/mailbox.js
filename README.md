@@ -8,12 +8,12 @@
 
 ## 🌟 Why Mailbox?
 
-| Traditional Way | Mailbox Way |
-|---|---|
-| ❌ Shared State + Locks | ✅ Isolated Mailboxes + Messages |
-| ❌ Callback Hell | ✅ Seamless `async/await` Integration |
-| ❌ Complex Human-Machine Collaboration | ✅ Human = A Mailbox Address |
-| ❌ Difficult Offline Scenarios | ✅ Automatic Message Buffering & Retry |
+| Traditional Way                        | Mailbox Way                            |
+| -------------------------------------- | -------------------------------------- |
+| ❌ Shared State + Locks                | ✅ Isolated Mailboxes + Messages       |
+| ❌ Callback Hell                       | ✅ Seamless `async/await` Integration  |
+| ❌ Complex Human-Machine Collaboration | ✅ Human = A Mailbox Address           |
+| ❌ Difficult Offline Scenarios         | ✅ Automatic Message Buffering & Retry |
 
 ### Erlang Inspiration
 
@@ -25,11 +25,11 @@
 
 Mailbox is **deeply inspired by the Erlang Actor Model**, but we've made key evolutions:
 
-| Erlang (1986) | Mailbox (Today) | Why It Matters |
-|---|---|---|
-| `Pid ! Message` | `send({ to: 'protocol://address' })` | **Address as Identity, Protocol as Route**: The `address` part is the mailbox's unique ID. The `protocol` (e.g., `mem`, `mailto`) is for routing. The same address can be reached via different protocols. |
-| In-process FIFO Mailbox | Pluggable Providers | **Transport Agnostic**: Seamlessly switch between memory/email/telegram/Mastodon |
-| Intra-node Communication | Cross-network, Cross-organization | **Truly Distributed**: Humans and machines participate as equals |
+| Erlang (1986)            | Mailbox (Today)                      | Why It Matters                                                                                                                                                                                             |
+| ------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Pid ! Message`          | `send({ to: 'protocol://address' })` | **Address as Identity, Protocol as Route**: The `address` part is the mailbox's unique ID. The `protocol` (e.g., `mem`, `mailto`) is for routing. The same address can be reached via different protocols. |
+| In-process FIFO Mailbox  | Pluggable Providers                  | **Transport Agnostic**: Seamlessly switch between memory/email/telegram/Mastodon                                                                                                                           |
+| Intra-node Communication | Cross-network, Cross-organization    | **Truly Distributed**: Humans and machines participate as equals                                                                                                                                           |
 
 > 💡 **Our Position**:
 > **Not a JavaScript clone of Erlang, but a modern expression of the Actor philosophy** —
@@ -39,12 +39,12 @@ Mailbox is **deeply inspired by the Erlang Actor Model**, but we've made key evo
 
 ### 📮 What Problems Do We Solve?
 
-| Traditional World | Mailbox World |
-|---|---|
-| ❌ "Service must be online to be called" | ✅ **Delivery is Success** — Don't care about the recipient's state |
-| ❌ "Humans must respond in real-time" | ✅ **Human = An Address** — Process at your own pace |
-| ❌ "Cross-org collaboration requires API integration" | ✅ **Email is the API** — Zero integration cost |
-| ❌ "Offline mobile app = Paralyzed functionality" | ✅ **Offline is the Norm** — Messages are automatically buffered |
+| Traditional World                                     | Mailbox World                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------- |
+| ❌ "Service must be online to be called"              | ✅ **Delivery is Success** — Don't care about the recipient's state |
+| ❌ "Humans must respond in real-time"                 | ✅ **Human = An Address** — Process at your own pace                |
+| ❌ "Cross-org collaboration requires API integration" | ✅ **Email is the API** — Zero integration cost                     |
+| ❌ "Offline mobile app = Paralyzed functionality"     | ✅ **Offline is the Norm** — Messages are automatically buffered    |
 
 ### 💡 Fusing Inspirations: Erlang's Wisdom + The Real World
 
@@ -96,41 +96,46 @@ Get a taste of Mailbox's core power in just three steps:
 
 1. **Installation**
 
-    ```bash
-    npm install @mboxlabs/mailbox
-    ```
+   ```bash
+   npm install @mboxlabs/mailbox
+   ```
 
 2. **Write Code**
 
-    ```ts
-    import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox';
+   ```ts
+   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox'
 
-    // 1. Create a Mailbox instance and register a memory provider
-    const mailbox = new Mailbox();
-    mailbox.registerProvider(new MemoryProvider());
+   // 1. Create a Mailbox instance and register a memory provider
+   const mailbox = new Mailbox()
+   mailbox.registerProvider(new MemoryProvider())
 
-    // 2. Start the mailbox (initializes providers)
-    await mailbox.start();
+   // 2. Start the mailbox (initializes providers)
+   await mailbox.start()
 
-    // 3. Subscribe to an address and define how to handle messages
-    const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
-      console.log(`Message received! From: ${message.from}`);
-      console.log(`Body:`, message.body);
-    });
+   // 3. Subscribe to an address and define how to handle messages
+   const subscription = mailbox.subscribe(
+     'mem:service@example.com/inbox',
+     (message) => {
+       console.log(`Message received! From: ${message.from}`)
+       console.log(`Body:`, message.body)
+     }
+   )
 
-    console.log("Mailbox is set up, listening on 'mem:service@example.com/inbox'...");
+   console.log(
+     "Mailbox is set up, listening on 'mem:service@example.com/inbox'..."
+   )
 
-    // 4. Post a mail to that address
-    await mailbox.post({
-      from: 'mem:client@example.com/user-1',
-      to: 'mem:service@example.com/inbox',
-      body: { text: 'Hello, Mailbox!' },
-    });
+   // 4. Post a mail to that address
+   await mailbox.post({
+     from: 'mem:client@example.com/user-1',
+     to: 'mem:service@example.com/inbox',
+     body: { text: 'Hello, Mailbox!' },
+   })
 
-    // Clean up: Unsubscribe and Stop the mailbox (releases resources)
-    await subscription.unsubscribe();
-    await mailbox.stop();
-    ```
+   // Clean up: Unsubscribe and Stop the mailbox (releases resources)
+   await subscription.unsubscribe()
+   await mailbox.stop()
+   ```
 
 3. **Run It**
 
@@ -149,11 +154,11 @@ This example demonstrates the basic loop of Mailbox: **Initialize -> Start -> Su
 ### 1. Status Query
 
 ```ts
-const status = await mailbox.status('mem:service@example.com/inbox');
-console.log(`State: ${status.state}`);
-console.log(`Unread count: ${status.unreadCount}`);   // still waiting in the queue
-console.log(`In flight: ${status.inFlightCount}`);    // handed out, awaiting ack/nack
-console.log(`Subscribers: ${status.subscriberCount}`);
+const status = await mailbox.status('mem:service@example.com/inbox')
+console.log(`State: ${status.state}`)
+console.log(`Unread count: ${status.unreadCount}`) // still waiting in the queue
+console.log(`In flight: ${status.inFlightCount}`) // handed out, awaiting ack/nack
+console.log(`Subscribers: ${status.subscriberCount}`)
 ```
 
 `unreadCount` only counts messages still waiting in the queue. A message taken with
@@ -164,19 +169,19 @@ console.log(`Subscribers: ${status.subscriberCount}`);
 
 Three verbs, three APIs — use these words consistently:
 
-| Verb | API | Who acts |
-| --- | --- | --- |
-| publish | `post()` / `send()` | the producer writes a message to an address |
-| subscribe | `subscribe()` | the consumer registers a callback; it runs when mail arrives |
-| fetch | `fetch()` | the consumer asks for the next message itself |
+| Verb      | API                 | Who acts                                                     |
+| --------- | ------------------- | ------------------------------------------------------------ |
+| publish   | `post()` / `send()` | the producer writes a message to an address                  |
+| subscribe | `subscribe()`       | the consumer registers a callback; it runs when mail arrives |
+| fetch     | `fetch()`           | the consumer asks for the next message itself                |
 
 Publishing only writes. A published message goes to **one** of the two receiving paths,
 decided at the moment `post()` runs:
 
-| State of the address when `post()` runs | Where the message goes |
-| --- | --- |
-| At least one active subscriber | handed to every subscriber's callback; **not** queued, so `fetch()` gets nothing |
-| No subscriber | queued; `fetch()` gets it, subscribers get nothing |
+| State of the address when `post()` runs | Where the message goes                                                           |
+| --------------------------------------- | -------------------------------------------------------------------------------- |
+| At least one active subscriber          | handed to every subscriber's callback; **not** queued, so `fetch()` gets nothing |
+| No subscriber                           | queued; `fetch()` gets it, subscribers get nothing                               |
 
 The two paths are mutually exclusive per message: a message that was handed to a subscriber
 can never be fetched, and a message that is already queued is never replayed to a subscriber
@@ -191,11 +196,11 @@ to the queue, where `fetch()` can pick it up — see below.
 ```ts
 // subscribe: the callback runs when mail arrives
 const sub = mailbox.subscribe(addr, (message) => {
-  console.log(message.body);
-});
+  console.log(message.body)
+})
 
 // fetch: you ask for the next message yourself
-const message = await mailbox.fetch(addr);
+const message = await mailbox.fetch(addr)
 ```
 
 ### 3. When a subscriber fails
@@ -204,12 +209,12 @@ The callback's error decides what happens to the message:
 
 ```ts
 mailbox.subscribe(addr, async (message) => {
-  throw Object.assign(new Error('upstream down'), { isRetriable: true }); // → back to the queue
-});
+  throw Object.assign(new Error('upstream down'), { isRetriable: true }) // → back to the queue
+})
 
 mailbox.subscribe(addr, async (message) => {
-  throw new Error('bad payload'); // → dropped, so one bad message is not retried forever
-});
+  throw new Error('bad payload') // → dropped, so one bad message is not retried forever
+})
 ```
 
 Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / ECONNRESET /
@@ -224,17 +229,17 @@ and a `fetch()` consumer decides what happens next. Opt into automatic redeliver
 want the library to retry the callback itself:
 
 ```ts
-import { MemoryProvider } from '@mboxlabs/mailbox';
+import { MemoryProvider } from '@mboxlabs/mailbox'
 
-const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }); // milliseconds
-mailbox.registerProvider(provider);
+const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }) // milliseconds
+mailbox.registerProvider(provider)
 ```
 
-| | Default (`retry` omitted) | With a policy |
-|---|---|---|
+|                   | Default (`retry` omitted)            | With a policy                                |
+| ----------------- | ------------------------------------ | -------------------------------------------- |
 | Retriable failure | requeued once; `fetch()` picks it up | callback re-invoked with exponential backoff |
-| Attempts | 1 | `maxAttempts`, first try included |
-| Budget exhausted | — | message requeued, `fetch()` picks it up |
+| Attempts          | 1                                    | `maxAttempts`, first try included            |
+| Budget exhausted  | —                                    | message requeued, `fetch()` picks it up      |
 
 Two rules keep this safe:
 
@@ -262,11 +267,11 @@ timeout a crashed consumer leaks the message forever, so an unacknowledged messa
 requeued after `DEFAULT_ACK_TIMEOUT` (30s) by default:
 
 ```ts
-import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox';
+import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
 
-await mailbox.fetch(addr, { manualAck: true });                    // 30s default
-await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }); // custom
-await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 });     // never requeue
+await mailbox.fetch(addr, { manualAck: true }) // 30s default
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // custom
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // never requeue
 ```
 
 The same three-state semantics applies to the Python (`ack_timeout`, `0` = never requeue)
@@ -278,17 +283,17 @@ You can gracefully access registered providers via the `providers` getter or `ge
 
 ```ts
 // Get all providers (returns a ReadonlyMap)
-const allProviders = mailbox.providers;
+const allProviders = mailbox.providers
 if (allProviders.has('mem')) {
-  console.log('Memory provider is registered');
+  console.log('Memory provider is registered')
 }
 
 // Get a specific provider
 // protocol can be "mem" or "mem:"
-const provider = mailbox.getProvider('mem');
+const provider = mailbox.getProvider('mem')
 
 // Get provider or throw error if not found
-const slackProvider = mailbox.getProvider('slack', true);
+const slackProvider = mailbox.getProvider('slack', true)
 ```
 
 ## 🔄 Lifecycle Management
@@ -303,11 +308,11 @@ For robust production systems, explicit lifecycle management is crucial:
 
 ## 📦 Ecosystem
 
-| Package | Description |
-|---|---|
-| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js) | The core mailbox system |
+| Package                                                                   | Description                                                      |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)             | The core mailbox system                                          |
 | [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | Input Provider: An abstract class for human-computer interaction |
-| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | Mailbox Provider: Email (SMTP, IMAP/POP3) |
+| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | Mailbox Provider: Email (SMTP, IMAP/POP3)                        |
 
 ## 📚 Learn More
 
