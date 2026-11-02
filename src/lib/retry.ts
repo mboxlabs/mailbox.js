@@ -74,7 +74,7 @@ export function isRetriableError(error: unknown): boolean {
 export function nextRetryDelay(policy: RetryPolicy, attempt: number): number {
   const resolved = resolveRetryPolicy(policy) ?? DEFAULT_RETRY_POLICY;
   const safeAttempt = Math.max(1, Math.floor(attempt));
-  const delay = resolved.baseDelay * Math.pow(resolved.factor, safeAttempt - 1);
+  const delay = resolved.baseDelay * resolved.factor ** (safeAttempt - 1);
   return Math.min(delay, resolved.maxDelay);
 }
 

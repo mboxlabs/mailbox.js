@@ -1,15 +1,5 @@
-import fetch, {
-  Blob,
-  blobFrom,
-  blobFromSync,
-  File,
-  fileFrom,
-  fileFromSync,
-  FormData,
-  Headers,
-  Request,
-  Response,
-} from 'node-fetch'
+// 备用 polyfill：setupVitest.mjs 里的引用目前是注释掉的。
+import fetch, { Headers, Request, Response } from 'node-fetch'
 
 if (!globalThis.fetch) {
   globalThis.fetch = fetch
