@@ -1,25 +1,39 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "types": ["node"],
+    "target": "ES2022",
+    // 本包是 isomorphic 的（Node / 浏览器 / worker 都要能跑）：src 里不 import 任何 node:* 内建模块，
+    // 只用 URL / setTimeout / console 这些 Web 标准全局。DOM lib 提供 URL、AbortController、
+    // fetch/Response/Headers 等标准全局类型，浏览器侧写 Provider 实现时需要它。
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
-    "typeRoots": [
-      "./types",
-      "./node_modules/@types",
-      "./node_modules/@microsoft"
-    ],
+    // 注意：这里不要再设置 typeRoots。一旦显式设置 typeRoots，
+    // compilerOptions.types 就只会在这些目录里查找，`vitest/globals`
+    // 会报 TS2688（Cannot find type definition file for 'vitest/globals'）。
+    // vitest 的 `globals: true` 只负责运行时注入，类型要靠下面这行。
+    // 不要把 "jest" 加进来：@types/jest 的全局声明会和 vitest/globals 冲突（TS6200），
+    // 所以 @types/jest 已从 devDependencies 移除。
+    // @types/node 只为测试运行时（vitest/tsx 跑在 Node）与工具链服务，src 里不得依赖 Node 专属全局；
+    // 因为 DOM 与 @types/node 的 setTimeout 返回类型不同，代码里统一用 ReturnType<typeof setTimeout>。
+    "types": ["vitest/globals", "node"],
+    // 这份 tsconfig 只给编辑器 / 类型检查用（构建走 tsup + tsconfig.release.json），
+    // 所以可以开 allowImportingTsExtensions。
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
 
+    // mailbox 代码目前能过全量 strict，所以这里不沿用 ai-tool 那几条放宽（noImplicitAny:false 等）
+    "useDefineForClassFields": false,
+    "allowJs": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
-    "noImplicitAny": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true
   },
-  "exclude": [
-    "node_modules",
-    "**/*.spec.ts"
-  ],
-  "include": ["src/**/*"],
+  // 开发/编辑器视角：src 下的 *.test.ts 也要在 program 里，否则 VS Code 会把它们
+  // 当成 invisible file 放进 inferred project，types 配置对它们无效。
+  "include": ["src/**/*", "test/**/*"],
+  // python/ rust/ wiki/ 是本地实验目录，不在 TS program 里
+  "exclude": ["node_modules", "dist", "web", "docs", "python", "rust", "wiki"]
 }
