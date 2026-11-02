@@ -210,6 +210,42 @@ export class MailMessageQueue<T extends { id: string }> {
   }
 
   /**
+   * 清空队列状态：不传 `topic` 则清空所有 topic。
+   *
+   * in-flight 的消息**也**会被丢弃：它同样是队列状态的一部分，只清「等待中」的那一半，
+   * 下一轮（或同进程的另一个消费者 / 另一个测试用例）还是会看到残留消息。
+   * 被丢弃的 in-flight 消息之后 `ack()` / `nack(requeue)` 都是 no-op —— 不会复活成幽灵消息。
+   *
+   * @param topic 只清这个 topic；省略则清空全部。
+   * @returns 被丢弃的消息数（含 in-flight），便于诊断与断言。
+   */
+  public clear(topic?: string): number {
+    if (topic === undefined) {
+      let dropped = this.inFlight.size;
+      for (const queue of this.queues.values()) {
+        dropped += queue.length;
+      }
+      this.queues.clear();
+      this.inFlight.clear();
+      return dropped;
+    }
+
+    let dropped = 0;
+    const queue = this.queues.get(topic);
+    if (queue) {
+      dropped += queue.length;
+      this.queues.delete(topic); // 连空数组一起删掉，不留尾巴
+    }
+    for (const [messageId, flight] of Array.from(this.inFlight.entries())) {
+      if (flight.topic === topic) {
+        this.inFlight.delete(messageId);
+        dropped++;
+      }
+    }
+    return dropped;
+  }
+
+  /**
    * Scans for and requeues in-flight messages for a specific topic that have exceeded their timeout.
    * This is a recovery mechanism to prevent message loss if a consumer fails.
    * @param topic The topic to check for stale messages.

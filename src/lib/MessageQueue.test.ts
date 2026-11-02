@@ -291,4 +291,57 @@ describe('MessageQueue', () => {
       expect(queue.getStatus(topic2).inFlightCount).toBe(1);
     });
   });
+
+  // issue#3：队列状态必须能被清掉，否则同一进程里的多个 Mailbox / 多个测试用例互相串台。
+  describe('clear', () => {
+    it('should drop only the given topic and report how many messages were dropped', () => {
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic1, msg2);
+      queue.enqueue(topic2, msg2);
+
+      expect(queue.clear(topic1)).toBe(2);
+
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic2).unreadCount).toBe(1);
+      expect(queue.dequeue(topic2)!.id).toBe(msg2.id);
+    });
+
+    it('should drop in-flight messages of the topic too, and they must not come back via nack(requeue)', async () => {
+      // in-flight 也是队列状态的一部分：只清「等待中」的那半，测试跑完还是会看到残留消息。
+      queue.enqueue(topic1, msg1);
+      const inflight = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+
+      expect(queue.clear(topic1)).toBe(1);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.has(msg1.id)).toBe(false);
+
+      // 迟到的 ack / nack 不能再把已清理的消息放回队列（否则会“复活”成幽灵消息）。
+      await inflight.ack();
+      await inflight.nack(true);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('should drop every topic when called without arguments', () => {
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic2, msg2);
+      queue.dequeue(topic2, { manualAck: true });
+
+      expect(queue.clear()).toBe(2); // topic1 的 1 条 + topic2 的 1 条 in-flight
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic2)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('should be idempotent and safe on an unknown topic', () => {
+      queue.enqueue(topic1, msg1);
+      expect(queue.clear(topic1)).toBe(1);
+      expect(queue.clear(topic1)).toBe(0);
+      expect(queue.clear('never-seen')).toBe(0);
+      expect(queue.clear()).toBe(0);
+
+      // 清空后队列还能照常使用
+      queue.enqueue(topic1, msg1);
+      expect(queue.dequeue(topic1)!.id).toBe(msg1.id);
+    });
+  });
 });

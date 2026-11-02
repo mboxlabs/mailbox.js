@@ -10,24 +10,51 @@ import { getCanonicalMailboxAddressIdentifier } from '../lib/utils';
 
 type Listener = (message: MailMessage) => void | Promise<DeliveryResult | void>;
 
-// A simple in-memory event bus to simulate message passing between different instances.
-class MemoryEventBus {
-  private static instance: MemoryEventBus;
+/**
+ * 默认 scope 的名字（即“进程级共享”那一份 bus）。
+ */
+export const DEFAULT_MEMORY_SCOPE = '';
+
+/**
+ * 模拟消息传递的内存总线（一个“服务端”）：每个实例持有一份 topic 队列 + 订阅表。
+ *
+ * 实例边界（issue#3）：
+ * - `new MemoryEventBus()` —— 私有总线，只属于持有它的 `MemoryProvider`。需要“每个 Mailbox
+ *   一套互不相干的 `mem:` 状态”（宿主 + 插件、测试隔离）就用这个。
+ * - `MemoryEventBus.getInstance(scope?)` —— 按 scope 共享的进程级单例。不带 `scope` 就是历史上
+ *   那个全局单例（保持现有“模拟服务端”用法不变）。
+ *
+ * 注意：隔离靠“换 bus 实例”，不靠“换地址”——`mem:` 地址空间在同一个 bus 内是全局的，
+ * 没有租户前缀，跨实例串台就是同一个 bus 上 topic 同名。
+ */
+export class MemoryEventBus {
+  /** 按 scope 登记的总线；`DEFAULT_MEMORY_SCOPE` 就是历史全局单例。 */
+  private static readonly registry: Map<string, MemoryEventBus> = new Map();
+
   private topics: Map<string, Listener[]> = new Map();
   private messageQueue = new MailMessageQueue<MailMessage>();
   private lastActivity: Map<string, string> = new Map(); // For status
 
-  private constructor() {}
+  /**
+   * @param scope 所属 scope。仅用于诊断（`status()` / 日志里能看出这份状态是谁的）。
+   */
+  constructor(public readonly scope: string = DEFAULT_MEMORY_SCOPE) {}
 
   /**
-   * Gets the singleton instance of the MemoryEventBus.
-   * @returns The singleton MemoryEventBus instance.
+   * 取（或创建）某个 scope 的共享总线。不带参数 = 历史行为：进程级唯一单例。
+   *
+   * 注册表不会自动回收：动态生成的 scope 名（带时间戳、每次新建）会一直占着那份状态。
+   * 需要“用完就丢”的场景用私有总线（{@link MemoryProvider.createIsolated}）。
+   *
+   * @param scope 命名空间标识；同 scope 拿到同一份队列与订阅表，不同 scope 互不可见。
    */
-  public static getInstance(): MemoryEventBus {
-    if (!MemoryEventBus.instance) {
-      MemoryEventBus.instance = new MemoryEventBus();
+  public static getInstance(scope: string = DEFAULT_MEMORY_SCOPE): MemoryEventBus {
+    let bus = MemoryEventBus.registry.get(scope);
+    if (!bus) {
+      bus = new MemoryEventBus(scope);
+      MemoryEventBus.registry.set(scope, bus);
     }
-    return MemoryEventBus.instance;
+    return bus;
   }
 
   /**
@@ -146,6 +173,26 @@ class MemoryEventBus {
   }
 
   /**
+   * 丢弃队列里的消息（含 in-flight）并抹掉对应的活动时间；不传 `topic` 则清掉全部。
+   *
+   * **不动订阅表**：订阅是消费者主动建立的意图，拆它的是 `unsubscribe()` / `close()`。
+   * 在 `clear()` 里顺手拆订阅，会让 provider 侧的 `Subscription` 对象变成“报 active 但
+   * 再也收不到消息”的僵尸。需要拆订阅就关掉持有它的 `Mailbox` / provider。
+   *
+   * @param topic 只清这个 topic；省略则清空整份总线状态。
+   * @returns 被丢弃的消息数（含 in-flight）。
+   */
+  public clear(topic?: string): number {
+    const dropped = this.messageQueue.clear(topic);
+    if (topic === undefined) {
+      this.lastActivity.clear();
+    } else {
+      this.lastActivity.delete(topic);
+    }
+    return dropped;
+  }
+
+  /**
    * Gets the current status of a topic.
    * @param topic The topic to get the status for.
    * @returns An object containing status information.
@@ -170,7 +217,12 @@ class MemoryEventBus {
 
 
 export class MemoryProvider extends MailboxProvider {
-  private bus = MemoryEventBus.getInstance();
+  /**
+   * 这个 provider 用的总线。默认是进程级共享单例（“模拟服务端”语义），
+   * 需要实例级隔离时用 {@link MemoryProvider.createIsolated} / {@link MemoryProvider.forScope}，
+   * 或直接把自建总线传进构造函数。
+   */
+  public readonly bus: MemoryEventBus;
 
   /**
    * 订阅是广播：一条消息对每个订阅者各投递一次。失败处理因此走投递级记账，
@@ -180,9 +232,38 @@ export class MemoryProvider extends MailboxProvider {
 
   /**
    * @param retry 可选的订阅重试策略。不传则保持默认：订阅失败只把消息退回队列，不自动重投。
+   * @param bus 可选的总线。不传则用进程级共享单例（向后兼容）；
+   *   传 `new MemoryEventBus()` 得到实例级隔离，传 `MemoryEventBus.getInstance('scope')` 得到命名空间级隔离。
    */
-  constructor(retry?: RetryPolicy | null) {
+  constructor(retry?: RetryPolicy | null, bus?: MemoryEventBus) {
     super('mem', retry);
+    this.bus = bus ?? MemoryEventBus.getInstance();
+  }
+
+  /**
+   * 造一个“自带私有总线”的 provider：同进程的其它 `mem:` 地址完全看不到它的队列与订阅。
+   * 宿主 + 插件、kernel + provider 各持一个 `Mailbox`，以及测试隔离，都应该用这个。
+   */
+  static createIsolated(retry?: RetryPolicy | null): MemoryProvider {
+    return new MemoryProvider(retry, new MemoryEventBus());
+  }
+
+  /**
+   * 造一个挂在命名空间总线上的 provider：同 `scope` 共享一份状态，不同 `scope` 互不可见。
+   * “一个进程里跑多个互不相干的 `mem:` 世界”用它，不需要自己管总线对象。
+   */
+  static forScope(scope: string, retry?: RetryPolicy | null): MemoryProvider {
+    return new MemoryProvider(retry, MemoryEventBus.getInstance(scope));
+  }
+
+  /**
+   * 丢弃这份总线上的所有消息（含 in-flight），订阅保持不变。
+   *
+   * 代价要写清楚：默认构造的 provider 共用进程级单例总线，`clear()` 就是清空全进程的
+   * `mem:` 队列。只想清自己的状态，就用 {@link MemoryProvider.createIsolated} / {@link MemoryProvider.forScope}。
+   */
+  public async clear(): Promise<void> {
+    this.bus.clear();
   }
 
   /**

@@ -13,6 +13,25 @@ interface AutoAckedMailBoxFetchOptions extends MailBoxFetchOptions {
   manualAck?: false;
 }
 
+export interface MailBoxStopOptions {
+  /**
+   * 关掉订阅后再丢弃各 provider 的积压消息（含 in-flight）。
+   * 默认 `false`：关闭通道不等于销毁数据。
+   */
+  purge?: boolean;
+}
+
+/**
+ * 标记“这个 provider 实例当前属于哪个 Mailbox”，用于发现跨 Mailbox 复用。
+ * 用 symbol 键，不污染用户对象的常规属性。
+ */
+const PROVIDER_OWNER = Symbol.for('mboxlabs.mailbox.provider.owner');
+
+interface ProviderOwnerMark {
+  owner: Mailbox;
+  warned: boolean;
+}
+
 export class Mailbox {
   private _providers: Map<string, IMailboxProvider> = new Map();
 
@@ -51,13 +70,36 @@ export class Mailbox {
   /**
    * 关闭所有注册的 Provider，并释放资源。
    * 建议在应用关闭阶段调用此方法。
+   *
+   * 默认只拆订阅、不动积压消息：`stop()` 后同一个 provider（或共享同一份状态的另一个
+   * `Mailbox`）重新 `start()`，队列里的残留消息照旧可见——这是 issue#3 里“测试隔离失效”的根源。
+   * 确实要销毁状态时显式传 `{ purge: true }`。
    */
-  public async stop(): Promise<void> {
+  public async stop(options?: MailBoxStopOptions): Promise<void> {
     const providers = Array.from(this._providers.values());
     await Promise.all(providers.map(p => p.close?.()));
+
+    if (options?.purge) {
+      await this.clear();
+    }
+  }
+
+  /**
+   * 丢弃各 provider 持有的积压消息（含 in-flight），**不**拆订阅。
+   *
+   * 测试隔离、用例之间重置状态用它；没实现 `clear()` 的 provider 会被跳过。
+   * 注意默认构造的 `MemoryProvider` 共用进程级单例总线——`clear()` 会清掉同一份
+   * 总线上其它 `Mailbox` 的队列。只清自己那份，请用 `MemoryProvider.createIsolated()`
+   * 或 `MemoryProvider.forScope(scope)`。
+   */
+  public async clear(): Promise<void> {
+    await Promise.all(Array.from(this._providers.values()).map(async (provider) => {
+      await provider.clear?.();
+    }));
   }
 
   public registerProvider(provider: IMailboxProvider): void {
+    markProviderOwnership(this, provider);
     this._providers.set(provider.protocol, provider);
   }
 
@@ -112,4 +154,37 @@ export class Mailbox {
 
     return provider.status(addrUrl);
   }
+}
+
+/**
+ * 同一个 provider 实例被多个 `Mailbox` 复用时告警一次。
+ *
+ * 订阅表挂在 provider 上，不是挂在 Mailbox 上：`a.stop()` 会拆掉 `b` 在这个 provider 上的
+ * 订阅。行为上无法替用户拆开（provider 自己不知道订阅是谁建的），至少让这个坑可见。
+ * 每个 Mailbox 应该持有自己的 provider 实例（`MemoryProvider.createIsolated()`）。
+ */
+function markProviderOwnership(mailbox: Mailbox, provider: IMailboxProvider): void {
+  const holder = provider as unknown as Record<symbol, ProviderOwnerMark | undefined>;
+  const mark = holder[PROVIDER_OWNER];
+
+  if (!mark) {
+    Object.defineProperty(provider, PROVIDER_OWNER, {
+      value: { owner: mailbox, warned: false } satisfies ProviderOwnerMark,
+      writable: true,
+      enumerable: false,
+      configurable: true,
+    });
+    return;
+  }
+
+  if (mark.owner === mailbox || mark.warned) {
+    return; // 同一个 Mailbox 内重复注册是常规用法；已经告过就不重复噪。
+  }
+
+  mark.warned = true;
+  console.warn(
+    `[mailbox] The '${provider.protocol}' provider instance is shared by more than one Mailbox. ` +
+    'Subscriptions live on the provider, so `stop()` / `close()` on either Mailbox unsubscribes the other one. ' +
+    'Register a provider per Mailbox (e.g. `MemoryProvider.createIsolated()`) if they are meant to be independent.',
+  );
 }

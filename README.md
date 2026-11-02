@@ -374,6 +374,47 @@ For robust production systems, explicit lifecycle management is crucial:
   - Releases underlying resources (TCP connections, file handles).
   - Ensures a graceful shutdown of your communication layer.
 
+  It never deletes messages: a provider that is closed and started again still sees the backlog
+  left behind. Use `mailbox.stop({ purge: true })` to drop it.
+
+## 🧵 Instance isolation and state reset (`mem:` provider)
+
+`MemoryProvider` simulates a broker on an in-memory event bus. By default every
+`MemoryProvider` shares one process-wide bus, so all `Mailbox` instances in the process see the
+same `mem:` queues and subscription tables, and that state outlives `stop()`. This is
+intentional — it is what lets two `Mailbox` instances talk to each other — but it means you have
+to choose the boundary explicitly when you want independence (host + plugin, kernel + provider,
+or tests that must not leak into each other):
+
+```ts
+// 1. Private bus — no one else in the process can see its queues or subscriptions.
+const isolated = MemoryProvider.createIsolated()
+
+// 2. Named namespace — shared within a scope, invisible across scopes.
+const tenant = MemoryProvider.forScope('tenant-a')
+
+// 3. Bring your own bus — e.g. two Mailboxes that are meant to share one "server".
+const shared = new MemoryProvider(null, new MemoryEventBus())
+```
+
+Reset state without tearing subscriptions down:
+
+```ts
+await mailbox.clear() // drop every provider's backlog (queued + in-flight)
+await mailbox.stop({ purge: true }) // close subscriptions, then drop the backlog
+provider.bus.clear('mem://inbox@example.com') // one topic only; returns how many messages were dropped
+```
+
+Caveats worth knowing:
+
+- `clear()` drops messages, never subscriptions. Closing a channel is `unsubscribe()` / `stop()`'s job.
+- On the default bus, `clear()` clears the whole `mem:` namespace of the process — that is what a
+  shared "server" means. Use `createIsolated()` / `forScope()` when that is not what you want.
+- One provider instance must not be registered on two Mailboxes: subscriptions live on the provider,
+  so `stop()` on one unsubscribes the other. The library warns once when it sees this.
+- The scope registry is never garbage-collected: a scope name generated per run (timestamp, random
+  id) pins its bus for the lifetime of the process. Use `createIsolated()` for throwaway state.
+
 ## 📦 Ecosystem
 
 | Package                                                                    | Description                                                                                  |

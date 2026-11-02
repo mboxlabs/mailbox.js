@@ -27,7 +27,10 @@ import { DEFAULT_DELIVERY_SETTLE_TIMEOUT, type DeliveryResult } from './lib/deli
 const tick = (ms = 50) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 let seq = 0
-/** MemoryEventBus 是进程级单例（见 issue#3）：每个用例必须用唯一 topic。 */
+/**
+ * 这里用的是默认构造的 provider（共享进程级 bus），所以每个用例仍要用唯一 topic。
+ * 需要真正隔离的用例见 `providers/memory.isolation.test.ts`（`MemoryProvider.createIsolated()`）。
+ */
 const addrOf = (name: string): string => `mem://p${seq++}-${name}@bus/inbox`
 
 const retriable = (message = 'upstream down') =>

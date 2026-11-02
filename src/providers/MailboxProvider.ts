@@ -122,6 +122,9 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * 关闭 Provider。
    * 此方法会自动取消该 Provider 下所有活跃的订阅，然后调用子类的 `_close` 进行具体清理。
+   *
+   * 注意：`close()` **不**清消息队列——“关掉通道”不等于“销毁在途数据”。要一并清掉积压消息
+   * 用 `Mailbox#stop({ purge: true })` 或 {@link MailboxProvider.clear}。
    */
   public async close(): Promise<void> {
     // 1. 自动清理所有活跃订阅
@@ -149,6 +152,16 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
     // 2. 调用具体的清理逻辑
     await this._close?.();
+  }
+
+  /**
+   * 丢弃本 provider 持有的积压消息（含 in-flight），不动订阅。
+   *
+   * 默认**空实现**：“清空传输”对 AMQP / SQS / IMAP 这类真实 broker 是破坏性操作，
+   * 基类不能替子类下结论。需要 purge 语义的 provider（如 `MemoryProvider`）自己覆写。
+   */
+  public async clear(): Promise<void> {
+    // 默认无可清理内容：传输型 provider 的消息存在 broker 里，不在本地。
   }
 
   /**

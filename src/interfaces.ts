@@ -127,8 +127,18 @@ export interface IMailboxProvider {
 
   /**
    * 关闭 Provider。用于释放资源、断开连接等。
+   * 不会销毁积压消息（见 {@link IMailboxProvider.clear}）。
    */
   close?(): Promise<void>;
+
+  /**
+   * 丢弃本 provider 持有的积压消息（含 in-flight），不动订阅。可选实现。
+   *
+   * 为什么不是所有 provider 都能实现：真实 broker（AMQP / SQS…）的消息不在本地，
+   * 删它属于破坏性运维操作。由 provider 自己决定支持与否；`Mailbox#stop({ purge: true })`
+   * 会跳过没实现这个方法的 provider。
+   */
+  clear?(): Promise<void>;
 
   send(message: MailMessage): Promise<MailMessage>;
 

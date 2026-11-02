@@ -350,6 +350,44 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    - 释放底层资源（TCP 连接、文件句柄等）。
    - 确保通信层的优雅关闭（Graceful Shutdown）。
 
+   它不会销毁积压消息：关闭后重新 `start()` 的 Provider，队列里的残留依旧可见。需要一并清掉用
+   `mailbox.stop({ purge: true })`。
+
+   ## 🧵 实例隔离与状态重置（`mem:` Provider）
+
+   `MemoryProvider` 用内存总线模拟一个“服务端”。默认情况下，所有 `MemoryProvider` 共用进程级
+   单例总线，因此同进程里所有 `Mailbox` 实例看到的是同一份 `mem:` 队列与订阅表，而且这份状态
+   在 `stop()` 之后仍然存在。这是有意的设计——跨 `Mailbox` 投递就靠它——但当你需要彼此独立
+   （宿主 + 插件、kernel + provider、不得互相串台的测试）时，必须显式选定边界：
+
+   ```ts
+   // 1. 自带私有总线 —— 同进程里没人看得到它的队列与订阅。
+   const isolated = MemoryProvider.createIsolated()
+
+   // 2. 命名空间 —— 同 scope 内共享，跨 scope 互不可见。
+   const tenant = MemoryProvider.forScope('tenant-a')
+
+   // 3. 自己传总线 —— 例如两个就是需要共享一个“服务端”的 Mailbox。
+   const shared = new MemoryProvider(null, new MemoryEventBus())
+   ```
+
+   重置状态而不拆订阅：
+
+   ```ts
+   await mailbox.clear() // 丢弃各 provider 的积压消息（等待中 + in-flight）
+   await mailbox.stop({ purge: true }) // 先拆订阅，再清空积压
+   provider.bus.clear('mem://inbox@example.com') // 只清一个 topic，返回被丢弃的消息数
+   ```
+
+   需要注意的代价：
+   - `clear()` 只丢消息，不拆订阅。拆连接是 `unsubscribe()` / `stop()` 的职责。
+   - 在默认总线上，`clear()` 清的是全进程的 `mem:` 命名空间——共享“服务端”就是这个含义。
+     不想这样就用 `createIsolated()` / `forScope()`。
+   - 同一个 provider 实例不得注册到两个 Mailbox：订阅表挂在 provider 上，一边的 `stop()` 会拆掉
+     另一边的订阅。看到这种复用时库会告警一次。
+   - scope 注册表不会自动回收：带时间戳/随机后缀的 scope 名会把那份总线钉到进程结束。
+     用完就丢的场景用 `createIsolated()`。
+
    ## 📦 生态系统
 
 | 包                                                                          | 说明                                                                                            |
