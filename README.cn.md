@@ -186,7 +186,8 @@ flowchart LR
    两条路都走会让 `unreadCount` 永远增长（订阅者从不取回），还会在退订后把已处理过的消息
    再交给下一个取回者。
 
-   唯一的例外是回调失败：回调抛可重试错误时消息会回到队列，这时 `fetch()` 能取到——见下一节。
+   唯一的例外是回调失败：回调抛可重试错误、而且没有任何订阅者处理成功时，消息会回到队列，
+   这时 `fetch()` 能取到——见下一节。
 
    ```ts
    // subscribe：消息到达时跑回调
@@ -214,8 +215,27 @@ flowchart LR
 
    可重试指 `error.isRetriable === true`，或 `error.code` 属于 `503 / 504 / ECONNRESET /
 ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余直接
-   丢弃。Python 与 Rust 两个移植版行为一致——Rust 端回调返回 `Result<()>`，由
-   `MailboxError::is_retriable()` 做同样的判定。
+   丢弃。Rust 端回调返回 `Result<()>`，由 `MailboxError::is_retriable()` 做同样的判定。
+
+   一个地址可以有多个订阅者，而订阅是**广播**：一条消息对每个订阅者就是一次*投递*，每次投递
+   各自结算（`deliveryId = subscriptionId + messageId`）。订阅者意见不一致时（A 成功、B 抛
+   可重试错误），去向由投递级判定决定：
+
+   | 广播结果           | 邮箱的处理                                                       |
+   | ------------------ | ---------------------------------------------------------------- |
+   | 有投递成功         | 消息已处理——**不**回队；失败的投递交给 `_onDeliveryDeadLettered` |
+   | 全部失败且可重试   | 消息退回队列头部，由 `fetch()` 取回（只有一份）                  |
+   | 全部失败且不可重试 | 直接丢弃，避免一条坏消息被无限重试                               |
+
+   把“已经有人处理过”的消息退回队列，等于让 `fetch()` 消费者把同一段副作用再跑一遍——所以
+   部分失败按投递结算，不整条回队。
+
+   结算发生在全部投递（含重试链）落定之后。`post()` 只等派发、不等结算，因此 `post()` 之后立刻
+   读 `status()` 看不出结果；要观察被丢弃的投递，就重写 `_onDeliveryDeadLettered(message,
+   failedDeliveries)`（继承 `MemoryProvider`）。
+
+   > Python 与 Rust 移植版目前仍然是“任何可重试的投递失败 → 整条消息回队”。上面这套投递级
+   > 结算只在 TypeScript 端落地，两个移植版待跟进。
 
    ### 4. 订阅重试（opt-in）
 
@@ -229,27 +249,30 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    mailbox.registerProvider(provider)
    ```
 
-   |            | 默认（不传 `retry`）        | 传入策略                        |
-   | ---------- | --------------------------- | ------------------------------- |
-   | 可重试失败 | 回队一次，由 `fetch()` 取回 | 按指数退避重新调用回调          |
-   | 尝试次数   | 1                           | `maxAttempts`（含首次）         |
-   | 次数耗尽   | —                           | 消息退回队列，由 `fetch()` 取回 |
+   |            | 默认（不传 `retry`）        | 传入策略                |
+   | ---------- | --------------------------- | ----------------------- |
+   | 可重试失败 | 回队一次，由 `fetch()` 取回 | 按指数退避重新调用回调  |
+   | 尝试次数   | 1                           | `maxAttempts`（含首次） |
+   | 次数耗尽   | —                           | 没有任何投递成功时回队  |
 
-   两条规则保证它不会造成重复投递：
+   三条规则保证它不会造成重复投递：
    - **只重投给失败的那个订阅者。** 订阅是广播；重新广播会让已经成功的订阅者把副作用再跑
      一次。
    - **同一条消息不会在队列里出现两份。** `requeue()` 遇到已在队列或已在 in-flight 的消息就
      跳过，因此 N 个订阅者各自失败也只留一份副本。
+   - **已经处理过的消息不会回队。** 只要广播里有一次投递成功，失败的投递就走死信
+     （`_onDeliveryDeadLettered`），不把整条消息退回队列；回队只留给“全部订阅者都失败”。
 
    重试是 opt-in 的，因为 AMQP / SQS 这类传输本身就会重投、还自带死信队列，库再重投就是双重
    投递；自己负责投递的 provider 应当保持关闭。`provider.setRetryPolicy(null)` 回到默认行为，
-   子类可以用 `_onRetryExhausted` 钩子做死信落库或告警。
+   子类可以用 `_onRetryExhausted` 钩子告警，用 `_onDeliveryDeadLettered` 落库那些不回队的失败投递。
 
    Python 端是 `RetryPolicy(max_attempts=3, base_delay=1.0)`（单位：秒），Rust 端是
    `MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`。
 
    策略本身也是导出的：`RetryPolicy`、`isRetriableError`、`nextRetryDelay`、`AttemptLedger`——
    其他包（比如 RPC 传输层）可以直接复用同一套「可重试判定 + 退避」，不必各写一份。
+   投递记账同样是导出的：`DeliveryResult`、`shouldRequeueAfterBroadcast`。
 
    ### 5. ACK 超时
 
@@ -267,7 +290,36 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    Python（`ack_timeout`，`0` = 永不重投）与 Rust（`ack_timeout: Option<Duration>`，
    `Some(Duration::ZERO)` = 永不重投）两个移植版保持同样的三态语义。
 
-   ### 6. 访问 Provider
+   ### 6. 结算兜底与 provider 契约（超时、竞态）
+
+   一条广播只有当**每一次投递都结算**之后才算结算——§3 那套投递级回队规则止因此成立，隐患也正好藏
+   在这里。三道兜底：
+   - **卡死的回调不会让消息隐形。** 每次投递*尝试*都被 `provider.deliverySettleTimeout` 监控
+     （默认 `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30 秒）。到期后该尝试按 `cancelled` 结算：消息回到
+     `fetch()` 兜底（或死信钩子），并记一条告警。看门狗只对单次尝试计时，退避等待不计时，因此不会
+     掐断健康的重试链。`provider.deliverySettleTimeout = 0` 则显式退出：生命周期由调用方负责，
+     永不返回的回调会让这条消息在任何队列里都看不见。
+   - **`unsubscribe()` / `stop()` 不替正在执行的回调下结论。** 只取消停在重试退避里的投递。还在跑的
+     回调自己结算；提前当成失败会让整条广播被误判为“无人成功”，从而把同一段副作用交给 `fetch()`
+     消费者再跑一次。
+   - **同 `id` 的并发投递各自独立结算。** `post({ id })` 允许调用方指定 id，因此同一个订阅者上并发的
+     两次投递绝不共用结算记账。该去重的地方仍然去重：已在队列或 in-flight 的消息不会被二次入队。
+
+   自己实现**广播型** provider（`broadcastDeliveries = true`）时，`_send` 必须挂上结算 barrier——而且
+   是同步挂上（在任何 `await` 之前）：
+
+   ```ts
+   protected async _send(message: MailMessage): Promise<void> {
+     const deliveries = this.bus.publish(topic, message) // 每次投递一个 promise
+     this._trackBroadcastSettlement(message, deliveries)
+   }
+   ```
+
+   漏接 barrier 的 provider 不会静默丢消息：基类会兜底整条回队，并告警提醒接上。自己组装消息再投给
+   本地订阅者的生产者型 provider，必须走 `_deliverToLocalSubscription(subscriptionId, message)`，
+   否则那次投递根本不进记账。
+
+   ### 7. 访问 Provider
 
    你可以通过 `providers` Getter 或 `getProvider` 方法优雅地访问已注册的 Provider：
 

@@ -190,8 +190,8 @@ that appears later.
 Firing both paths would make `unreadCount` grow forever (subscribers never call `fetch`) and
 would hand an already-processed message to the next `fetch()` after an unsubscribe.
 
-The one exception is a failing callback: if it throws a retriable error, the message goes back
-to the queue, where `fetch()` can pick it up — see below.
+The one exception is a failing callback: if it throws a retriable error and nobody handled
+the message, it goes back to the queue, where `fetch()` can pick it up — see below.
 
 ```ts
 // subscribe: the callback runs when mail arrives
@@ -219,8 +219,30 @@ mailbox.subscribe(addr, async (message) => {
 
 Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / ECONNRESET /
 ETIMEDOUT`. A retriable failure requeues the message (visible in `unreadCount`, retrievable
-with `fetch()`); anything else is discarded. The Python and Rust ports behave the same way —
-in Rust the callback returns `Result<()>` and `MailboxError::is_retriable()` makes the call.
+with `fetch()`); anything else is discarded. In Rust the callback returns `Result<()>` and
+`MailboxError::is_retriable()` makes the call.
+
+One address can have several subscribers, and subscribing is a **broadcast**: one message
+becomes one _delivery_ per subscriber, and each delivery settles on its own
+(`deliveryId = subscriptionId + messageId`). That distinction decides what happens when
+subscribers disagree — A succeeds, B throws a retriable error:
+
+| Broadcast outcome                | What the mailbox does                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
+| Some delivery succeeded          | message stays handled — **not** requeued; failing deliveries go to `_onDeliveryDeadLettered` |
+| Every delivery failed, retriable | message goes back to the head of the queue, `fetch()` picks it up (one copy)                 |
+| Every delivery failed, fatal     | discarded, so one bad message is not retried forever                                         |
+
+Requeueing a message that somebody already handled would hand the same side effect to a
+`fetch()` consumer a second time, which is why partial failure is settled per delivery instead.
+
+Settlement happens once every delivery has finished, retry chain included. `post()` resolves at
+dispatch, not at settlement, so `status()` right after `post()` says nothing about the outcome —
+use `_onDeliveryDeadLettered(message, failedDeliveries)` (subclass `MemoryProvider`) to observe
+or dead-letter what was dropped.
+
+> The Python and Rust ports still treat every retriable delivery failure as a whole-message
+> requeue. The per-delivery settlement described above is TypeScript-only until they catch up.
 
 ### 4. Retrying a failed subscriber (opt-in)
 
@@ -239,26 +261,31 @@ mailbox.registerProvider(provider)
 | ----------------- | ------------------------------------ | -------------------------------------------- |
 | Retriable failure | requeued once; `fetch()` picks it up | callback re-invoked with exponential backoff |
 | Attempts          | 1                                    | `maxAttempts`, first try included            |
-| Budget exhausted  | —                                    | message requeued, `fetch()` picks it up      |
+| Budget exhausted  | —                                    | requeued when no delivery succeeded          |
 
-Two rules keep this safe:
+Three rules keep this safe:
 
 - **Only the failing subscriber is retried.** Subscribing is a broadcast; re-broadcasting
   would run the side effects of the subscribers that already succeeded a second time.
 - **A message is never queued twice.** `requeue()` skips a message that is already queued or
   in flight, so N failing subscribers leave exactly one copy in the queue.
+- **A handled message is never requeued.** If any delivery of the broadcast succeeded, the
+  failing ones are dead-lettered (`_onDeliveryDeadLettered`) instead of putting the whole
+  message back; requeue is reserved for "every subscriber failed".
 
 Retry is opt-in because AMQP / SQS style transports already redeliver and ship dead-letter
 queues — retrying on top of them would double-deliver. Providers that own redelivery should
-leave it off. `provider.setRetryPolicy(null)` returns to the default, and the
-`_onRetryExhausted` hook is where a subclass can dead-letter or alert.
+leave it off. `provider.setRetryPolicy(null)` returns to the default, `_onRetryExhausted` is
+where a subclass can alert, and `_onDeliveryDeadLettered` is where failed deliveries that will
+not be requeued can be persisted.
 
 The same policy exists in Python (`RetryPolicy(max_attempts=3, base_delay=1.0)`, seconds) and
 Rust (`MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`).
 
 The policy math is exported as well — `RetryPolicy`, `isRetriableError`, `nextRetryDelay`,
 `AttemptLedger` — so another package (an RPC transport, say) can reuse the same retriable check
-and backoff instead of writing its own.
+and backoff instead of writing its own. So is the delivery bookkeeping: `DeliveryResult`,
+`shouldRequeueAfterBroadcast`.
 
 ### 5. Acknowledgement Timeouts
 
@@ -277,7 +304,43 @@ await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // never requeue
 The same three-state semantics applies to the Python (`ack_timeout`, `0` = never requeue)
 and Rust (`ack_timeout: Option<Duration>`, `Some(Duration::ZERO)` = never requeue) ports.
 
-### 6. Accessing Providers
+### 6. Settlement Safety Nets (timeouts, races, provider contracts)
+
+A broadcast is only settled once **every** delivery of it settles — that is what makes the
+per-delivery requeue rule in §3 work, and it is also where the hazards hide. Three safety nets:
+
+- **A stuck callback cannot make a message invisible.** Every delivery _attempt_ is watched by
+  `provider.deliverySettleTimeout` (default `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30s). When it
+  fires the attempt is settled as `cancelled`: the message falls back to `fetch()` (or the
+  dead-letter hook) and a warning is logged. The watchdog covers one attempt only — a backoff
+  wait is never counted — so it cannot cut a healthy retry chain short. Setting
+  `provider.deliverySettleTimeout = 0` opts out: you then own the lifecycle, and a callback that
+  never returns keeps its message out of every queue.
+- **`unsubscribe()` and `stop()` never prejudge a running callback.** Only deliveries sitting in a
+  retry backoff are cancelled. A callback that is still running settles on its own; declaring it
+  failed would make the broadcast look like "nobody succeeded" and hand the same side effect to a
+  `fetch()` consumer a second time.
+- **Concurrent deliveries of the same `id` settle independently.** `post({ id })` accepts
+  caller-supplied ids, so two in-flight deliveries to one subscriber never share settlement
+  bookkeeping. Dedup still applies where it belongs: a message already queued or in flight is
+  never queued twice.
+
+If you implement your own **broadcast** provider (`broadcastDeliveries = true`), `_send` must
+attach the settlement barrier — synchronously, before any `await`:
+
+```ts
+protected async _send(message: MailMessage): Promise<void> {
+  const deliveries = this.bus.publish(topic, message) // one promise per delivery
+  this._trackBroadcastSettlement(message, deliveries)
+}
+```
+
+A provider that forgets it does not lose messages silently: the base class falls back to a
+whole-message requeue and warns you. Producer-style providers that build a message themselves and
+hand it to a local subscriber must use `_deliverToLocalSubscription(subscriptionId, message)`,
+otherwise that delivery is never accounted for.
+
+### 7. Accessing Providers
 
 You can gracefully access registered providers via the `providers` getter or `getProvider` method:
 

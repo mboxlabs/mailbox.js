@@ -13,6 +13,7 @@ import {
   nextRetryDelay,
   resolveRetryPolicy,
 } from '../lib/retry';
+import { DeliveryResult, DEFAULT_DELIVERY_SETTLE_TIMEOUT, deliveryKey, shouldRequeueAfterBroadcast, subscriptionIdOfDelivery, toDeliveryResults } from '../lib/delivery';
 
 /**
  * Represents a subscription record managed internally by the MailboxProvider.
@@ -21,13 +22,36 @@ import {
 interface ManagedSubscription {
   id: string;
   address: URL;
-  wrappedOnReceive: (message: MailMessage) => void | Promise<void>;
+  // 用户传入的原始回调。失败处理与重试由基类驱动（见 `_runDelivery`），
+  // 所以这里不再保存「包装后的回调」。
+  onReceive: (message: MailMessage) => void | Promise<void>;
   // Holds the underlying handle returned by the concrete provider's _subscribe method,
   // which is needed for unsubscribing.
   unsubscribeHandle?: any;
 }
 
 type PendingRetryTimer = ReturnType<typeof setTimeout>;
+
+/**
+ * 一次尚未结算的投递（某个订阅者对某条消息的处理，可能正卡在重试退避里）。
+ * 只有结算之后，广播的发送侧才知道这次投递是成功还是失败（issue#2）。
+ */
+interface PendingDelivery {
+  message: MailMessage;
+  /** 投递身份（`subscriptionId + messageId`）。`key` 只是内部 map 键，可能带并发序号后缀。 */
+  deliveryId: string;
+  subscriptionId: string;
+  settle: (result: DeliveryResult) => void;
+  /** 本次投递的结算 promise。广播的 barrier 等的就是它。 */
+  promise: Promise<DeliveryResult>;
+  /** 重试退避定时器（只有「等待重投」的投递才有）。 */
+  timer?: PendingRetryTimer;
+  /** 单次尝试的结算看门狗（防卡死的回调，见 `deliverySettleTimeout`）。 */
+  watchdog?: PendingRetryTimer;
+}
+
+/** 投递结算原因。`ok` 表示回调成功。 */
+type DeliveryOutcome = 'ok' | 'retriable' | 'fatal' | 'cancelled';
 
 export abstract class MailboxProvider implements IMailboxProvider {
   public readonly protocol: string;
@@ -40,9 +64,36 @@ export abstract class MailboxProvider implements IMailboxProvider {
    */
   protected retry: Required<RetryPolicy> | null = null;
 
+  /**
+   * 这个 provider 的 `subscribe` 是不是广播（一条消息投递给 N 个订阅者）。
+   *
+   * 广播型（`true`，如 MemoryProvider）：单次投递失败**不再**自动 `nack(requeue)` 整条消息 ——
+   * 已成功订阅者的副作用不该再执行一次。回不回队由发送侧的结算 barrier 按
+   * `shouldRequeueAfterBroadcast()` 统一判定（全部投递都失败才回队）。
+   *
+   * 队列 / 传输型（`false`，默认）：每次投递对应 broker 里的一份 ack，保持原有
+   * per-delivery `nack` 行为，交给传输层重投或死信。
+   */
+  protected readonly broadcastDeliveries: boolean = false;
+
   /** 按「订阅者 + 消息」记账尝试次数；订阅是广播，不能混在一起算。 */
   private readonly attempts = new AttemptLedger();
-  private readonly pendingRetries: Map<string, Map<PendingRetryTimer, MailMessage>> = new Map();
+  /** 按投递身份（`subscriptionId + messageId`）记账尚未结算的投递。 */
+  private readonly pendingDeliveries: Map<string, PendingDelivery> = new Map();
+
+  /**
+   * 单次投递尝试的结算超时（毫秒）。`0` / 负数关闭（调用方自己负责长任务）。
+   * 见 {@link DEFAULT_DELIVERY_SETTLE_TIMEOUT}。
+   */
+  public deliverySettleTimeout: number = DEFAULT_DELIVERY_SETTLE_TIMEOUT;
+
+  /**
+   * 已登记结算 barrier 的消息 → 登记层数（同 id 并发广播时不能互相抹掉）。
+   * 广播型 provider 若没登记 barrier，基类会兜底回队，不让可重试失败静默消失。
+   */
+  private readonly broadcastBarriers: Map<string, number> = new Map();
+  /** 已经告过警的「漏接 barrier」消息 id，避免一条消息警 N 次。 */
+  private readonly barrierlessWarned: Set<string> = new Set();
 
   constructor(protocol: string, retry?: RetryPolicy | null) {
     if (!protocol) {
@@ -88,9 +139,11 @@ export abstract class MailboxProvider implements IMailboxProvider {
       this.subscriptions.clear();
     }
 
-    // 关闭时取消所有待重投：进程都在收尾，不再把消息重新喂回回调。
-    for (const subId of Array.from(this.pendingRetries.keys())) {
-      this._cancelPendingRetries(subId);
+    // 关闭时取消所有「等待重投」的投递：进程都在收尾，不再把消息重新喂回回调。
+    // 取消不等于消息可以消失 —— 见 `_cancelPendingDeliveries`。
+    // 正在执行的回调不替它下结论（它可能马上就要成功）：由它自己结算，卡死的由看门狗兜。
+    for (const key of Array.from(this.pendingDeliveries.keys())) {
+      this._cancelPendingDeliveries(subscriptionIdOfDelivery(key));
     }
     this.attempts.clear();
 
@@ -118,8 +171,11 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
   /**
    * Subscribes to an address.
-   * This method manages the creation and lifecycle of the subscription object,
-   * including wrapping the callback for implicit ACK and centralized error handling.
+   * This method manages the creation of the subscription object, centralizing the
+   * implicit ACK and the error / retry handling of every delivery.
+   *
+   * 注册给具体 provider 的监听器返回一个在**投递最终结算**（含整条重试链）时才 resolve 的
+   * `Promise<DeliveryResult>`。广播型 provider 的发送侧靠它做结算判定（issue#2）。
    */
   public subscribe(
     address: URL,
@@ -127,27 +183,16 @@ export abstract class MailboxProvider implements IMailboxProvider {
   ): Subscription {
     const subId = this.generateId();
 
-    // Wrap the onReceive callback to implement implicit ACK and unified error handling.
-    const wrappedOnReceive = async (message: MailMessage): Promise<void> => {
-      try {
-        await onReceive(message);
-        // On successful execution, implicitly acknowledge the message.
-        await this.ack(message);
-        this.attempts.reset(subId, message.id);
-      } catch (error) {
-        // Handle the error according to the defined strategy.
-        this._handleReceiveError(error, message, this.subscriptions.get(subId));
-      }
-    };
-
     const managedSub: ManagedSubscription = {
       id: subId,
       address,
-      wrappedOnReceive,
+      onReceive,
     };
 
     // Call the concrete provider's implementation to start listening.
-    managedSub.unsubscribeHandle = this._subscribe(address, wrappedOnReceive);
+    managedSub.unsubscribeHandle = this._subscribe(address, (message) =>
+      this._startDelivery(subId, message)
+    );
     this.subscriptions.set(subId, managedSub);
 
     // Return a standard Subscription object to the caller.
@@ -204,11 +249,12 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
   /**
    * [Subclass Responsibility] Performs the actual subscription logic.
+   * @param onReceive 基类包装后的投递入口：返回本次投递的最终结算结果。
    * @returns A handle that can be used later to unsubscribe (e.g., a listener function, a subscription ID).
    */
   protected abstract _subscribe(
     address: URL,
-    onReceive: (message: MailMessage) => Promise<void>
+    onReceive: (message: MailMessage) => void | Promise<DeliveryResult | void>
   ): any;
 
   /**
@@ -237,6 +283,9 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
   /**
    * [Subclass Responsibility - Optional] Provides NACK capability.
+   *
+   * 广播型 provider 里它只会在**广播全部投递都结算之后**被调用一次（由发送侧的结算判定决定
+   * `requeue` 与否），不会再在每个订阅者失败时各回队一次。
    */
   protected _nack?(message: MailMessage, requeue: boolean): Promise<void>;
 
@@ -260,87 +309,415 @@ export abstract class MailboxProvider implements IMailboxProvider {
         // Use the captured `provider` context.
         const sub = provider.subscriptions.get(subId);
         if (sub) {
-          provider._cancelPendingRetries(subId);
-          await provider._unsubscribe(sub.id, sub.unsubscribeHandle);
           provider.subscriptions.delete(subId);
+          provider._cancelPendingDeliveries(subId);
+          await provider._unsubscribe(sub.id, sub.unsubscribeHandle);
         }
       },
     };
   }
 
   /**
-   * 订阅回调抛错时的统一处理。
+   * 投递入口：注册一个待结算投递，然后跑第一次尝试。
+   * 返回的 promise 在投递最终结算时 resolve（永不 reject）—— 广播的 barrier 等的就是它。
    *
-   * 默认（`retry === null`）：可重试 → `nack(requeue=true)` 退回队列；不可重试 → 丢弃。
-   * 开启重试后：可重试且未超上限 → 只重投给失败的那个订阅者（不广播给其他已成功的订阅者，
-   * 否则它们的副作用会被执行两次）；超上限 → 清零台账、调 `_onRetryExhausted`，再退回队列
-   * 交给 `fetch()` 兜底。
+   * 内部记账键由 `_reserveDeliveryKey` 分配：`post()` 允许自定义消息 id，同一个订阅者对
+   * 同 id 的并发投递如果共用一个键，后者会覆盖前者的结算入口 —— 那条投递永不结算，
+   * 对应的 barrier 永不落定，消息静默消失。
    */
-  protected _handleReceiveError(error: any, message: MailMessage, sub?: ManagedSubscription): void {
+  private _startDelivery(subscriptionId: string, message: MailMessage): Promise<DeliveryResult> {
+    const key = this._reserveDeliveryKey(subscriptionId, message.id);
+    let settle!: (result: DeliveryResult) => void;
+    const promise = new Promise<DeliveryResult>((resolve) => {
+      settle = resolve;
+    });
+
+    this.pendingDeliveries.set(key, {
+      message,
+      deliveryId: deliveryKey(subscriptionId, message.id),
+      subscriptionId,
+      settle,
+      promise,
+    });
+    this._runDelivery(subscriptionId, message, key);
+
+    return promise;
+  }
+
+  /** 内部记账键：同 `(subscriptionId, messageId)` 的并发投递各自独立。 */
+  private _reserveDeliveryKey(subscriptionId: string, messageId: string): string {
+    const base = deliveryKey(subscriptionId, messageId);
+    if (!this.pendingDeliveries.has(base)) {
+      return base;
+    }
+    for (let suffix = 1; ; suffix++) {
+      const candidate = `${base}\u0000${suffix}`;
+      if (!this.pendingDeliveries.has(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  /**
+   * 把一条消息投递给本 provider 的某个**本地订阅者**，走与 `subscribe` 完全相同的投递记账
+   * （隐式 ack、错误处理、重试、结算）。生产者型 provider（自己组装消息再分发）必须走这里，
+   * 不要直接调用户回调 —— 那样这次投递没人记账，失败也不会回队。
+   */
+  protected _deliverToLocalSubscription(subscriptionId: string, message: MailMessage): Promise<DeliveryResult> {
+    return this._startDelivery(subscriptionId, message);
+  }
+
+  /**
+   * 跑一次尝试。成功 → 隐式 ack + 结算 `ok`；抛错 → 交给 `_handleDeliveryError`。
+   */
+  private _runDelivery(subscriptionId: string, message: MailMessage, key: string): void {
+    const sub = this.subscriptions.get(subscriptionId);
+    if (!sub) {
+      // 等待期间被退订 / provider 已关闭：不再调用回调，按取消结算。
+      this._settleAndFallback(key, 'cancelled');
+      return;
+    }
+
+    // 看门狗只给「一次尝试」计时：卡死的回调会拖住整条广播的结算判定（消息既不回队也不死信）。
+    this._armDeliveryWatchdog(key);
+
+    let attempt: void | Promise<void>;
+    try {
+      attempt = sub.onReceive(message);
+    } catch (error) {
+      this._handleDeliveryError(subscriptionId, message, key, error);
+      return;
+    }
+
+    Promise.resolve(attempt).then(
+      async () => {
+        try {
+          // On successful execution, implicitly acknowledge the message.
+          await this.ack(message);
+          this.attempts.reset(subscriptionId, message.id);
+          this._settleDelivery(key, 'ok');
+        } catch (error) {
+          this._handleDeliveryError(subscriptionId, message, key, error);
+        }
+      },
+      (error) => {
+        this._handleDeliveryError(subscriptionId, message, key, error);
+      },
+    );
+  }
+
+  /**
+   * 订阅回调抛错时的统一处理（投递级）。
+   *
+   * 默认（`retry === null`）：可重试 → 结算 `retriable`；不可重试 → 结算 `fatal`（死信）。
+   * 开启重试后：可重试且未超上限 → 只重投给失败的那个订阅者（不广播给其他已成功的订阅者，
+   * 否则它们的副作用会被执行两次）；超上限 → 清零台账、调 `_onRetryExhausted`，再结算 `retriable`。
+   *
+   * 广播型 provider 不在这里 `nack`：整条消息回不回队由发送侧在所有投递结算后统一判定
+   * （见 `shouldRequeueAfterBroadcast`）。没接 barrier 的广播 provider 由
+   * `_fallbackForMissingBarrier` 兜底（整条回队 + 告警），否则可重试失败就静默消失了。
+   * 非广播型 provider 每次投递对应 broker 的一次 ack，保持原有 per-delivery `nack(requeue=true)`。
+   */
+  protected _handleDeliveryError(subscriptionId: string, message: MailMessage, key: string, error: any): void {
     console.error(`[${this.protocol}] Error processing message ${message.id}:`, error);
 
     const isRetriable = this._isRetriable(error);
 
-    if (isRetriable && this.retry && sub) {
-      const attempt = this.attempts.record(sub.id, message.id);
+    if (isRetriable && this.retry) {
+      const attempt = this.attempts.record(subscriptionId, message.id);
 
-      if (attempt < this.retry.maxAttempts && this.subscriptions.has(sub.id)) {
+      if (attempt < this.retry.maxAttempts && this.subscriptions.has(subscriptionId)) {
         const delay = nextRetryDelay(this.retry, attempt);
         const timer = setTimeout(() => {
-          const pending = this.pendingRetries.get(sub.id);
-          if (pending) {
-            pending.delete(timer);
+          const pending = this.pendingDeliveries.get(key);
+          if (!pending) {
+            return; // 退避期间已结算（退订 / 关闭）
           }
-          if (!this.subscriptions.has(sub.id)) {
-            // 等待期间退订了：不重投给已消失的订阅者，退回队列而不是静默丢掉。
-            this.nack(message, true).catch(() => undefined);
+          pending.timer = undefined;
+          if (!this.subscriptions.has(subscriptionId)) {
+            // 等待期间退订了：不重投给已消失的订阅者，按取消结算（消息由兜底路径接手）。
+            this._settleAndFallback(key, 'cancelled');
             return;
           }
-          void sub.wrappedOnReceive(message);
+          this._runDelivery(subscriptionId, message, key);
         }, delay);
         // 不要因为一个待重投就把 Node 事件循环撑住。
         (timer as unknown as { unref?: () => void }).unref?.();
-        if (!this.pendingRetries.has(sub.id)) {
-          this.pendingRetries.set(sub.id, new Map());
+
+        const pending = this.pendingDeliveries.get(key);
+        if (pending) {
+          pending.timer = timer;
+          // 退避等待不是“卡死的尝试”：看门狗只在尝试进行中计时，退避期间关掉，
+          // 否则一个比看门狗还长的退避会被自己掐断。
+          this._clearDeliveryWatchdog(pending);
+        } else {
+          clearTimeout(timer); // 已经结算（例如退订），定时器作废
         }
-        this.pendingRetries.get(sub.id)!.set(timer, message);
         return;
       }
 
       if (attempt >= this.retry.maxAttempts) {
-        this.attempts.reset(sub.id, message.id);
+        this.attempts.reset(subscriptionId, message.id);
         this._onRetryExhausted?.(message, attempt);
       }
     }
 
-    // Crucial: NACK the message first to prevent reprocessing, then handle other tasks.
-    this.nack(message, isRetriable)
-      .catch(nackError => {
+    if (isRetriable && !this.broadcastDeliveries) {
+      // Crucial: NACK the message first to prevent reprocessing, then handle other tasks.
+      this.nack(message, true).catch(nackError => {
         console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${message.id}. Risk of message duplication.`, nackError);
       });
+    }
+
+    this._settleAndFallback(key, isRetriable ? 'retriable' : 'fatal');
   }
 
   /**
    * [Subclass Responsibility - Optional] 重试次数耗尽时的钩子（例如写死信队列 / 告警）。
-   * 调用后消息仍会退回队列，由 `fetch()` 兜底。
+   * 若这次广播没有任何订阅者成功，消息随后仍会退回队列，由 `fetch()` 兜底。
    */
   protected _onRetryExhausted?(message: MailMessage, attempts: number): void;
 
   /**
-   * 取消某个订阅者的待重投。
-   *
-   * 取消定时器不等于消息可以消失：每一条被取消的重投都退回队列，由 `fetch()` 兜底。
+   * [Subclass Responsibility - Optional] 死信钩子：广播已结算，有投递失败但消息**不**回队时用
+   * （即“部分失败”或“全部不可重试”）。不回队是为了不把已成功者处理过的消息再投一次，
+   * 代价是失败的投递从此隐形 —— 这个钩子就是补上那个可观测性缺口（写死信队列 / 告警）。
    */
-  private _cancelPendingRetries(subscriptionId: string): void {
-    const pending = this.pendingRetries.get(subscriptionId);
+  protected _onDeliveryDeadLettered?(message: MailMessage, failed: readonly DeliveryResult[]): void;
+
+  /**
+   * 广播的结算 barrier：把 `publish` 返回的每次投递绑成一个后台任务，全部投递
+   * （含重试链）落定后统一判定要不要 `nack(requeue)`。给广播型 provider 的 `_send` 用。
+   *
+   * 不阻塞 `post()`：`post()` 在派发完成时就 resolve，判定在投递结算后才发生。
+   * 这正是 issue#2 的坑：“按成功订阅者数 > 0 跳过回队”在 fire-and-forget 广播上会误判 ——
+   * 先失败的订阅者可能比慢而成功的订阅者先结算。
+   */
+  protected _trackBroadcastSettlement(
+    message: MailMessage,
+    deliveries: readonly (Promise<DeliveryResult | void> | DeliveryResult | void)[],
+  ): void {
+    // 登记 barrier：基类靠它区分「有人在判定」和「provider 漏接了 barrier」。
+    // 必须在 `_send` 里同步登记（`await` 之前），否则同步失败的投递会先看到“无 barrier”。
+    this._registerBroadcastBarrier(message.id);
+
+    void Promise.allSettled(deliveries.map((delivery) => Promise.resolve(delivery)))
+      .then(async (settled) => {
+        const results = toDeliveryResults(settled);
+        const requeue = shouldRequeueAfterBroadcast(results);
+        if (!requeue) {
+          const failed = results.filter((result) => !result.ok);
+          if (failed.length > 0) {
+            this._onDeliveryDeadLettered?.(message, failed);
+          }
+        }
+        await this.nack(message, requeue);
+      })
+      .catch((error) => {
+        console.error(`[${this.protocol}] CRITICAL: Failed to settle a broadcast.`, error);
+      })
+      .finally(() => {
+        this._releaseBroadcastBarrier(message.id);
+      });
+  }
+
+  private _registerBroadcastBarrier(messageId: string): void {
+    this.broadcastBarriers.set(messageId, (this.broadcastBarriers.get(messageId) ?? 0) + 1);
+  }
+
+  private _releaseBroadcastBarrier(messageId: string): void {
+    const depth = (this.broadcastBarriers.get(messageId) ?? 0) - 1;
+    if (depth > 0) {
+      this.broadcastBarriers.set(messageId, depth);
+    } else {
+      this.broadcastBarriers.delete(messageId);
+    }
+  }
+
+  /** 这条消息当前有没有正在判定的 barrier（同 id 并发广播时按层数计）。 */
+  private _barrierDepth(messageId: string): number {
+    return this.broadcastBarriers.get(messageId) ?? 0;
+  }
+
+  /**
+   * 广播型 provider 的兜底：投递已结算，但这条消息没有 barrier —— 说明 `_send` 漏接了
+   * `_trackBroadcastSettlement`，没人做回队判定。宁可整条回队让 `fetch()` 兜底
+   * （issue#1 的“不得静默丢失”），也不能让消息消失；同时告警提示 provider 作者。
+   *
+   * 推迟一个微任务再判定：`publish` 里同步抛错的投递跑在 `_send` 登记 barrier 之前。
+   */
+  private _fallbackForMissingBarrier(message: MailMessage, result: DeliveryResult): void {
+    if (result.ok || this._barrierDepth(message.id) > 0) {
+      return;
+    }
+    queueMicrotask(() => {
+      if (this._barrierDepth(message.id) > 0) {
+        return; // barrier 已登记（同一任务内），判定交给它
+      }
+      this._warnMissingBarrier(message.id);
+      if (result.reason === 'fatal') {
+        this._onDeliveryDeadLettered?.(message, [result]);
+        return;
+      }
+      this.nack(message, true).catch(nackError => {
+        console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${message.id}. Risk of message duplication.`, nackError);
+      });
+    });
+  }
+
+  private _warnMissingBarrier(messageId: string): void {
+    if (this.barrierlessWarned.has(messageId)) {
+      return;
+    }
+    if (this.barrierlessWarned.size > 500) {
+      this.barrierlessWarned.clear(); // 不让告警名单无限增长
+    }
+    this.barrierlessWarned.add(messageId);
+    console.warn(
+      `[${this.protocol}] A broadcast delivery of message ${messageId} settled without a settlement barrier. ` +
+      'A broadcast provider must call `_trackBroadcastSettlement(message, deliveries)` in `_send` ' +
+      '(synchronously, before any await) or retriable failures will fall back to whole-message requeue.',
+    );
+  }
+
+  /**
+   * 结算一条投递；广播型 provider 若这条消息没接 barrier，走兜底。
+   */
+  private _settleAndFallback(key: string, outcome: DeliveryOutcome): void {
+    const pending = this.pendingDeliveries.get(key);
+    if (!pending) {
+      return; // 已结算过
+    }
+    const result = this._settleDelivery(key, outcome);
+    if (result && this.broadcastDeliveries) {
+      this._fallbackForMissingBarrier(pending.message, result);
+    }
+  }
+
+  /**
+   * 放弃一条投递（退避中退订 / 看门狗超时）：按取消结算，消息交给兜底路径。
+   */
+  private _abandonDelivery(key: string, outcome: DeliveryOutcome = 'cancelled'): void {
+    const pending = this.pendingDeliveries.get(key);
     if (!pending) {
       return;
     }
-    for (const [timer, message] of pending) {
-      clearTimeout(timer);
-      this.nack(message, true).catch(() => undefined);
+    const result = this._settleDelivery(key, outcome);
+    if (!result) {
+      return;
     }
-    this.pendingRetries.delete(subscriptionId);
+    if (this.broadcastDeliveries) {
+      this._fallbackForMissingBarrier(pending.message, result);
+      return;
+    }
+    // 非广播（传输型）：每次投递对应 broker 的一次 ack，交回传输层重投。
+    this.nack(pending.message, true).catch(nackError => {
+      console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${pending.message.id}. Risk of message duplication.`, nackError);
+    });
+  }
+
+  // --- 结算看门狗 ---
+
+  /**
+   * 给当前这次尝试装一个结算看门狗。只在尝试开始时计时，退避等待期间不计时，
+   * 所以不会掐断健康的重试链。
+   */
+  private _armDeliveryWatchdog(key: string): void {
+    const pending = this.pendingDeliveries.get(key);
+    if (!pending) {
+      return;
+    }
+    this._clearDeliveryWatchdog(pending);
+    const timeout = this.deliverySettleTimeout;
+    if (!timeout || timeout <= 0) {
+      return; // 显式关闭：长任务由调用方自己负责
+    }
+    const timer = setTimeout(() => {
+      pending.watchdog = undefined;
+      this._onDeliveryStall(key);
+    }, timeout);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    pending.watchdog = timer;
+  }
+
+  private _clearDeliveryWatchdog(pending: PendingDelivery): void {
+    if (pending.watchdog) {
+      clearTimeout(pending.watchdog);
+      pending.watchdog = undefined;
+    }
+  }
+
+  /**
+   * 看门狗到期：回调还在跑（卡死 / 超长）。按取消结算，消息回到兜底路径；
+   * 回调事后成功不会重复结算（见 `_settleDelivery` 的一次性守卫）。
+   */
+  private _onDeliveryStall(key: string): void {
+    const pending = this.pendingDeliveries.get(key);
+    if (!pending) {
+      return;
+    }
+    console.warn(
+      `[${this.protocol}] Delivery ${pending.deliveryId} did not settle within ${this.deliverySettleTimeout}ms ` +
+      `(subscriber callback still running). Settling it as cancelled so the message can be requeued; ` +
+      'raise `deliverySettleTimeout` (0 disables) if this delivery is expected to take longer.',
+    );
+    this._abandonDelivery(key, 'cancelled');
+  }
+
+  /**
+   * 结算一条投递（幂等：已结算过则直接返回 `undefined`，不会重复投。
+   */
+  private _settleDelivery(key: string, outcome: DeliveryOutcome): DeliveryResult | undefined {
+    const pending = this.pendingDeliveries.get(key);
+    if (!pending) {
+      return undefined; // 已结算过（例如退订时按 cancelled 结算）
+    }
+    this.pendingDeliveries.delete(key);
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+    this._clearDeliveryWatchdog(pending);
+
+    const result: DeliveryResult = {
+      deliveryId: pending.deliveryId,
+      subscriptionId: pending.subscriptionId,
+      messageId: pending.message.id,
+      ok: outcome === 'ok',
+      ...(outcome === 'ok' ? {} : { reason: outcome }),
+    };
+    pending.settle(result);
+    return result;
+  }
+
+  /**
+   * 取消某个订阅者尚未结算的投递（退订 / 关闭）。
+   *
+   * 只取消「等待重投」的投递（有退避定时器）。正在执行的回调不替它下结论：
+   * 提前结算成 `cancelled` 会被 barrier 误判为“无人成功”→ 整条消息回队 →
+   * 已经执行过的副作用被 `fetch()` 消费者再跑一次（issue#2 的重复，换了个入口）。
+   * 卡死的回调由看门狗兜底。
+   */
+  private _cancelPendingDeliveries(subscriptionId: string): void {
+    const prefix = deliveryKey(subscriptionId, '');
+    for (const key of Array.from(this.pendingDeliveries.keys())) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      const pending = this.pendingDeliveries.get(key);
+      if (!pending || !pending.timer) {
+        continue; // 正在跑的回调：由它自己结算
+      }
+      clearTimeout(pending.timer);
+      pending.timer = undefined;
+      this._abandonDelivery(key, 'cancelled');
+    }
+  }
+
+  /**
+   * 当前尚未结算的投递数量（诊断 / 测试用）。
+   */
+  protected get pendingDeliveryCount(): number {
+    return this.pendingDeliveries.size;
   }
 
   protected _isRetriable(error: any): boolean {

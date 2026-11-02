@@ -474,7 +474,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
   });
 
   it('一个订阅回调抛错不影响其他订阅者', async () => {
-    // 订阅者抛错由 MailboxProvider 的 wrappedOnReceive 兜底：post() 不应 reject，
+    // 订阅者抛错由 MailboxProvider 的投递入口（`_runDelivery` / `_handleDeliveryError`）兜底：post() 不应 reject，
     // 其余订阅者仍要收到消息。（注意：抛错的那份目前不会回到队列，见审核报告。）
     const address = 'mem://throwing-listener@bus/inbox';
     mailbox.subscribe(address, () => {

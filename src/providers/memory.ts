@@ -5,9 +5,10 @@ import {
 } from '../interfaces';
 import { MailMessageQueue, MailMessageAckable } from '../lib/MessageQueue';
 import { RetryPolicy } from '../lib/retry';
+import { DeliveryResult } from '../lib/delivery';
 import { getCanonicalMailboxAddressIdentifier } from '../lib/utils';
 
-type Listener = (message: MailMessage) => void | Promise<void>;
+type Listener = (message: MailMessage) => void | Promise<DeliveryResult | void>;
 
 // A simple in-memory event bus to simulate message passing between different instances.
 class MemoryEventBus {
@@ -54,23 +55,37 @@ class MemoryEventBus {
 
   /**
    * 发布一条消息：有订阅者时交给订阅回调，否则入队等待 fetch 取回。
+   *
    * @param topic The topic to publish the message to.
    * @param message The message to publish.
+   * @returns 广播时返回每次投递的结算 promise（供发送侧做结算判定，见 `_send`）；
+   *   入队时返回 `null`。注意广播仍是 fire-and-forget：这里不 await，`post()` 也不会
+   *   等订阅回调跑完。
    */
-  public publish(topic: string, message: MailMessage): void {
+  public publish(topic: string, message: MailMessage): Promise<DeliveryResult | void>[] | null {
     this.lastActivity.set(topic, new Date().toISOString());
     // 交给订阅者
     const listeners = this.topics.get(topic);
     if (listeners && listeners.length > 0) {
-      listeners.forEach(listener => listener(message));
-      // 已经交给订阅者的消息不再入队。以前两条路都走：订阅者从不 fetch，
-      // 于是队列只涨不消（`status().unreadCount` 一直增长），而重新订阅后一次
-      // `fetch` 会把已处理过的消息再投递一遍（副作用执行两次）。
       // 一条消息只走一条路：有订阅者就只走订阅。
-      return;
+      // 以前两条路都走：订阅者从不 fetch，于是队列只涨不消（`status().unreadCount` 一直增长），
+      // 而重新订阅后一次 `fetch` 会把已处理过的消息再投递一遍（副作用执行两次）。
+      //
+      // 每次投递的 promise 要留一份给发送侧：issue#2 —— 部分失败时「整条消息回不回队」
+      // 必须等全部投递结算后才能判断，不能由先失败的那个订阅者说了算。
+      return listeners.map((listener) => {
+        try {
+          return Promise.resolve(listener(message));
+        } catch (error) {
+          // 监听器同步抛错：归一成 rejected，交给 barrier 的 allSettled 处理，
+          // 不能让它把整个 publish（进而把 `post()`）打断。
+          return Promise.reject(error);
+        }
+      });
     }
     // 入队，等待 fetch 取回
     this.messageQueue.enqueue(topic, message);
+    return null;
   }
 
   /**
@@ -158,20 +173,34 @@ export class MemoryProvider extends MailboxProvider {
   private bus = MemoryEventBus.getInstance();
 
   /**
+   * 订阅是广播：一条消息对每个订阅者各投递一次。失败处理因此走投递级记账，
+   * 整条消息回不回队由 `_send` 里的结算 barrier 决定（issue#2）。
+   */
+  protected readonly broadcastDeliveries = true;
+
+  /**
    * @param retry 可选的订阅重试策略。不传则保持默认：订阅失败只把消息退回队列，不自动重投。
    */
   constructor(retry?: RetryPolicy | null) {
     super('mem', retry);
   }
 
+  /**
+   * 发送并给广播挂上结算 barrier：等这条消息的全部投递（含重试链）落定后，才决定要不要
+   * 把它退回队列（判定在基类的 `shouldRequeueAfterBroadcast`，issue#2）。
+   */
   protected async _send(message: MailMessage): Promise<void> {
     const topic = getCanonicalMailboxAddressIdentifier(message.to);
-    this.bus.publish(topic, message);
+    const deliveries = this.bus.publish(topic, message);
+    if (!deliveries) {
+      return; // 没有订阅者：消息入队，由 fetch / ack 那套语义负责
+    }
+    this._trackBroadcastSettlement(message, deliveries);
   }
 
   protected _subscribe(
     address: URL,
-    onReceive: (message: MailMessage) => Promise<void>,
+    onReceive: (message: MailMessage) => Promise<DeliveryResult>,
   ): any {
     const topic = getCanonicalMailboxAddressIdentifier(address);
     // The returned unsubscribe function is the "unsubscribeHandle"
@@ -220,11 +249,11 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
-   * 订阅模式下 onReceive 抛错时，MailboxProvider 会带 `isRetriable` 结果调到这里。
+   * 订阅模式下广播结算后的处置入口（由 `_send` 的 barrier 调用一次，不在每个订阅者失败时调用）。
    *
    * 之前这里是空实现：订阅的消息不再入队后，可重试错误等于消息静默消失。
-   * 现在 requeue=true 将消息退回 topic 队列头部，可被 `fetch` 取回且在 `unreadCount` 里可见；
-   * requeue=false（非可重试）则按死信处理直接丢弃。
+   * 现在 requeue=true（全部投递都失败）将消息退回 topic 队列头部，可被 `fetch` 取回且在
+   * `unreadCount` 里可见；requeue=false（有订阅者成功，或失败不可重试）则按死信处理直接丢弃。
    */
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
     if (!requeue) {
