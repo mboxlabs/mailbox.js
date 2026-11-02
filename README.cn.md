@@ -215,7 +215,8 @@ flowchart LR
 
    可重试指 `error.isRetriable === true`，或 `error.code` 属于 `503 / 504 / ECONNRESET /
 ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余直接
-   丢弃。Rust 端回调返回 `Result<()>`，由 `MailboxError::is_retriable()` 做同样的判定。
+   丢弃。[Rust 移植版](https://github.com/mboxlabs/mailbox.rust)对回调返回的 `Result<()>`
+   做同样的判定。
 
    一个地址可以有多个订阅者，而订阅是**广播**：一条消息对每个订阅者就是一次*投递*，每次投递
    各自结算（`deliveryId = subscriptionId + messageId`）。订阅者意见不一致时（A 成功、B 抛
@@ -234,8 +235,9 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    读 `status()` 看不出结果；要观察被丢弃的投递，就重写 `_onDeliveryDeadLettered(message,
    failedDeliveries)`（继承 `MemoryProvider`）。
 
-   > Python 与 Rust 移植版目前仍然是“任何可重试的投递失败 → 整条消息回队”。上面这套投递级
-   > 结算只在 TypeScript 端落地，两个移植版待跟进。
+   > [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
+   > 移植版正是这样按投递结算广播的。各移植版的 README（“Subscriber Failures and Retry”）给出
+   > 自己语言的 API 名称；上面这套规则就是它们共同遵循的规范。
 
    ### 4. 订阅重试（opt-in）
 
@@ -267,8 +269,9 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    投递；自己负责投递的 provider 应当保持关闭。`provider.setRetryPolicy(null)` 回到默认行为，
    子类可以用 `_onRetryExhausted` 钩子告警，用 `_onDeliveryDeadLettered` 落库那些不回队的失败投递。
 
-   Python 端是 `RetryPolicy(max_attempts=3, base_delay=1.0)`（单位：秒），Rust 端是
-   `MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`。
+   同一套策略——相同的可重试判定、相同的退避公式、相同的“永不重复入队”规则——在
+   [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
+   移植版里都有实现，各语言的具体构造写法见各自 README。
 
    策略本身也是导出的：`RetryPolicy`、`isRetriableError`、`nextRetryDelay`、`AttemptLedger`——
    其他包（比如 RPC 传输层）可以直接复用同一套「可重试判定 + 退避」，不必各写一份。
@@ -287,8 +290,8 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // 永不重投
    ```
 
-   Python（`ack_timeout`，`0` = 永不重投）与 Rust（`ack_timeout: Option<Duration>`，
-   `Some(Duration::ZERO)` = 永不重投）两个移植版保持同样的三态语义。
+   [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
+   移植版保持同样的三态：缺省超时、自定义超时、永不重投。
 
    ### 6. 结算兜底与 provider 契约（超时、竞态）
 
@@ -349,16 +352,20 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
 
    ## 📦 生态系统
 
-| 包                                                                        | 说明                                         |
-| ------------------------------------------------------------------------- | -------------------------------------------- |
-| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)             | 核心邮箱系统                                 |
-| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | 输入提供者：人机输入交互抽象类               |
-| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | 邮箱提供者：电子邮件(SMTP, IMAP/POP3),待实现 |
+| 包                                                                          | 说明                                                                                            |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)               | 核心邮箱系统                                                                                    |
+| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js)   | 输入提供者：人机输入交互抽象类                                                                  |
+| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js)   | 邮箱提供者：电子邮件(SMTP, IMAP/POP3),待实现                                                    |
+| [`mboxlabs-mailbox`（crates.io）](https://github.com/mboxlabs/mailbox.rust) | Rust 移植版 — `cargo add mboxlabs-mailbox`（v0.1.0，可编译为 WASM）                             |
+| [`mailbox.py`](https://github.com/mboxlabs/mailbox.py)                      | Python 移植版 — `pip install git+https://github.com/mboxlabs/mailbox.py.git`（尚未发布到 PyPI） |
+
+> **一份规范，三种实现。** 地址格式、订阅与取回二选一、投递级结算、opt-in 重试与 ACK 超时只在本
+> README 里定义一次，TypeScript、Python、Rust 三端等价实现；改动语义时三套测试（`vitest` / `pytest`
+> / `cargo test`）必须同时通过。
 
 ## 📚 深入学习
 
-- [Erlang 灵感详解](erlang-inspiration.md)
-- [5 个真实场景示例](examples.md)
 - [API 速查手册](docs/)
 
 ## 🤝 贡献指南

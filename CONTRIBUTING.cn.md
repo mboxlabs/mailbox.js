@@ -40,7 +40,11 @@
    pnpm test
    pnpm style
 
-   # Python 与 Rust 移植版各自带测试套件；改动涉及三端共有的行为时一并跑
+   # Mailbox 家族共三个仓库：mailbox.js（本仓库）、mailbox.py 和 mailbox.rust。
+   # 改动涉及三端共有的行为时，将另两个仓库并排 clone 到本仓库旁边（它们不在本仓库的版本控制里），
+   # 并一并跑它们的测试：
+   #   git clone git@github.com:mboxlabs/mailbox.py.git   python
+   #   git clone git@github.com:mboxlabs/mailbox.rust.git rust
    (cd python && python3 -m pytest -q)
    (cd rust && cargo test)
    ```
@@ -65,9 +69,9 @@
 
 我们使用 [Vitest](https://vitest.dev/) 进行单元测试。
 
-本包同时发布三个移植版：Python 端用 `pytest`（在 `python/` 下跑 `python3 -m pytest -q`），
-Rust 端用 `cargo test`（在 `rust/` 下）。投递语义——订阅与取回二选一、ack/nack 与 in-flight
-超时、回队去重、opt-in 的订阅重试——在三端都有定义，因此改动它们必须在三端都补上对应测试。
+Mailbox 家族在三个仓库里发布三种实现：本包、[mailbox.py](https://github.com/mboxlabs/mailbox.py)（用 `pytest`）与 [mailbox.rust](https://github.com/mboxlabs/mailbox.rust)（用 `cargo test`）。本仓库旁的 `python/`、`rust/` 目录只是本地开发布局，不在本仓库的版本控制里。
+投递语义——订阅与取回二选一、ack/nack 与 in-flight 超时、回队去重、opt-in 的订阅重试——只在
+`README.md` 里定义一次、三端各自实现，因此改动它们必须在三端都补上对应测试。
 
 ### 必须覆盖的场景
 

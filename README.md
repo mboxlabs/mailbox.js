@@ -219,8 +219,8 @@ mailbox.subscribe(addr, async (message) => {
 
 Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / ECONNRESET /
 ETIMEDOUT`. A retriable failure requeues the message (visible in `unreadCount`, retrievable
-with `fetch()`); anything else is discarded. In Rust the callback returns `Result<()>` and
-`MailboxError::is_retriable()` makes the call.
+with `fetch()`); anything else is discarded. The [Rust port](https://github.com/mboxlabs/mailbox.rust)
+makes the same call on the `Result<()>` that a callback returns.
 
 One address can have several subscribers, and subscribing is a **broadcast**: one message
 becomes one _delivery_ per subscriber, and each delivery settles on its own
@@ -241,8 +241,10 @@ dispatch, not at settlement, so `status()` right after `post()` says nothing abo
 use `_onDeliveryDeadLettered(message, failedDeliveries)` (subclass `MemoryProvider`) to observe
 or dead-letter what was dropped.
 
-> The Python and Rust ports still treat every retriable delivery failure as a whole-message
-> requeue. The per-delivery settlement described above is TypeScript-only until they catch up.
+> The [Python](https://github.com/mboxlabs/mailbox.py) and [Rust](https://github.com/mboxlabs/mailbox.rust)
+> ports settle a broadcast per delivery in exactly this way. Each port's README
+> ("Subscriber Failures and Retry") lists its own API names; the rule above is the specification
+> they all follow.
 
 ### 4. Retrying a failed subscriber (opt-in)
 
@@ -279,8 +281,10 @@ leave it off. `provider.setRetryPolicy(null)` returns to the default, `_onRetryE
 where a subclass can alert, and `_onDeliveryDeadLettered` is where failed deliveries that will
 not be requeued can be persisted.
 
-The same policy exists in Python (`RetryPolicy(max_attempts=3, base_delay=1.0)`, seconds) and
-Rust (`MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`).
+The same policy — same retriable check, same backoff formula, same "never queue twice" rule — is
+implemented in the [Python](https://github.com/mboxlabs/mailbox.py) and
+[Rust](https://github.com/mboxlabs/mailbox.rust) ports; their READMEs show the constructor spelling
+for each language.
 
 The policy math is exported as well — `RetryPolicy`, `isRetriableError`, `nextRetryDelay`,
 `AttemptLedger` — so another package (an RPC transport, say) can reuse the same retriable check
@@ -301,8 +305,9 @@ await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // custom
 await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // never requeue
 ```
 
-The same three-state semantics applies to the Python (`ack_timeout`, `0` = never requeue)
-and Rust (`ack_timeout: Option<Duration>`, `Some(Duration::ZERO)` = never requeue) ports.
+The [Python](https://github.com/mboxlabs/mailbox.py) and
+[Rust](https://github.com/mboxlabs/mailbox.rust) ports keep the same three states: default timeout,
+custom timeout, never requeue.
 
 ### 6. Settlement Safety Nets (timeouts, races, provider contracts)
 
@@ -371,16 +376,21 @@ For robust production systems, explicit lifecycle management is crucial:
 
 ## 📦 Ecosystem
 
-| Package                                                                   | Description                                                      |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)             | The core mailbox system                                          |
-| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | Input Provider: An abstract class for human-computer interaction |
-| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | Mailbox Provider: Email (SMTP, IMAP/POP3)                        |
+| Package                                                                    | Description                                                                                  |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)              | The core mailbox system                                                                      |
+| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js)  | Input Provider: An abstract class for human-computer interaction                             |
+| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js)  | Mailbox Provider: Email (SMTP, IMAP/POP3)                                                    |
+| [`mboxlabs-mailbox` (crates.io)](https://github.com/mboxlabs/mailbox.rust) | Rust port — `cargo add mboxlabs-mailbox` (v0.1.0, also builds to WASM)                       |
+| [`mailbox.py`](https://github.com/mboxlabs/mailbox.py)                     | Python port — `pip install git+https://github.com/mboxlabs/mailbox.py.git` (not on PyPI yet) |
+
+> **One specification, three implementations.** The address format, subscribe-versus-fetch,
+> per-delivery settlement, opt-in retry and ack timeouts are specified once — in this README — and
+> implemented identically in TypeScript, Python and Rust. Change the semantics and all three suites
+> (`vitest` / `pytest` / `cargo test`) have to agree.
 
 ## 📚 Learn More
 
-- [Erlang Inspiration Deep Dive](erlang-inspiration.md)
-- [5 Real-world Scenario Examples](examples.md)
 - [API Reference](docs/)
 
 ## 🤝 Contributing

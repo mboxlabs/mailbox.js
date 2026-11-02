@@ -40,8 +40,11 @@ Based on your interests and experience, you can start with any of the following:
    pnpm test
    pnpm style
 
-   # The Python and Rust ports ship their own suites; run them too when you touch
-   # behaviour shared across the three implementations
+   # The Mailbox family is three repositories: mailbox.js (this one), mailbox.py and mailbox.rust.
+   # When a change touches behaviour shared across the three, clone the ports next to this repo
+   # (they are not tracked here) and run their suites too:
+   #   git clone git@github.com:mboxlabs/mailbox.py.git   python
+   #   git clone git@github.com:mboxlabs/mailbox.rust.git rust
    (cd python && python3 -m pytest -q)
    (cd rust && cargo test)
    ```
@@ -66,10 +69,10 @@ The project uses Prettier and ESLint to enforce a consistent code style. Before 
 
 We use [Vitest](https://vitest.dev/) for unit testing.
 
-This package ships three ports. The Python port is covered by `pytest` (`python3 -m pytest -q`
-inside `python/`) and the Rust port by `cargo test` (inside `rust/`). Delivery semantics —
+The Mailbox family ships three implementations in three repositories: this package, [mailbox.py](https://github.com/mboxlabs/mailbox.py) (covered by `pytest`) and [mailbox.rust](https://github.com/mboxlabs/mailbox.rust) (covered by `cargo test`). A `python/` or `rust/` directory next to this one is only a local development layout — it is not part of this repository. Delivery semantics —
 subscribe versus fetch, ack/nack and in-flight timeouts, requeue deduplication, and the opt-in
-retry policy — are specified in all three, so changing them requires matching tests in each.
+retry policy — are specified once (in `README.md`) and implemented in all three, so changing them
+requires matching tests in each.
 
 ### Required Coverage
 
