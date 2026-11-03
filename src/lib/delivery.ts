@@ -61,30 +61,117 @@ export const MAX_DELIVERY_ERROR_LENGTH = 300;
  * 把任意抛出的值归一成一句可落库的摘要：`Error: bad payload`、`Error: flaky (code=503)`。
  *
  * 非 Error（字符串 / `{ code }` 字面量）也要留下可读的信息，不能变成 `undefined`。
+ *
+ * **必须是全函数（绝不抛）**。它跑在结算路径上（`_settleDelivery` / `toDeliveryResults`），
+ * 而 `_settleDelivery` 是「先摘 `pendingDeliveries` → 构造 result → `settle()`」：抛在这里 =
+ * 结算被半途取消 —— `settle()` 不发 → barrier 的 `allSettled` 永挂 → `nack(requeue)`、死信钩子、
+ * 缺 barrier 兜底全部不执行（消息静默丢失）；抛在重试 / 看门狗的 `setTimeout` 里就是
+ * uncaughtException（进程挂）。以前 `JSON.stringify(error)` 正是这个炸点：循环引用 / BigInt /
+ * 抛错的 `toJSON` / Proxy trap 都会让摘要函数自己抛。三端（TS / Python / Rust）同一约定。
  */
 export function describeDeliveryError(error: unknown): string {
   let text: string;
-  if (error instanceof Error) {
-    const code = (error as Error & { code?: unknown }).code;
-    text = `${error.name}: ${error.message}`;
-    if (code !== undefined) {
-      text += ` (code=${String(code)})`;
-    }
-  } else if (typeof error === 'string') {
-    text = error;
-  } else if (error && typeof error === 'object') {
-    const candidate = error as { code?: unknown; message?: unknown };
-    text = String(candidate.message ?? JSON.stringify(error));
-    if (candidate.code !== undefined) {
-      text += ` (code=${String(candidate.code)})`;
-    }
-  } else {
-    text = String(error);
+  try {
+    text = summarizeThrown(error);
+  } catch {
+    // 兜底也必须不抛：到这一步意味着上面某个属性访问自己弄坏了（Proxy trap / getter 抛错）。
+    text = UNSUMMARIZABLE;
   }
 
   return text.length > MAX_DELIVERY_ERROR_LENGTH
     ? `${text.slice(0, MAX_DELIVERY_ERROR_LENGTH - 1)}\u2026`
     : text;
+}
+
+/** 循环引用的占位标记（跨端一致：Python / Rust 移植时也写 `[Circular]`）。 */
+const CIRCULAR_MARKER = '[Circular]';
+
+/** 什么都读不出时的占位摘要（不能是空串：死信记录里的 `error` 靠它存在与否）。 */
+const UNSUMMARIZABLE = '[unsummarizable error]';
+
+/** 读一个属性，getter / Proxy trap 抛错就当没有（摘要函数不能因为探看而抛）。 */
+function readField(value: object, key: string): unknown {
+  try {
+    return (value as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+/** `String(x)` 也能为自定义 `toString` 抛错。 */
+function safeText(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    const text = String(value);
+    return text === '' ? fallback : text;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * 永不抛的 `JSON.stringify`：
+ * - 循环引用 → `[Circular]`（而不是 TypeError）；
+ * - BigInt → `123n`；函数 → `[Function name]`；
+ * - `toJSON` / trap 抛错 → 占位串。
+ */
+function safeStringify(value: object): string {
+  const seen = new WeakSet<object>();
+  try {
+    const json = JSON.stringify(value, (_key, entry) => {
+      if (typeof entry === 'bigint') {
+        return `${entry}n`;
+      }
+      if (typeof entry === 'function') {
+        return `[Function${entry.name ? ` ${entry.name}` : ''}]`;
+      }
+      if (typeof entry === 'symbol') {
+        return entry.toString();
+      }
+      if (entry && typeof entry === 'object') {
+        if (seen.has(entry)) {
+          return CIRCULAR_MARKER;
+        }
+        seen.add(entry);
+      }
+      return entry;
+    });
+    // `toJSON()` 返回 undefined 时 JSON.stringify 给的是 undefined。
+    return typeof json === 'string' ? json : UNSUMMARIZABLE;
+  } catch {
+    return UNSUMMARIZABLE;
+  }
+}
+
+/** 分类与拼接；任何一步抛错都由 `describeDeliveryError` 的 catch 兜住。 */
+function summarizeThrown(error: unknown): string {
+  if (error instanceof Error) {
+    const name = safeText(readField(error, 'name'), 'Error');
+    const message = safeText(readField(error, 'message'));
+    let text = message ? `${name}: ${message}` : name;
+    const code = readField(error, 'code');
+    if (code !== undefined) {
+      text += ` (code=${safeText(code, UNSUMMARIZABLE)})`;
+    }
+    return text;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object') {
+    const message = readField(error, 'message');
+    const messageText = message === undefined || message === null ? '' : safeText(message);
+    // `message` 缺失或空串 → 用结构摘要，而不是把死信记录里留一个空 `error`。
+    let text = messageText || safeStringify(error);
+    const code = readField(error, 'code');
+    if (code !== undefined) {
+      text += ` (code=${safeText(code, UNSUMMARIZABLE)})`;
+    }
+    return text;
+  }
+  return safeText(error, UNSUMMARIZABLE);
 }
 
 /**
