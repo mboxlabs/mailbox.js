@@ -417,6 +417,16 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    - **漏实现 `_nack` 不会静默致命。** 所有处置决定（`requeue = true` 回队、`requeue = false` 放弃）
      都走 `nack()`。完全不实现 `_nack` 的 provider 一个都收不到，消息会停在传输层把它放的地方；
      基类会按 provider 告警一次，而不是假装决定已经执行。
+   - **交给 `_ack` / `_nack` 的 `message` 是副本，不是你发出去那份。** 每次投递尝试都换一份浅拷贝，
+     带 `mbx-attempt` / `mbx-round`（开了重试还带 `mbx-max-attempts`）：同一次尝试的回调、`_ack`、
+     `_nack` 拿的是同一个对象，但它永远不是 `_send` 看到的那一份，重试链里每次尝试还是新的。
+     所以 provider **不得按对象同一性记账**（`Map<MailMessage, handle>` / `WeakMap` / `set.has(message)`）：
+     查不到不报错也不告警，只会静默不 ack，真实 broker 就会无限重投。记账用 `message.id`、自己的
+     broker 句柄，或投递级身份 `DeliveryResult.deliveryId`（副本会换，deliveryId 不会）。浅拷贝的含义：
+     `headers` 是新对象，`body` / `meta` / `from` / `to` 仍是共享引用。还有一个得知道的出口：广播
+     barrier 没记到投递副本时（投递没走基类入口 / 同 id 并发广播的后一个 barrier / 副本表撞上
+     `MAX_SETTLED_COPIES`）会退回不带计数的 `_send` 那份，所以读计数要容 `undefined`。
+     详见 `wiki/delivery-semantics.md` §7.3。
 
    自己实现**广播型** provider（`broadcastDeliveries = true`）时，`_send` 必须挂上结算 barrier——而且
    是同步挂上（在任何 `await` 之前）：

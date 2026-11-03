@@ -56,6 +56,7 @@ interface PendingDelivery {
   /**
    * 本次投递的消息，始终是一份带 `mbx-attempt` / `mbx-round`（开了重试还有 `mbx-max-attempts`）
    * 的**副本**，不是发送侧那个共享对象——否则 A 的重投次数会串给 B。
+   * 每次尝试换一份新副本；同一次尝试里，回调 / `_ack` / `_nack` 拿的是同一个对象。
    * 结算后的 `nack` / 死信钩子都用这份（广播 barrier 也一样），所以 provider 在 `_nack(false)`
    * 里落 DLQ 时能看到真实次数，而 `_nack(true)` 退回队列的那一份也带着次数与轮次。
    */
@@ -117,6 +118,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * 本轮**已结算**投递的副本（按消息 id 保留趟数最大的那一份），给广播 barrier 处置时用。
    * 传输 / 队列型 provider 直接用 `pending.message`，用不到这张表。
+   *
+   * 两个已知限度（都只会让 barrier 退回不带计数的 `_send` 副本，不会错判处置）：
+   * 取走即删 ⇒ 同 id 并发广播时，后落定的那个 barrier 拿不到副本；长度上限
+   * {@link MAX_SETTLED_COPIES} 按插入序淘汰。
    */
   private readonly settledCopies: Map<string, { message: MailMessage; attempts: number }> = new Map();
 
@@ -385,6 +390,18 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
    * For providers that don't support ACK (like in-memory), this can be an empty async function.
+   *
+   * `message` 是**本次投递的副本**（浅拷贝，带 `mbx-attempt` / `mbx-round`，开了重试还有
+   * `mbx-max-attempts`），与交给订阅回调的是同一份；**不是** `_send` 那个对象，也不是 `post()`
+   * 的入参。重试链里每次尝试换一份新副本，只有当次尝试的回调 / `_ack` / `_nack` 拿到同一个对象。
+   *
+   * 因此 provider **不得按对象同一性记账**（`Map<MailMessage, handle>` / `WeakMap` / `set.has(message)`）：
+   * 查不到不会抛错，只会静默不 ack，消息停在 broker 里等 visibility timeout 后无限重投。
+   * 记账用 `message.id`（消息级）或 broker 自己的投递句柄；投递级身份（`subscriptionId + messageId`）
+   * 只在 `DeliveryResult.deliveryId`（死信钩子的 `failed[]` 里）拿得到。
+   *
+   * 浅拷贝的边界：`headers` 是新对象（改它不回落到 `_send` 那份），`body` / `meta` / `from` / `to`
+   * 仍是同一引用（改了会串到发送方）。
    */
   protected _ack?(message: MailMessage): Promise<void>;
 
@@ -395,8 +412,13 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * - `requeue = true`：回队（回到哪个位置、重投几次，由 provider 定，内核不管）；
    * - `requeue = false`：**放弃**——永久移出队列；丢弃还是落 DLQ 由 provider 定。
    *
-   * `message` 始终是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`）：回队时它带着
+   * `message` 是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`）：回队时它带着
    * 「本轮试了几次 / 这是第几轮」落回队列，`requeue=false` 落 DLQ 时同样有次数可写。
+   * 例外照实说：广播 barrier 在**没记到投递副本**时会退回 `_send` 那份（没有任何计数）——
+   * `_send` 接了 barrier 但投递没走 `_startDelivery` / `_deliverToLocalSubscription`、同 id 并发广播时
+   * 后落定的那个 barrier、或副本表撞上 `MAX_SETTLED_COPIES` 被淘汰。所以 provider 侧别假设头一定在。
+   *
+   * 与 {@link _ack} 同理：这是副本，**不能按对象同一性记账**（用 `message.id` 或 broker 句柄）。
    *
    * 广播型 provider 里它只会在**广播全部投递都结算之后**被调用一次（由发送侧的结算判定决定
    * `requeue` 与否），不会再在每个订阅者失败时各回队一次。队列 / 传输型 provider 里它按投递
@@ -638,8 +660,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
    *   处理过的消息再投一次，代价是失败的投递从此隐形——这个钩子就是补上那个可观测性缺口。
    *
    * 内核只发信号，不知道也不关心你往哪写：`<topic>/_dlq`、外部 DLQ、日志都行。
-   * `message` 是本轮结算后的投递副本（带 `mbx-attempt` / `mbx-round`），`failed[].attempts`
-   * 是各自那条重试链的次数。`MemoryProvider#enableDeadLetterQueue()` 是一个可参考的接法。
+   * `message` 是本轮结算后的投递副本（带 `mbx-attempt` / `mbx-round`；广播 barrier 没记到副本时
+   * 退回不带计数的 `_send` 那份），`failed[].attempts`
+   * 是各自那条重试链的次数。`failed[].deliveryId` 是投递级身份——副本会换，`deliveryId` 不会，
+   * 所以要按投递记账就认它，不要按对象同一性。`MemoryProvider#enableDeadLetterQueue()` 是一个可参考的接法。
    * 钩子自己抛错 / 返回 rejected promise 不会吞掉回队 / 丢弃判定，错误会被记录。
    */
   protected _onDeliveryDeadLettered?(message: MailMessage, failed: readonly DeliveryResult[]): void | Promise<void>;
@@ -723,7 +747,9 @@ export abstract class MailboxProvider implements IMailboxProvider {
    *
    * **处置信号里的消息是本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`），不是
    * `_send` 传进来的那份共享对象——否则回队的那一份不带任何计数，`fetch()` 兜底消费者与
-   * 想设上限的 provider 就都没东西可数。
+   * 想设上限的 provider 就都没东西可数。拿不到副本时退回 `_send` 那份（计数全缺）：
+   * 投递没走基类入口（不经 `_startDelivery` / `_deliverToLocalSubscription`）、同 id 并发广播时
+   * 后落定的 barrier、副本表被 {@link MAX_SETTLED_COPIES} 淘汰。
    *
    * 不阻塞 `post()`：`post()` 在派发完成时就 resolve，判定在投递结算后才发生。
    * 这正是 issue#2 的坑：“按成功订阅者数 > 0 跳过回队”在 fire-and-forget 广播上会误判 ——

@@ -272,6 +272,11 @@ export interface IMailboxProvider {
    * 内核**不**保证的事（均归 provider）：重投几次、回到队列的哪个位置、放弃之后留下什么。
    * 但处置信号里的 `message` 是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`），
    * 不是 `send()` 那个共享对象——所以回队的那份在队列里也带着次数，`fetch()` 兜底消费者看得见。
+   * 隐式 ACK 收到的也是副本（带计数的投递副本，见基类 `_ack`）。
+   * 推论：provider **不得按对象同一性记账**（`Map<MailMessage, handle>` / `WeakMap` / `set.has(message)`）——
+   * 查不到不报错，只会静默不 ack。用 `message.id` 或 broker 自己的投递句柄记账。
+   * （广播 barrier 没记到副本时会退回 `send()` 那份不带计数的副本：投递没走基类入口 / 同 id
+   * 并发广播 / 副本表淘汰，所以 读取计数时要容 `undefined`。）
    * “移入死信队列”不是内核行为：基类只给钩子，默认实现不接（`MemoryProvider` 需要显式
    * `enableDeadLetterQueue()`）。需要 DLQ 就在钩子里自己写。
    */

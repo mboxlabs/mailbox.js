@@ -462,6 +462,20 @@ per-delivery requeue rule in §3 work, and it is also where the hazards hide. Fo
   queue, `requeue = false` give up) goes through `nack()`. A provider that never implements
   `_nack` receives none of them, and the message stays wherever the transport left it; the base
   class warns once per provider instead of pretending the decision was carried out.
+- **The `message` handed to `_ack` / `_nack` is a copy, not the one you sent.** Each delivery
+  attempt gets its own shallow copy stamped with `mbx-attempt` / `mbx-round` (plus
+  `mbx-max-attempts` under a retry policy). The callback, `_ack` and `_nack` of one attempt share
+  that single object, but it is never the object `_send` saw, and a retry chain makes a new copy
+  per attempt. So a provider must **not** key bookkeeping by object identity
+  (`Map<MailMessage, handle>`, `WeakMap`, `set.has(message)`): a miss throws nothing and warns
+  nothing, it just silently skips the ack and a real broker redelivers the message forever. Key by
+  `message.id`, by your own broker handle, or by `DeliveryResult.deliveryId` for delivery-level
+  identity (copies change, delivery ids do not). Shallow means: `headers` is a fresh object,
+  `body` / `meta` / `from` / `to` are still shared references. One escape hatch worth knowing — a
+  broadcast barrier that never recorded a delivery copy (deliveries not routed through the base
+  entry point, a second barrier for a concurrent same-`id` broadcast, or the copy table hitting
+  `MAX_SETTLED_COPIES`) falls back to the unstamped `_send` object, so treat a missing counter as
+  possible. Details: `wiki/delivery-semantics.md` §7.3.
 
 If you implement your own **broadcast** provider (`broadcastDeliveries = true`), `_send` must
 attach the settlement barrier — synchronously, before any `await`:
