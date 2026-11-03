@@ -38,6 +38,89 @@ export interface DeliveryResult {
    * - `cancelled`：待重投被取消（退订 / 关闭）—— 等同 `retriable` 兜底。
    */
   readonly reason?: 'retriable' | 'fatal' | 'cancelled';
+  /**
+   * 这条投递一共跑过几次尝试（含首次；未开启重试时是 1）。
+   *
+   * 为什么内核要报这个数：「重投几次」归 provider，但死信记录要写「试了几次」。
+   * 内核不报，provider 就只能自己再记一遍账（且与内核的 `AttemptLedger` 对不上）。
+   */
+  readonly attempts?: number;
+  /**
+   * 失败原因摘要（`Name: message`，必要时带 `code=`），截断到 {@link MAX_DELIVERY_ERROR_LENGTH}。
+   *
+   * 死信钩子只拿到 `reason` 分类是写不出可用记录的：运维要看的是「为什么」。
+   * 这里只放摘要文本，不放 Error 对象 —— 钩子可能被同步调用，也可能被序列化到日志 / DLQ。
+   */
+  readonly error?: string;
+}
+
+/** 死信记录里失败原因摘要的最大长度（跨三端一致，防止超长 body 把日志 / DLQ 撑爆）。 */
+export const MAX_DELIVERY_ERROR_LENGTH = 300;
+
+/**
+ * 把任意抛出的值归一成一句可落库的摘要：`Error: bad payload`、`Error: flaky (code=503)`。
+ *
+ * 非 Error（字符串 / `{ code }` 字面量）也要留下可读的信息，不能变成 `undefined`。
+ */
+export function describeDeliveryError(error: unknown): string {
+  let text: string;
+  if (error instanceof Error) {
+    const code = (error as Error & { code?: unknown }).code;
+    text = `${error.name}: ${error.message}`;
+    if (code !== undefined) {
+      text += ` (code=${String(code)})`;
+    }
+  } else if (typeof error === 'string') {
+    text = error;
+  } else if (error && typeof error === 'object') {
+    const candidate = error as { code?: unknown; message?: unknown };
+    text = String(candidate.message ?? JSON.stringify(error));
+    if (candidate.code !== undefined) {
+      text += ` (code=${String(candidate.code)})`;
+    }
+  } else {
+    text = String(error);
+  }
+
+  return text.length > MAX_DELIVERY_ERROR_LENGTH
+    ? `${text.slice(0, MAX_DELIVERY_ERROR_LENGTH - 1)}\u2026`
+    : text;
+}
+
+/**
+ * 投递尝试次数的 header 名（控制平面）。
+ *
+ * 「重投几次」由 provider 决定，但每次投递得知道自己第几次来：真实 broker 的
+ * `_nack(false)` 落 DLQ、日志、幂等判断都要用。放在 headers（控制平面）而不是 meta
+ * （数据平面，业务字段，内核不写）。
+ *
+ * 语义要看清：它数的是**订阅投递**的尝试次数（基类在交给回调前注入）。回队的消息可能带着
+ * 上一轮订阅投递的计数回到队列，`fetch()` 消费者看到的是“这条消息已经被投递过几轮”，
+ * 不是“我这是第几次取信”。
+ */
+export const MBX_ATTEMPT_HEADER = 'mbx-attempt';
+
+/** 本次投递的重试上限（仅在 provider 开启了重试策略时注入）。 */
+export const MBX_MAX_ATTEMPTS_HEADER = 'mbx-max-attempts';
+
+/**
+ * 给投递副本打上尝试次数（不改动原对象）。
+ *
+ * **必须返回副本**：广播里同一条消息会被投给 N 个订阅者，只有失败的那个在重投。
+ * 直接改共享对象就会把 A 的尝试次数串给 B（B 明明只被投递过一次）。
+ * 只拷信封（浅拷贝）：body / meta 引用保持不变，别在投递热路径上做深拷贝。
+ */
+export function withAttemptHeaders<T extends { headers?: Record<string, any> }>(
+  message: T,
+  attempt: number,
+  maxAttempts?: number,
+): T {
+  const headers = {
+    ...(message.headers ?? {}),
+    [MBX_ATTEMPT_HEADER]: String(attempt),
+    ...(maxAttempts === undefined ? {} : { [MBX_MAX_ATTEMPTS_HEADER]: String(maxAttempts) }),
+  };
+  return { ...message, headers };
 }
 
 /** 投递身份。分隔符用 `\u0000`，避免 id 拼接歧义。 */
@@ -86,6 +169,8 @@ export function toDeliveryResults(
       messageId: '',
       ok: false,
       reason: 'retriable' as const,
+      attempts: 1,
+      error: describeDeliveryError((result as PromiseRejectedResult).reason),
     };
   });
 }

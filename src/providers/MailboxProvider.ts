@@ -19,7 +19,16 @@ import {
   nextRetryDelay,
   resolveRetryPolicy,
 } from '../lib/retry';
-import { DeliveryResult, DEFAULT_DELIVERY_SETTLE_TIMEOUT, deliveryKey, shouldRequeueAfterBroadcast, subscriptionIdOfDelivery, toDeliveryResults } from '../lib/delivery';
+import {
+  DeliveryResult,
+  DEFAULT_DELIVERY_SETTLE_TIMEOUT,
+  deliveryKey,
+  describeDeliveryError,
+  shouldRequeueAfterBroadcast,
+  subscriptionIdOfDelivery,
+  toDeliveryResults,
+  withAttemptHeaders,
+} from '../lib/delivery';
 
 /**
  * Represents a subscription record managed internally by the MailboxProvider.
@@ -43,6 +52,11 @@ type PendingRetryTimer = ReturnType<typeof setTimeout>;
  * 只有结算之后，广播的发送侧才知道这次投递是成功还是失败（issue#2）。
  */
 interface PendingDelivery {
+  /**
+   * 当前这次投递的消息。**尝试次数 >= 2 时它是一份带 `mbx-attempt` 的副本**（见
+   * {@link withAttemptHeaders}），不是发送侧那个共享对象——否则 A 的重投次数会串给 B。
+   * 结算后的 `nack` / 死信钩子都用这份，所以 provider 在 `_nack(false)` 里落 DLQ 时能看到次数。
+   */
   message: MailMessage;
   /** 投递身份（`subscriptionId + messageId`）。`key` 只是内部 map 键，可能带并发序号后缀。 */
   deliveryId: string;
@@ -54,6 +68,10 @@ interface PendingDelivery {
   timer?: PendingRetryTimer;
   /** 单次尝试的结算看门狗（防卡死的回调，见 `deliverySettleTimeout`）。 */
   watchdog?: PendingRetryTimer;
+  /** 已经跑过几次尝试（含首次）。死信记录里的「试了几次」就是它。 */
+  attemptsMade: number;
+  /** 最后一次尝试抛出的错误（结算成失败时写进 `DeliveryResult.error`）。 */
+  lastError?: unknown;
 }
 
 /** 投递结算原因。`ok` 表示回调成功。 */
@@ -100,6 +118,11 @@ export abstract class MailboxProvider implements IMailboxProvider {
   private readonly broadcastBarriers: Map<string, number> = new Map();
   /** 已经告过警的「漏接 barrier」消息 id，避免一条消息警 N 次。 */
   private readonly barrierlessWarned: Set<string> = new Set();
+  /**
+   * 「provider 没实现 `_nack`」只告一次：没这个钩子，内核发出的回队 / 放弃决定会静默落空，
+   * 但每条消息都警一遍就是刷屏。
+   */
+  private nacklessWarned = false;
 
   constructor(protocol: string, retry?: RetryPolicy | null) {
     if (!protocol) {
@@ -282,8 +305,20 @@ export abstract class MailboxProvider implements IMailboxProvider {
     this._ack?.(message);
   }
 
+  /**
+   * 向 provider 发出处置决定：`requeue = true` 回队，`requeue = false` **放弃**
+   * （丢弃或落死信，由 provider 定）。
+   *
+   * `_nack` 是可选钩子（内存型 provider 本来就没有 broker 可 nack），但「内核已经判定要回队 /
+   * 要放弃，provider 却没接」是另一回事：消息会停在 broker 把它放的位置上——真实 broker
+   * 里就是 visibility timeout 后无限重投。所以这里告警一次，把落空的决定挑明。
+   */
   protected async nack(message: MailMessage, requeue: boolean) {
-    this._nack?.(message, requeue);
+    if (!this._nack) {
+      this._warnMissingNack();
+      return;
+    }
+    await this._nack(message, requeue);
   }
 
   // --- Protected Abstract Methods (to be implemented by subclasses) ---
@@ -340,8 +375,17 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * [Subclass Responsibility - Optional] Provides NACK capability.
    *
+   * 这是 provider 表达「放弃」的**唯一**入口，两个参数合起来就是内核的全部判定：
+   * - `requeue = true`：回队（回到哪个位置、重投几次，由 provider 定，内核不管）；
+   * - `requeue = false`：**放弃**——永久移出队列；丢弃还是落 DLQ 由 provider 定。
+   *
    * 广播型 provider 里它只会在**广播全部投递都结算之后**被调用一次（由发送侧的结算判定决定
-   * `requeue` 与否），不会再在每个订阅者失败时各回队一次。
+   * `requeue` 与否），不会再在每个订阅者失败时各回队一次。队列 / 传输型 provider 里它按投递
+   * 调用：可重试失败 `requeue = true`，不可重试失败 `requeue = false`（先永久移出队列，
+   * 再走 `_onDeliveryDeadLettered`，见 wiki/mailbox-arch.md 里「先 nack 后 DLQ」的顺序）。
+   *
+   * 不实现这个钩子（基类会告警一次）= 内核的回队 / 放弃决定落空：消息停在 broker 把它
+   * 放的地方，通常就是无限重投。
    */
   protected _nack?(message: MailMessage, requeue: boolean): Promise<void>;
 
@@ -394,6 +438,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
       subscriptionId,
       settle,
       promise,
+      attemptsMade: 0,
     });
     this._runDelivery(subscriptionId, message, key);
 
@@ -425,6 +470,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
   /**
    * 跑一次尝试。成功 → 隐式 ack + 结算 `ok`；抛错 → 交给 `_handleDeliveryError`。
+   *
+   * 交给回调的是带 `mbx-attempt` 的**副本**（见 {@link withAttemptHeaders}）：重投次数归
+   * provider / 用户决定，但「这次是第几趟」必须让两边都看得见。副本是为了不把次数
+   * 写回广播共享的那一条消息。
    */
   private _runDelivery(subscriptionId: string, message: MailMessage, key: string): void {
     const sub = this.subscriptions.get(subscriptionId);
@@ -434,30 +483,40 @@ export abstract class MailboxProvider implements IMailboxProvider {
       return;
     }
 
+    const pending = this.pendingDeliveries.get(key);
+    if (pending) {
+      pending.attemptsMade += 1;
+    }
+    const attempt = Math.max(1, pending?.attemptsMade ?? 1);
+    const stamped = withAttemptHeaders(message, attempt, this.retry?.maxAttempts);
+    if (pending) {
+      pending.message = stamped;
+    }
+
     // 看门狗只给「一次尝试」计时：卡死的回调会拖住整条广播的结算判定（消息既不回队也不死信）。
     this._armDeliveryWatchdog(key);
 
-    let attempt: void | Promise<void>;
+    let run: void | Promise<void>;
     try {
-      attempt = sub.onReceive(message);
+      run = sub.onReceive(stamped);
     } catch (error) {
-      this._handleDeliveryError(subscriptionId, message, key, error);
+      this._handleDeliveryError(subscriptionId, stamped, key, error);
       return;
     }
 
-    Promise.resolve(attempt).then(
+    Promise.resolve(run).then(
       async () => {
         try {
           // On successful execution, implicitly acknowledge the message.
-          await this.ack(message);
+          await this.ack(stamped);
           this.attempts.reset(subscriptionId, message.id);
-          this._settleDelivery(key, 'ok');
+          this._settleAndFallback(key, 'ok');
         } catch (error) {
-          this._handleDeliveryError(subscriptionId, message, key, error);
+          this._handleDeliveryError(subscriptionId, stamped, key, error);
         }
       },
       (error) => {
-        this._handleDeliveryError(subscriptionId, message, key, error);
+        this._handleDeliveryError(subscriptionId, stamped, key, error);
       },
     );
   }
@@ -465,17 +524,27 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * 订阅回调抛错时的统一处理（投递级）。
    *
-   * 默认（`retry === null`）：可重试 → 结算 `retriable`；不可重试 → 结算 `fatal`（死信）。
+   * 默认（`retry === null`）：可重试 → 结算 `retriable`；不可重试 → 结算 `fatal`（放弃）。
    * 开启重试后：可重试且未超上限 → 只重投给失败的那个订阅者（不广播给其他已成功的订阅者，
    * 否则它们的副作用会被执行两次）；超上限 → 清零台账、调 `_onRetryExhausted`，再结算 `retriable`。
+   * 注意：“预算耗尽”不是“放弃”——消息仍会回队，由 `fetch()` 兜底。
    *
    * 广播型 provider 不在这里 `nack`：整条消息回不回队由发送侧在所有投递结算后统一判定
    * （见 `shouldRequeueAfterBroadcast`）。没接 barrier 的广播 provider 由
    * `_fallbackForMissingBarrier` 兜底（整条回队 + 告警），否则可重试失败就静默消失了。
-   * 非广播型 provider 每次投递对应 broker 的一次 ack，保持原有 per-delivery `nack(requeue=true)`。
+   * 非广播（队列 / 传输）型 provider 每次投递对应 broker 的一次 ack：可重试失败
+   * `nack(requeue=true)`；不可重试失败 `nack(requeue=false)`——不发这个信号，broker 就会在
+   * visibility timeout 后把同一条坏消息无限重投（见 {@link _giveUpDelivery}）。
    */
   protected _handleDeliveryError(subscriptionId: string, message: MailMessage, key: string, error: any): void {
     console.error(`[${this.protocol}] Error processing message ${message.id}:`, error);
+
+    const pending = this.pendingDeliveries.get(key);
+    if (pending) {
+      pending.lastError = error;
+    }
+    // 结算 / nack / 死信钩子都用投递副本：它带 `mbx-attempt`，provider 落 DLQ 时要这个数。
+    const settledMessage = pending?.message ?? message;
 
     const isRetriable = this._isRetriable(error);
 
@@ -485,27 +554,27 @@ export abstract class MailboxProvider implements IMailboxProvider {
       if (attempt < this.retry.maxAttempts && this.subscriptions.has(subscriptionId)) {
         const delay = nextRetryDelay(this.retry, attempt);
         const timer = setTimeout(() => {
-          const pending = this.pendingDeliveries.get(key);
-          if (!pending) {
+          const current = this.pendingDeliveries.get(key);
+          if (!current) {
             return; // 退避期间已结算（退订 / 关闭）
           }
-          pending.timer = undefined;
+          current.timer = undefined;
           if (!this.subscriptions.has(subscriptionId)) {
             // 等待期间退订了：不重投给已消失的订阅者，按取消结算（消息由兜底路径接手）。
             this._settleAndFallback(key, 'cancelled');
             return;
           }
-          this._runDelivery(subscriptionId, message, key);
+          this._runDelivery(subscriptionId, current.message, key);
         }, delay);
         // 不要因为一个待重投就把 Node 事件循环撑住。
         (timer as unknown as { unref?: () => void }).unref?.();
 
-        const pending = this.pendingDeliveries.get(key);
-        if (pending) {
-          pending.timer = timer;
+        const waiting = this.pendingDeliveries.get(key);
+        if (waiting) {
+          waiting.timer = timer;
           // 退避等待不是“卡死的尝试”：看门狗只在尝试进行中计时，退避期间关掉，
           // 否则一个比看门狗还长的退避会被自己掐断。
-          this._clearDeliveryWatchdog(pending);
+          this._clearDeliveryWatchdog(waiting);
         } else {
           clearTimeout(timer); // 已经结算（例如退订），定时器作废
         }
@@ -514,13 +583,13 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
       if (attempt >= this.retry.maxAttempts) {
         this.attempts.reset(subscriptionId, message.id);
-        this._onRetryExhausted?.(message, attempt);
+        this._invokeRetryExhaustedHook(settledMessage, attempt);
       }
     }
 
     if (isRetriable && !this.broadcastDeliveries) {
       // Crucial: NACK the message first to prevent reprocessing, then handle other tasks.
-      this.nack(message, true).catch(nackError => {
+      this.nack(settledMessage, true).catch(nackError => {
         console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${message.id}. Risk of message duplication.`, nackError);
       });
     }
@@ -529,17 +598,100 @@ export abstract class MailboxProvider implements IMailboxProvider {
   }
 
   /**
-   * [Subclass Responsibility - Optional] 重试次数耗尽时的钩子（例如写死信队列 / 告警）。
-   * 若这次广播没有任何订阅者成功，消息随后仍会退回队列，由 `fetch()` 兜底。
+   * [Subclass Responsibility - Optional] 重试次数耗尽时的钩子（例如告警）。
+   * 若这次广播没有任何订阅者成功，消息随后仍会退回队列，由 `fetch()` 兜底——耗尽 ≠ 放弃。
+   * 钩子自己抛错 / 返回 rejected promise 不会打断处置判定（回队照常），只会被记录。
    */
-  protected _onRetryExhausted?(message: MailMessage, attempts: number): void;
+  protected _onRetryExhausted?(message: MailMessage, attempts: number): void | Promise<void>;
 
   /**
-   * [Subclass Responsibility - Optional] 死信钩子：广播已结算，有投递失败但消息**不**回队时用
-   * （即“部分失败”或“全部不可重试”）。不回队是为了不把已成功者处理过的消息再投一次，
-   * 代价是失败的投递从此隐形 —— 这个钩子就是补上那个可观测性缺口（写死信队列 / 告警）。
+   * [Subclass Responsibility - Optional] 死信钩子：投递被**放弃**（不回队）时用。
+   *
+   * 触发时机（两类 provider 都触发）：
+   * - 广播型：全部投递都不可重试，或部分失败（已有订阅者成功，失败的那些不回队）——
+   *   在 `nack(requeue)` **之后**调用；
+   * - 队列 / 传输型：单次投递不可重试失败——在 `nack(message, false)` **之后**调用
+   *   （先永久移出队列，再落 DLQ，见 wiki/mailbox-arch.md）。不回队是为了不把已成功者
+   *   处理过的消息再投一次，代价是失败的投递从此隐形——这个钩子就是补上那个可观测性缺口。
+   *
+   * 内核只发信号，不知道也不关心你往哪写：`<topic>/_dlq`、外部 DLQ、日志都行。
+   * `MemoryProvider#enableDeadLetterQueue()` 是一个可参考的接法。
+   * 钩子自己抛错 / 返回 rejected promise 不会吞掉回队 / 丢弃判定，错误会被记录。
    */
-  protected _onDeliveryDeadLettered?(message: MailMessage, failed: readonly DeliveryResult[]): void;
+  protected _onDeliveryDeadLettered?(message: MailMessage, failed: readonly DeliveryResult[]): void | Promise<void>;
+
+  /**
+   * 调死信钩子，并把钩子自己的故障与投递处置隔开。
+   *
+   * 为什么要替钩子兜：钩子通常在 `nack` 之后、或在 barrier 的 `.then` 里被调——它一抛错，
+   * 外层 catch 会把「回队 / 丢弃」一起吞掉（消息既不回队也不死信，正好退化成 issue#1）。
+   * 同步抛错和异步 rejection 都接住（后者不接就是 unhandledRejection）。
+   */
+  private _invokeDeadLetteredHook(message: MailMessage, failed: readonly DeliveryResult[]): void {
+    this._invokeHook(
+      'dead-letter hook',
+      message.id,
+      () => this._onDeliveryDeadLettered?.(message, failed),
+    );
+  }
+
+  /** 调耗尽钩子，同样不让它把处置判定带倒。 */
+  private _invokeRetryExhaustedHook(message: MailMessage, attempts: number): void {
+    this._invokeHook(
+      'retry-exhausted hook',
+      message.id,
+      () => this._onRetryExhausted?.(message, attempts),
+    );
+  }
+
+  private _invokeHook(label: string, messageId: string, call: () => void | Promise<void> | undefined): void {
+    let returned: void | Promise<void> | undefined;
+    try {
+      returned = call();
+    } catch (error) {
+      console.error(`[${this.protocol}] ${label} failed for message ${messageId} (delivery disposition unchanged):`, error);
+      return;
+    }
+
+    if (returned && typeof (returned as Promise<void>).catch === 'function') {
+      (returned as Promise<void>).catch((error) => {
+        console.error(`[${this.protocol}] ${label} rejected for message ${messageId} (delivery disposition unchanged):`, error);
+      });
+    }
+  }
+
+  /**
+   * 放弃一条投递（传输 / 队列型 provider）：先 `nack(false)` 把消息永久移出队列，再走死信钩子。
+   *
+   * 顺序不能倒：钩子往 DLQ 写之前，broker 必须已经不再重投，否则 DLQ 和队列里会同时出现
+   * 同一条消息（wiki/mailbox-arch.md 「不可重试错误的处理流程」）。不发这个信号，
+   * 不可重试的坏消息就会被 broker 无限重投。
+   */
+  private async _giveUpDelivery(message: MailMessage, result: DeliveryResult): Promise<void> {
+    try {
+      await this.nack(message, false);
+    } catch (error) {
+      console.error(
+        `[${this.protocol}] CRITICAL: Failed to NACK (discard) message ${message.id}; the transport may redeliver it.`,
+        error,
+      );
+    }
+    this._invokeDeadLetteredHook(message, [result]);
+  }
+
+  /** provider 没实现 `_nack` 时告警一次：内核的处置决定落空了。 */
+  private _warnMissingNack(): void {
+    if (this.nacklessWarned) {
+      return;
+    }
+    this.nacklessWarned = true;
+    console.warn(
+      `[${this.protocol}] A delivery settled with a disposition (requeue or discard), but this provider does not implement ` +
+      '`_nack(message, requeue)`, so the decision was dropped and the message stays where the transport left it ' +
+      '(typically: redelivered forever after the visibility timeout). Implement `_nack`: requeue=true puts the message ' +
+      'back (position and attempt cap are yours to choose), requeue=false means give up (drop it or dead-letter it).',
+    );
+  }
 
   /**
    * 广播的结算 barrier：把 `publish` 返回的每次投递绑成一个后台任务，全部投递
@@ -561,13 +713,15 @@ export abstract class MailboxProvider implements IMailboxProvider {
       .then(async (settled) => {
         const results = toDeliveryResults(settled);
         const requeue = shouldRequeueAfterBroadcast(results);
-        if (!requeue) {
-          const failed = results.filter((result) => !result.ok);
-          if (failed.length > 0) {
-            this._onDeliveryDeadLettered?.(message, failed);
-          }
-        }
+        const failed = results.filter((result) => !result.ok);
+
+        // 先发处置信号，再落死信：钩子写 DLQ 时，队列侧的处置必须已经落定，
+        // 否则同一消息会同时出现在队列和 DLQ 里（与传输型的 `nack(false)` → 钩子同一顺序）。
         await this.nack(message, requeue);
+
+        if (!requeue && failed.length > 0) {
+          this._invokeDeadLetteredHook(message, failed);
+        }
       })
       .catch((error) => {
         console.error(`[${this.protocol}] CRITICAL: Failed to settle a broadcast.`, error);
@@ -612,7 +766,8 @@ export abstract class MailboxProvider implements IMailboxProvider {
       }
       this._warnMissingBarrier(message.id);
       if (result.reason === 'fatal') {
-        this._onDeliveryDeadLettered?.(message, [result]);
+        // 放弃：先把消息永久移出队列（`nack(false)`），再走死信钩子。
+        void this._giveUpDelivery(message, result);
         return;
       }
       this.nack(message, true).catch(nackError => {
@@ -639,37 +794,47 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * 结算一条投递；广播型 provider 若这条消息没接 barrier，走兜底。
    */
-  private _settleAndFallback(key: string, outcome: DeliveryOutcome): void {
+  /**
+   * 结算一条投递，并按 provider 类型把**处置信号**发出去：
+   *
+   * - 广播型：交给 `_fallbackForMissingBarrier`（接了 barrier 的由 barrier 统一判定）；
+   * - 队列 / 传输型：`fatal` = 放弃 → `nack(false)` + 死信钩子；`cancelled`（退订 / 看门狗）
+   *   = 交回传输层重投 → `nack(true)`。
+   *
+   * 这两类分支以前分开写在 `_settleAndFallback` / `_abandonDelivery` 里，导致传输型的 `fatal`
+   * 既没 nack 也没钩子（消息停在 in-flight，stale 扫描后又回来，无限循环）。
+   */
+  private _settleAndFallback(key: string, outcome: DeliveryOutcome): DeliveryResult | undefined {
     const pending = this.pendingDeliveries.get(key);
     if (!pending) {
-      return; // 已结算过
+      return undefined; // 已结算过
     }
     const result = this._settleDelivery(key, outcome);
-    if (result && this.broadcastDeliveries) {
-      this._fallbackForMissingBarrier(pending.message, result);
+    if (!result) {
+      return undefined;
     }
+
+    if (this.broadcastDeliveries) {
+      this._fallbackForMissingBarrier(pending.message, result);
+      return result;
+    }
+
+    if (outcome === 'fatal') {
+      void this._giveUpDelivery(pending.message, result);
+    } else if (outcome === 'cancelled') {
+      // 非广播（传输型）：每次投递对应 broker 的一次 ack，交回传输层重投。
+      this.nack(pending.message, true).catch(nackError => {
+        console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${pending.message.id}. Risk of message duplication.`, nackError);
+      });
+    }
+    return result;
   }
 
   /**
    * 放弃一条投递（退避中退订 / 看门狗超时）：按取消结算，消息交给兜底路径。
    */
   private _abandonDelivery(key: string, outcome: DeliveryOutcome = 'cancelled'): void {
-    const pending = this.pendingDeliveries.get(key);
-    if (!pending) {
-      return;
-    }
-    const result = this._settleDelivery(key, outcome);
-    if (!result) {
-      return;
-    }
-    if (this.broadcastDeliveries) {
-      this._fallbackForMissingBarrier(pending.message, result);
-      return;
-    }
-    // 非广播（传输型）：每次投递对应 broker 的一次 ack，交回传输层重投。
-    this.nack(pending.message, true).catch(nackError => {
-      console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${pending.message.id}. Risk of message duplication.`, nackError);
-    });
+    this._settleAndFallback(key, outcome);
   }
 
   // --- 结算看门狗 ---
@@ -740,6 +905,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
       messageId: pending.message.id,
       ok: outcome === 'ok',
       ...(outcome === 'ok' ? {} : { reason: outcome }),
+      attempts: Math.max(1, pending.attemptsMade),
+      ...(outcome === 'ok' || pending.lastError === undefined
+        ? {}
+        : { error: describeDeliveryError(pending.lastError) }),
     };
     pending.settle(result);
     return result;

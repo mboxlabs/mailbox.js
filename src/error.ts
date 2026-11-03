@@ -5,6 +5,7 @@
 export type MailboxErrorCode =
   | 'MBX_INVALID_ADDRESS'
   | 'MBX_INVALID_FETCH_OPTIONS'
+  | 'MBX_INVALID_DEAD_LETTER_SUFFIX'
   | 'MBX_UNSUPPORTED_CAPABILITY'
   | 'MBX_NO_PROVIDER'
 
@@ -66,6 +67,22 @@ export class UnsupportedCapabilityError extends MailboxError {
     this.name = 'UnsupportedCapabilityError'
     this.protocol = protocol
     this.capability = capability
+  }
+}
+
+/**
+ * 死信队列后缀非法。空后缀会让死信写回**原队列**（被放弃的消息重新变得可消费，
+ * 等于无限重试），带 query / hash 的后缀会在地址规范化时被静默丢掉——两者都是配置错误，
+ * 在 `enableDeadLetterQueue()` 的调用点直接抛。
+ */
+export class InvalidDeadLetterSuffixError extends MailboxError {
+  /** 被拒绝的后缀原值。 */
+  public readonly suffix: unknown
+
+  constructor(suffix: unknown, message: string, options?: ErrorOptions) {
+    super('MBX_INVALID_DEAD_LETTER_SUFFIX', message, options)
+    this.name = 'InvalidDeadLetterSuffixError'
+    this.suffix = suffix
   }
 }
 

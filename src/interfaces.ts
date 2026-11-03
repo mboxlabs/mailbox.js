@@ -35,6 +35,10 @@ export interface OutgoingMail {
    * - `mbx-reply-to`: 邮箱系统标准的回复地址。指明响应消息应发往的 Mailbox 地址。
    * - `mbx-sent-at`: 发送时间戳 (ISO 8601)。由 Provider 在发送时自动注入。
    *   代表消息正式进入传输系统的时刻，是审计消息时效、监控传输延迟的权威标准。
+   * - `mbx-attempt`: 当前这次投递是第几趟（1 起算，字符串）。由基类在投递前注入，
+   *   所以重投中的回调、`_nack` 与死信记录都能看到「已经试了几次」。
+   *   （上限由谁定仍是 provider 的事：没开重试时它总是 '1'。）
+   * - `mbx-max-attempts`: 只在 provider 开了重试策略时注入（= `RetryPolicy.maxAttempts`）。
    */
   headers?: {
     'req-id'?: string;
@@ -73,8 +77,12 @@ export interface Ackable {
 
   /**
    * 拒绝消息。
-   * @param requeue 如果为 true，请求消息队列将此消息重新放回，使其可以被再次消费。
-   *                如果为 false，消息将被丢弃或移入死信队列。
+   * @param requeue 如果为 true，请求消息队列将此消息重新放回，使其可以被再次消费
+   *                （回到哪个位置、已经重投几次，由 provider 决定，内核不管）。
+   *                如果为 false 就是**放弃**：消息被永久移出队列。丢弃还是落死信也由 provider
+   *                定——`MemoryProvider` 默认丢弃（不留任何痕迹），开了
+   *                `enableDeadLetterQueue()` 后才会在死信 topic 里留一份。
+   *                不要指望 `nack(false)` 自带 DLQ。
    */
   nack(requeue?: boolean): Promise<void>;
 }
@@ -243,7 +251,15 @@ export interface IMailboxProvider {
   /**
    * 【订阅模式】订阅一个地址，当有信件到达时触发回调。
    * 确认机制为隐式ACK：当 onReceive 函数成功执行，消息被自动确认。
-   * 发生异常时，将根据错误类型决定是重试还是移入死信队列。
+   *
+   * 回调抛错时，内核只做两件事：
+   *   1. 把错误分类成可重试 / 不可重试（见 `isRetriableError`）；
+   *   2. 发出**处置信号**：`_nack(message, true)` = 回队（不是放弃），
+   *      `_nack(message, false)` = 放弃，并在之后调 `_onDeliveryDeadLettered`。
+   *
+   * 内核**不**保证的事（均归 provider）：重投几次、回到队列的哪个位置、放弃之后留下什么。
+   * “移入死信队列”不是内核行为：基类只给钩子，默认实现不接（`MemoryProvider` 需要显式
+   * `enableDeadLetterQueue()`）。需要 DLQ 就在钩子里自己写。
    */
   subscribe(address: URL, onReceive: (message: MailMessage) => void | Promise<void>): Subscription;
 

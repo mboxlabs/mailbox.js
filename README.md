@@ -270,8 +270,11 @@ mailbox.subscribe(addr, async (message) => {
 
 Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / ECONNRESET /
 ETIMEDOUT`. A retriable failure requeues the message (visible in `unreadCount`, retrievable
-with `fetch()`); anything else is discarded. The [Rust port](https://github.com/mboxlabs/mailbox.rust)
-makes the same call on the `Result<()>` that a callback returns.
+with `fetch()`); anything else is **given up** — on the shipped providers that means discarded
+(archived only if you turn on a dead-letter queue), and on a queue / transport provider the
+kernel first tells the transport to stop redelivering it (`nack(message, false)`). The [Rust
+port](https://github.com/mboxlabs/mailbox.rust) makes the same call on the `Result<()>` that a
+callback returns.
 
 One address can have several subscribers, and subscribing is a **broadcast**: one message
 becomes one _delivery_ per subscriber, and each delivery settles on its own
@@ -291,6 +294,24 @@ Settlement happens once every delivery has finished, retry chain included. `post
 dispatch, not at settlement, so `status()` right after `post()` says nothing about the outcome —
 use `_onDeliveryDeadLettered(message, failedDeliveries)` (subclass `MemoryProvider`) to observe
 or dead-letter what was dropped.
+
+**What the kernel does not decide.** It decides _whether_ a delivery is handed back
+(`_nack(message, requeue)` + `shouldRequeueAfterBroadcast`). It does not decide how many times a
+message is redelivered, where it goes back in the queue, or what is left behind once it is given
+up — those belong to the provider. Consequences worth knowing:
+
+- On a queue / transport provider (`broadcastDeliveries = false`, the base-class default) a
+  non-retriable failure now emits the give-up signal: `nack(message, false)`. Without it a real
+  broker redelivers the same poison message forever after its visibility timeout.
+- A provider that does not implement `_nack` at all cannot receive either decision: the base
+  class warns once instead of dropping the decision silently.
+- Nothing lands in a dead-letter queue unless you wire one. `MemoryProvider#enableDeadLetterQueue()`
+  is the shipped reference wiring; the hook is called **after** the disposition (`nack`) so a
+  message never sits in the queue and the DLQ at the same time. A hook that throws (or rejects)
+  is logged and cannot swallow the disposition.
+- Each delivery carries its attempt count on `headers['mbx-attempt']` (plus
+  `mbx-max-attempts` when a retry policy is set), and `DeliveryResult` carries `attempts` and an
+  `error` summary — so a DLQ record can answer "why did it die, and how many times did we try".
 
 > The [Python](https://github.com/mboxlabs/mailbox.py) and [Rust](https://github.com/mboxlabs/mailbox.rust)
 > ports settle a broadcast per delivery in exactly this way. Each port's README
@@ -329,8 +350,31 @@ Three rules keep this safe:
 Retry is opt-in because AMQP / SQS style transports already redeliver and ship dead-letter
 queues — retrying on top of them would double-deliver. Providers that own redelivery should
 leave it off. `provider.setRetryPolicy(null)` returns to the default, `_onRetryExhausted` is
-where a subclass can alert, and `_onDeliveryDeadLettered` is where failed deliveries that will
-not be requeued can be persisted.
+where a subclass can alert (exhaustion is _not_ a give-up: the message still goes back to the
+queue), and `_onDeliveryDeadLettered` is where failed deliveries that will not be requeued can be
+persisted.
+
+Turning "give up" into something you can act on, without writing your own hook:
+
+```ts
+const provider = MemoryProvider.createIsolated()
+provider.enableDeadLetterQueue() // default suffix '_dlq'; pass { suffix: '.dlq' } to change it
+mailbox.registerProvider(provider)
+
+// every delivery that was dropped instead of requeued is archived to <topic>_dlq:
+const dead = await mailbox.fetch(
+  provider.deadLetterTopic('mem://sales@bus/inbox')!
+)
+// dead.headers['mbx-dead-letter-reason']  -> 'fatal' | 'retriable' | 'consumer-nack'
+// dead.headers['mbx-dead-letter-attempts'] -> '3'
+// dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
+// dead.headers['mbx-dead-letter-topic']    -> the queue it came from
+```
+
+It is opt-in because a dead-letter queue is an operational decision, not a kernel default: it
+writes a second copy of the message into a topic somebody has to consume. Off, the default stays
+what it always was — dropped. It covers both ways a message gets given up: a subscriber's failed
+delivery, and a `fetch()` consumer calling `nack(false)`.
 
 The same policy — same retriable check, same backoff formula, same "never queue twice" rule — is
 implemented in the [Python](https://github.com/mboxlabs/mailbox.py) and
@@ -363,7 +407,7 @@ custom timeout, never requeue.
 ### 6. Settlement Safety Nets (timeouts, races, provider contracts)
 
 A broadcast is only settled once **every** delivery of it settles — that is what makes the
-per-delivery requeue rule in §3 work, and it is also where the hazards hide. Three safety nets:
+per-delivery requeue rule in §3 work, and it is also where the hazards hide. Four safety nets:
 
 - **A stuck callback cannot make a message invisible.** Every delivery _attempt_ is watched by
   `provider.deliverySettleTimeout` (default `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30s). When it
@@ -380,6 +424,10 @@ per-delivery requeue rule in §3 work, and it is also where the hazards hide. Th
   caller-supplied ids, so two in-flight deliveries to one subscriber never share settlement
   bookkeeping. Dedup still applies where it belongs: a message already queued or in flight is
   never queued twice.
+- **A missing `_nack` is not silently fatal.** Every disposition (`requeue = true` back to the
+  queue, `requeue = false` give up) goes through `nack()`. A provider that never implements
+  `_nack` receives none of them, and the message stays wherever the transport left it; the base
+  class warns once per provider instead of pretending the decision was carried out.
 
 If you implement your own **broadcast** provider (`broadcastDeliveries = true`), `_send` must
 attach the settlement barrier — synchronously, before any `await`:

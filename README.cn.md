@@ -258,8 +258,10 @@ flowchart LR
    ```
 
    可重试指 `error.isRetriable === true`，或 `error.code` 属于 `503 / 504 / ECONNRESET /
-ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余直接
-   丢弃。[Rust 移植版](https://github.com/mboxlabs/mailbox.rust)对回调返回的 `Result<()>`
+ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余就是
+   **放弃**——在自带 provider 上默认是丢弃（只有开了死信队列才会归档），而在队列 / 传输型
+   provider 上，内核会先告诉传输层别再重投（`nack(message, false)`）。
+   [Rust 移植版](https://github.com/mboxlabs/mailbox.rust)对回调返回的 `Result<()>`
    做同样的判定。
 
    一个地址可以有多个订阅者，而订阅是**广播**：一条消息对每个订阅者就是一次*投递*，每次投递
@@ -278,6 +280,20 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    结算发生在全部投递（含重试链）落定之后。`post()` 只等派发、不等结算，因此 `post()` 之后立刻
    读 `status()` 看不出结果；要观察被丢弃的投递，就重写 `_onDeliveryDeadLettered(message,
    failedDeliveries)`（继承 `MemoryProvider`）。
+
+   **内核不裁决的三件事。** 内核只决定要不要把投递交回去（`_nack(message, requeue)` +
+   `shouldRequeueAfterBroadcast`）；重投几次、回到队列的哪个位置、放弃之后留下什么，都是
+   provider 的事。几个直接后果：
+   - 队列 / 传输型 provider（`broadcastDeliveries = false`，基类默认）上，不可重试失败会发出
+     放弃信号：`nack(message, false)`。不发这个信号，真实 broker 就会在 visibility timeout
+     后把同一条毒药消息无限重投。
+   - 完全没实现 `_nack` 的 provider 收不到任何处置决定：基类会告警一次，而不是让决定静默落空。
+   - 死信队列默认不存在，除非你接上。`MemoryProvider#enableDeadLetterQueue()` 就是随包提供的
+     参考接法；钩子在处置（`nack`）**之后**被调，因此消息不会同时出现在队列和 DLQ 里；钩子自己
+     抛错 / reject 会被记录，且不会吞掉处置判定。
+   - 每次投递都在 `headers['mbx-attempt']` 上带尝试次数（开了重试策略还带
+     `mbx-max-attempts`），`DeliveryResult` 也带 `attempts` 与 `error` 摘要——死信记录因此能回答
+     “为什么死的、试了几次”。
 
    > [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
    > 移植版正是这样按投递结算广播的。各移植版的 README（“Subscriber Failures and Retry”）给出
@@ -311,7 +327,29 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
 
    重试是 opt-in 的，因为 AMQP / SQS 这类传输本身就会重投、还自带死信队列，库再重投就是双重
    投递；自己负责投递的 provider 应当保持关闭。`provider.setRetryPolicy(null)` 回到默认行为，
-   子类可以用 `_onRetryExhausted` 钩子告警，用 `_onDeliveryDeadLettered` 落库那些不回队的失败投递。
+   子类可以用 `_onRetryExhausted` 钩子告警（注意：次数耗尽 ≠ 放弃，消息仍会回队），
+   用 `_onDeliveryDeadLettered` 落库那些不回队的失败投递。
+
+   不想自己写钩子，可以直接用随包提供的接法：
+
+   ```ts
+   const provider = MemoryProvider.createIsolated()
+   provider.enableDeadLetterQueue() // 默认后缀 '_dlq'；可传 { suffix: '.dlq' }
+   mailbox.registerProvider(provider)
+
+   // 每一条“被放弃而不是被回队”的投递都会归档到 <topic>_dlq：
+   const dead = await mailbox.fetch(
+     provider.deadLetterTopic('mem://sales@bus/inbox')!
+   )
+   // dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-nack'
+   // dead.headers['mbx-dead-letter-attempts'] -> '3'
+   // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
+   // dead.headers['mbx-dead-letter-topic']    -> 它原来所在的队列
+   ```
+
+   它是 opt-in 的：死信队列是运维决定，不是内核默认——它会往一个总得有人消费的 topic 里多写
+   一份消息。关掉时行为照旧（直接丢弃）。它覆盖两种放弃：订阅侧的失败投递，以及 `fetch()`
+   消费者自己 `nack(false)`。
 
    同一套策略——相同的可重试判定、相同的退避公式、相同的“永不重复入队”规则——在
    [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
@@ -340,7 +378,7 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    ### 6. 结算兜底与 provider 契约（超时、竞态）
 
    一条广播只有当**每一次投递都结算**之后才算结算——§3 那套投递级回队规则止因此成立，隐患也正好藏
-   在这里。三道兜底：
+   在这里。四道兜底：
    - **卡死的回调不会让消息隐形。** 每次投递*尝试*都被 `provider.deliverySettleTimeout` 监控
      （默认 `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30 秒）。到期后该尝试按 `cancelled` 结算：消息回到
      `fetch()` 兜底（或死信钩子），并记一条告警。看门狗只对单次尝试计时，退避等待不计时，因此不会
@@ -351,6 +389,9 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
      消费者再跑一次。
    - **同 `id` 的并发投递各自独立结算。** `post({ id })` 允许调用方指定 id，因此同一个订阅者上并发的
      两次投递绝不共用结算记账。该去重的地方仍然去重：已在队列或 in-flight 的消息不会被二次入队。
+   - **漏实现 `_nack` 不会静默致命。** 所有处置决定（`requeue = true` 回队、`requeue = false` 放弃）
+     都走 `nack()`。完全不实现 `_nack` 的 provider 一个都收不到，消息会停在传输层把它放的地方；
+     基类会按 provider 告警一次，而不是假装决定已经执行。
 
    自己实现**广播型** provider（`broadcastDeliveries = true`）时，`_send` 必须挂上结算 barrier——而且
    是同步挂上（在任何 `await` 之前）：
