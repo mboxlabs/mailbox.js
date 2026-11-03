@@ -371,6 +371,12 @@ const dead = await mailbox.fetch(
 // dead.headers['mbx-dead-letter-topic']    -> the queue it came from
 ```
 
+The suffix is appended to the **end of the path**, and it must already be in canonical form. A
+suffix that address canonicalization would rewrite — non-ASCII, ``" < > ` { }``, `.` / `..` path
+segments — is rejected by `enableDeadLetterQueue()`: otherwise the dead letter lands in a topic
+no address can name it (or, worse, in somebody else's live queue). Use the percent-encoded
+spelling (`_死信` → `_%E6%AD%BB%E4%BF%A1`) or plain ASCII.
+
 It is opt-in because a dead-letter queue is an operational decision, not a kernel default: it
 writes a second copy of the message into a topic somebody has to consume. Off, the default stays
 what it always was — dropped. It covers both ways a message gets given up: a subscriber's failed

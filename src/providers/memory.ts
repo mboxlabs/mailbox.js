@@ -17,12 +17,40 @@ type Listener = (message: MailMessage) => void | Promise<DeliveryResult | void>;
  */
 export const DEFAULT_DEAD_LETTER_SUFFIX = '_dlq';
 
+/**
+ * 校验后缀时用的探针地址（带 path，所以能看出后缀会不会被地址规范化改写）。
+ */
+const DEAD_LETTER_PROBE_ADDRESS = 'mem://probe@bus/probe';
+
+/**
+ * 把死信后缀接在 canonical topic 的 **path 末尾**，返回拼接后的地址（不做规范化）。
+ *
+ * 为什么不是「接在 canonical id 字符串的末尾」：空 path 的地址（`mem://bus`、`mem://bus/`）
+ * 尾部拼接会把后缀落进 authority —— `mem://bus` + `_dlq` 成了 `mem://bus_dlq`，那是**另一个 host**
+ * 下的队列，诊断里完全看不出它是 `mem://bus` 的死信。path 为空或就是 `/` 时，后缀前补一个 `/`。
+ *
+ * 这里不规范化：调用方要比对「拼接后」与「规范化后」两个形式（见 `enableDeadLetterQueue()`）。
+ */
+function appendDeadLetterSuffix(canonicalTopic: string, suffix: string): string {
+  const address = new URL(canonicalTopic);
+  // canonical id 的形状就是 `protocol//user@host/pathname`（见 getCanonicalMailboxAddressIdentifier），
+  // 按同样的零件重拼即可，后缀只接在 pathname 末尾。
+  const path = address.pathname === '' || address.pathname === '/' ? '/' : address.pathname;
+  const userInfo = address.username ? `${address.username}@` : '';
+  return `${address.protocol}//${userInfo}${address.host}${path}${suffix}`;
+}
+
 /** {@link MemoryProvider.enableDeadLetterQueue} 的选项。 */
 export interface DeadLetterQueueOptions {
   /**
-   * 死信 topic 的后缀（接在原始地址的 canonical id 后面）。默认 {@link DEFAULT_DEAD_LETTER_SUFFIX}。
-   * 空串、带空白、带 query / hash 的后缀会被拒绝：前者会把被放弃的消息写回**原队列**
-   * （无限重试），后者会在地址规范化时被静默丢掉。
+   * 死信 topic 的后缀（接在原始地址 path 的末尾）。默认 {@link DEFAULT_DEAD_LETTER_SUFFIX}。
+   *
+   * 后缀必须**已经是规范形式**，否则在 `enableDeadLetterQueue()` 就拒绝（{@link InvalidDeadLetterSuffixError}）：
+   * - 空串 / 只剩空白 ⇒ 会把被放弃的消息写回**原队列**（无限重试）；
+   * - 带 query / hash ⇒ 会在地址规范化时被静默丢掉；
+   * - 会被 URL 改写的形式（非 ASCII、双引号 / 尖括号 / 反引号 / 花括号、NUL 与 C1 控制符、
+   *   `.` / `..` 路径段）⇒ 写进去的 key 没有任何地址能命名（取不回来），或塌到别人的活队列里。
+   *   要非 ASCII 就写它的 percent-encoding 拼法，例如 `_死信` 要写成 `_%E6%AD%BB%E4%BF%A1`。
    */
   suffix?: string;
 }
@@ -494,9 +522,14 @@ export class MemoryProvider extends MailboxProvider {
         'messages back into the ORIGINAL queue (so they are retried forever).',
       );
     }
+    let probeKey: string;
+    let candidate: string;
+    let canonical: string;
     try {
       // 用地址解析校验一遍：带 query / hash 的后缀在规范化时会被静默丢掉，死信就会落错地方。
-      getCanonicalMailboxAddressIdentifier(new URL(`mem://probe@bus/probe${suffix}`));
+      probeKey = getCanonicalMailboxAddressIdentifier(new URL(DEAD_LETTER_PROBE_ADDRESS));
+      candidate = appendDeadLetterSuffix(probeKey, suffix);
+      canonical = getCanonicalMailboxAddressIdentifier(new URL(candidate));
     } catch (error) {
       throw new InvalidDeadLetterSuffixError(
         suffix,
@@ -504,6 +537,20 @@ export class MemoryProvider extends MailboxProvider {
           error instanceof Error ? error.message : String(error)
         }`,
         { cause: error },
+      );
+    }
+
+    // 光「不抛错」不够：后缀还可能被规范化**改写**（非 ASCII → percent-encoding、`.` / `..` 路径段被消掉）。
+    // 读路径（fetch / peek / status / snapshot）算出的永远是改写后的形式，而写入用的却是拼接的原始串——
+    // 于是死信进了总线，却没有任何地址能命名它（取不出来的死信比没有死信更糟）。
+    // 宁可拒绝，也不静默改写：`.` / `..` 这类改写塌到的可能是一条**活着**的队列，与「空后缀被禁」同理。
+    if (canonical !== candidate) {
+      const canonicalSuffix = canonical.slice(probeKey.length);
+      throw new InvalidDeadLetterSuffixError(
+        suffix,
+        `Dead-letter suffix "${suffix}" is not in canonical form: address canonicalization rewrites it to "${canonicalSuffix}" ` +
+        `(dead-letter topic "${canonical}"). A dead-letter topic must be nameable by the same address used to read it back. ` +
+        `Use the canonical spelling "${canonicalSuffix}" or a plain ASCII suffix such as "${DEFAULT_DEAD_LETTER_SUFFIX}".`,
       );
     }
     this.deadLetter = { suffix };
@@ -515,15 +562,36 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
+   * 死信 topic 的总线 key —— **唯一**的拼接点。
+   *
+   * 写入（`archiveDeadLetter`）与对外报告（{@link deadLetterTopic}）必须走同一个函数：
+   * 两处各自拼一次字符串就会漂移成「写进去的 key」与「读路径规范化后的 key」不是同一个，
+   * 记录就在总线上变成一条无法命名的队列。后缀已在 `enableDeadLetterQueue()` 里校验过是规范
+   * 安全的，这里再规范化一次作为兜底：写进总线的 key **永远**是规范形式。
+   *
+   * @param canonicalTopic 原始地址的 canonical id。
+   * @returns 死信 topic（canonical id）；没开启死信队列时 `null`。
+   */
+  private deadLetterKey(canonicalTopic: string): string | null {
+    if (!this.deadLetter) {
+      return null;
+    }
+    return getCanonicalMailboxAddressIdentifier(
+      new URL(appendDeadLetterSuffix(canonicalTopic, this.deadLetter.suffix)),
+    );
+  }
+
+  /**
    * 某个地址的死信 topic（canonical id）；没开启时返回 `null`。
-   * 拿它去 `fetch` / `peek` / `status` 就能消费死信。
+   * 拿它去 `fetch` / `peek` / `status` 就能消费死信：返回的 key 与归档写入的 key 是同一个，
+   * 而且一定是规范形式（能被任何读路径重新算出来）。
    */
   public deadLetterTopic(address: string | URL): string | null {
     if (!this.deadLetter) {
       return null;
     }
     const parsed = parseMailboxAddress(address, 'deadLetterTopic()');
-    return `${getCanonicalMailboxAddressIdentifier(parsed)}${this.deadLetter.suffix}`;
+    return this.deadLetterKey(getCanonicalMailboxAddressIdentifier(parsed));
   }
 
   /**
@@ -537,7 +605,8 @@ export class MemoryProvider extends MailboxProvider {
     originalTopic: string,
     detail: { reason: string; attempts?: number; error?: string; deliveryId?: string; at?: string },
   ): void {
-    if (!this.deadLetter) {
+    const deadLetterTopicKey = this.deadLetterKey(originalTopic);
+    if (deadLetterTopicKey === null) {
       return;
     }
     // 拉取模式下传进来的可能是带 `ack` / `nack` 的 ackable 包装：归档副本不该带着旧消费者的句柄。
@@ -558,7 +627,7 @@ export class MemoryProvider extends MailboxProvider {
         'mbx-dead-letter-at': detail.at ?? new Date().toISOString(),
       },
     };
-    this.bus.enqueue(`${originalTopic}${this.deadLetter.suffix}`, record);
+    this.bus.enqueue(deadLetterTopicKey, record);
   }
 
   /**

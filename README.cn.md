@@ -351,6 +351,11 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    一份消息。关掉时行为照旧（直接丢弃）。它覆盖两种放弃：订阅侧的失败投递，以及 `fetch()`
    消费者自己 `nack(false)`。
 
+   后缀接在地址 **path 的末尾**，而且必须**已经是规范形式**：会被地址规范化改写的后缀（非 ASCII、
+   ``" < > ` { }``、`.` / `..` 路径段）会在 `enableDeadLetterQueue()` 直接被拒——否则死信会落进
+   一个没有任何地址能命名的 topic（更糟：落进别人正在用的队列）。要非 ASCII 就写 percent-encoding
+   拼法（`_死信` → `_%E6%AD%BB%E4%BF%A1`），或者直接用 ASCII。
+
    同一套策略——相同的可重试判定、相同的退避公式、相同的“永不重复入队”规则——在
    [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
    移植版里都有实现，各语言的具体构造写法见各自 README。
