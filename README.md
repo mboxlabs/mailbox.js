@@ -381,7 +381,18 @@ const dead = await mailbox.fetch(
 // dead.headers['mbx-dead-letter-round']    -> '1'  // which delivery round this message was on
 // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
 // dead.headers['mbx-dead-letter-topic']    -> the queue it came from
+// dead.headers['mbx-dead-letter-depth']    -> '1'  // how deep in the dead-letter chain this is
 ```
+
+A dead-letter topic can itself be given up on — a compensation worker that crashes is the common
+case. The chain is capped: `enableDeadLetterQueue({ maxNesting })` defaults to **one** level, so a
+record fetched out of `X_dlq` and given up again is **parked** in `X_dlq` (marked
+`mbx-dead-letter-terminal: 'true'`, logged CRITICAL) instead of opening `X_dlq_dlq`, then
+`X_dlq_dlq_dlq`, forever. Parking is not losing: the record stays in the queue, visible to
+`peek` / `status`, and a worker that `fetch`es it and `ack`s it drains it. Pass a bigger
+`maxNesting` to get a real chain; `Number.POSITIVE_INFINITY` is the explicit "no limit" exit.
+`deadLetterTopic()` tells you where the give-up actually lands — at the cap it returns the topic
+itself rather than a deeper address that would never be written.
 
 The suffix is appended to the **end of the path**, and it must already be in canonical form. A
 suffix that address canonicalization would rewrite — non-ASCII, ``" < > ` { }``, `.` / `..` path
@@ -392,7 +403,10 @@ spelling (`_死信` → `_%E6%AD%BB%E4%BF%A1`) or plain ASCII.
 It is opt-in because a dead-letter queue is an operational decision, not a kernel default: it
 writes a second copy of the message into a topic somebody has to consume. Off, the default stays
 what it always was — dropped. It covers both ways a message gets given up: a subscriber's failed
-delivery, and a `fetch()` consumer calling `nack(false)`. The pull side disposes **first** and
+delivery, and a `fetch()` consumer calling `nack(false)`. Archiving is keyed to **the queue the
+message was actually taken out of**, not to `message.to`: an archived copy keeps its original `to`
+(so it can be replayed into the business queue), and `mbx-dead-letter-topic` names the hop it came
+from. The pull side disposes **first** and
 archives afterwards, and one `fetch()` settles only once: repeating `nack(false)` does not add a
 second record, and `nack(false)` after an `ack()` does not dead-letter a message that succeeded.
 

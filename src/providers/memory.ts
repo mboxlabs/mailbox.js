@@ -8,7 +8,7 @@ import { MailMessageQueue, MailMessageAckable, SettlingAckable } from '../lib/Me
 import { RetryPolicy } from '../lib/retry';
 import { DeliveryResult, MBX_ATTEMPT_HEADER, nextRoundCopy, readRound } from '../lib/delivery';
 import { getCanonicalMailboxAddressIdentifier, parseMailboxAddress } from '../lib/utils';
-import { InvalidDeadLetterSuffixError } from '../error';
+import { InvalidDeadLetterNestingError, InvalidDeadLetterSuffixError } from '../error';
 
 type Listener = (message: MailMessage) => void | Promise<DeliveryResult | void>;
 
@@ -16,6 +16,33 @@ type Listener = (message: MailMessage) => void | Promise<DeliveryResult | void>;
  * 死信队列后缀的默认值：`mem:host/inbox` 被放弃的消息落在 `mem:host/inbox_dlq`。
  */
 export const DEFAULT_DEAD_LETTER_SUFFIX = '_dlq';
+
+/**
+ * 死信链的深度上限默认值：**只允许一层** `<topic><suffix>`。
+ *
+ * 为什么必须有上限：死信 topic 的名字是后缀拼接出来的，所以「消费死信的人自己又失败」
+ * 在拓扑上可以无限套（`X_dlq_dlq_dlq…`）——topic 数量与地址长度都会无界增长，
+ * 而每一层都要有人消费、都是新的运维负担。对标：SQS 直接拒绝成环的 redrive 拓扑，
+ * RabbitMQ 靠 `x-delivery-limit` 给隔离队列封顶。
+ *
+ * 封顶**不是**丢弃：到顶后记录**原地停放**（park）并打 {@link MBX_DEAD_LETTER_TERMINAL_HEADER}。
+ * 要更深的链就显式传 `maxNesting`；`Number.POSITIVE_INFINITY` 是「我不要上限」的出口。
+ */
+export const DEFAULT_MAX_DEAD_LETTER_NESTING = 1;
+
+/**
+ * 死信记录在链里的深度（控制平面，字符串整数）：第一次归档是 1，被再归档一层是 2……
+ * 与 topic 名字里的后缀层数一致（两者由同一个函数算，见 `deadLetterDepth`）。
+ */
+export const MBX_DEAD_LETTER_DEPTH_HEADER = 'mbx-dead-letter-depth';
+
+/**
+ * 「到顶了，原地停放」的标记（控制平面，`'true'`）。
+ *
+ * 为什么需要它：封顶之后记录不会再往下拼一层后缀，它仍然待在**同一条**死信队列里。
+ * 没有这个标记，补偿 worker 就会把它当成一条普通死信反复取、反复放弃（空转）而完全看不出来。
+ */
+export const MBX_DEAD_LETTER_TERMINAL_HEADER = 'mbx-dead-letter-terminal';
 
 /**
  * 校验后缀时用的探针地址（带 path，所以能看出后缀会不会被地址规范化改写）。
@@ -53,6 +80,17 @@ export interface DeadLetterQueueOptions {
    *   要非 ASCII 就写它的 percent-encoding 拼法，例如 `_死信` 要写成 `_%E6%AD%BB%E4%BF%A1`。
    */
   suffix?: string;
+
+  /**
+   * 死信链的深度上限（一条消息最多能被归档进几层 `<suffix>`）。默认
+   * {@link DEFAULT_MAX_DEAD_LETTER_NESTING}。
+   *
+   * 到顶之后不报错、也不丢消息：{@link MemoryProvider.deadLetterTopic} 对那条队列返回它**自己**
+   * （停放目的地），归档就在原地发生并打 {@link MBX_DEAD_LETTER_TERMINAL_HEADER}。
+   * 必须是 ≥ 1 的整数或 `Number.POSITIVE_INFINITY`，否则在 `enableDeadLetterQueue()` 抛
+   * {@link InvalidDeadLetterNestingError}（小于 1 = 死信无处可去；NaN / 非整数 = 比较永远不成立，链永不封顶）。
+   */
+  maxNesting?: number;
 }
 
 /**
@@ -333,7 +371,7 @@ export class MemoryProvider extends MailboxProvider {
    * 死信队列开关（默认关）。内核只发「放弃」的信号 + 给钩子，往哪写是 provider 的政策——
    * 这里就是一个可参考的接法：写回同一份总线的 `<topic><suffix>`。
    */
-  private deadLetter: { suffix: string } | null = null;
+  private deadLetter: { suffix: string; maxNesting: number } | null = null;
 
   /**
    * 订阅是广播：一条消息对每个订阅者各投递一次。失败处理因此走投递级记账，
@@ -434,7 +472,9 @@ export class MemoryProvider extends MailboxProvider {
     });
     // 套一层：拉取侧的 `ack` / `nack` 不经过内核记账，一次 fetch = 一次处置；
     // `nack(false)` 在开著死信队列时要先处置、后留痕（基类钩子看不到消费者自己确实 ack）。
-    return ackableMessage ? this.wrapConsumerSettlement(ackableMessage) : null;
+    // 带上 `topic`：留痕的目的地必须是这条消息**真正待着**的那条队列，而不是它 `to` 里写的地址
+    // （死信记录的 `to` 故意保持业务地址，见 wrapConsumerSettlement）。
+    return ackableMessage ? this.wrapConsumerSettlement(ackableMessage, topic) : null;
   }
 
   /**
@@ -491,14 +531,18 @@ export class MemoryProvider extends MailboxProvider {
    * 消息静默消失。现在：死信开关开着时，这里把**每一条失败的投递**归档一份到
    * `<topic><suffix>`；没开仍是丢弃（默认行为，向后兼容）。默认不开是因为：死信是运维
    * 决定，不是内核默认——开了就会向总线多写一份数据，而那个 topic 还得有人消费。
+   *
+   * 归档目标按**消息实际所在的那条队列**算。广播侧两者天然相等：`_send` 就是拿
+   * `canonical(message.to)` 当 topic 去 publish 的，所以这里用 `to` 没错（拉取侧不一样，
+   * 见 {@link wrapConsumerSettlement}）。
    */
   protected _onDeliveryDeadLettered(message: MailMessage, failed: readonly DeliveryResult[]): void {
     if (!this.deadLetter) {
       return;
     }
-    const topic = getCanonicalMailboxAddressIdentifier(message.to);
+    const sourceTopic = getCanonicalMailboxAddressIdentifier(message.to);
     for (const failure of failed) {
-      this.archiveDeadLetter(message, topic, {
+      this.archiveDeadLetter(message, sourceTopic, {
         reason: failure.reason ?? 'unknown',
         attempts: failure.attempts,
         error: failure.error,
@@ -514,6 +558,11 @@ export class MemoryProvider extends MailboxProvider {
     return this.deadLetter !== null;
   }
 
+  /** 当前生效的死信链深度上限；没开启死信队列时 `null`。 */
+  public get maxDeadLetterNesting(): number | null {
+    return this.deadLetter ? this.deadLetter.maxNesting : null;
+  }
+
   /**
    * 开启死信队列：被放弃的消息（不回队的那些）会在 `<topic><suffix>` 里多出一份可取回的副本。
    *
@@ -522,6 +571,7 @@ export class MemoryProvider extends MailboxProvider {
    * - 拉取侧：消费者自己 `nack(false)`（它不经过内核钩子，但同样是“放弃”，不能静默消失）。
    *
    * 归档只动 headers（控制平面），不碰业务 `meta` / `body`。
+   * 链深默认只允许一层（{@link DEFAULT_MAX_DEAD_LETTER_NESTING}），到顶就地停放。
    */
   public enableDeadLetterQueue(options: DeadLetterQueueOptions = {}): void {
     const suffix = options.suffix ?? DEFAULT_DEAD_LETTER_SUFFIX;
@@ -563,7 +613,25 @@ export class MemoryProvider extends MailboxProvider {
         `Use the canonical spelling "${canonicalSuffix}" or a plain ASCII suffix such as "${DEFAULT_DEAD_LETTER_SUFFIX}".`,
       );
     }
-    this.deadLetter = { suffix };
+    // 链深上限与后缀同理：非法值不能让链无界增长，也不能让死信无处可去。必须在赋值前校验，
+    // 否则一次错配置会把已经跑着的死信政策改成“永不封顶”。
+    // 只有 `undefined` 算「没传」；`null` 必须拒绝——把它当成缺省就是静默接受“无上限”。
+    const maxNesting = options.maxNesting === undefined
+      ? DEFAULT_MAX_DEAD_LETTER_NESTING
+      : options.maxNesting;
+    if (
+      typeof maxNesting !== 'number'
+      || (!Number.isSafeInteger(maxNesting) && maxNesting !== Number.POSITIVE_INFINITY)
+      || maxNesting < 1
+    ) {
+      throw new InvalidDeadLetterNestingError(
+        maxNesting,
+        `Dead-letter nesting limit must be an integer >= 1 or Number.POSITIVE_INFINITY, got ${String(maxNesting)}: ` +
+        'a limit below 1 leaves discarded messages nowhere to go, while NaN or a fractional limit never compares greater ' +
+        `than itself, so the dead-letter chain would never be capped. Use ${DEFAULT_MAX_DEAD_LETTER_NESTING} for a single '${DEFAULT_DEAD_LETTER_SUFFIX}' level.`,
+      );
+    }
+    this.deadLetter = { suffix, maxNesting };
   }
 
   /** 关闭死信队列：之后被放弃的消息回到默认的“直接丢弃”。 */
@@ -572,19 +640,25 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
-   * 死信 topic 的总线 key —— **唯一**的拼接点。
+   * 死信归档的目的地 —— **唯一**的拼接点。
    *
    * 写入（`archiveDeadLetter`）与对外报告（{@link deadLetterTopic}）必须走同一个函数：
    * 两处各自拼一次字符串就会漂移成「写进去的 key」与「读路径规范化后的 key」不是同一个，
    * 记录就在总线上变成一条无法命名的队列。后缀已在 `enableDeadLetterQueue()` 里校验过是规范
    * 安全的，这里再规范化一次作为兜底：写进总线的 key **永远**是规范形式。
    *
-   * @param canonicalTopic 原始地址的 canonical id。
-   * @returns 死信 topic（canonical id）；没开启死信队列时 `null`。
+   * 封顶时返回**入参本身**（而不是拼不出新后缀就报 `null`）：到顶不等于丢弃，记录就地停放。
+   * 这也让 {@link deadLetterTopic} 在封顶处报的是真正会被写入的那条队列，不是一个永远为空的地址。
+   *
+   * @param canonicalTopic 消息**实际所在**那条队列的 canonical id。
+   * @returns 归档目的地（canonical id）；没开启死信队列时 `null`。
    */
   private deadLetterKey(canonicalTopic: string): string | null {
     if (!this.deadLetter) {
       return null;
+    }
+    if (this.deadLetterDepth(canonicalTopic) + 1 > this.deadLetter.maxNesting) {
+      return canonicalTopic; // 封顶：就地停放（目的地就是它自己）
     }
     return getCanonicalMailboxAddressIdentifier(
       new URL(appendDeadLetterSuffix(canonicalTopic, this.deadLetter.suffix)),
@@ -592,9 +666,61 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
-   * 某个地址的死信 topic（canonical id）；没开启时返回 `null`。
+   * 剥掉一层死信后缀，得到它在链里的上一层。
+   *
+   * 剥出来的父地址必须是规范形式，否则不算嵌套——与后缀校验同一条理由：写进去的 key 与
+   * 读路径算出的 key 必须是同一个。
+   *
+   * 注意取舍：**链深是按名字界定的**——名字以 `<suffix>` 结尾的队列就是被当作第 1 层，
+   * 即使它是业务自己起的名字（如 `orders_dlq`）。这是“DLQ 命名空间按命名界定”的代价：
+   * 只有名字能回答“这个地址的死信会去哪”，消息头只对手上那份副本有效，且重投一次就洗掉。
+   * 拿不准就换一个不容易撞业务名的后缀（`.dlq`、`/retry`）。
+   */
+  private deadLetterParent(topicKey: string, suffix: string): string | null {
+    if (!topicKey.endsWith(suffix)) {
+      return null;
+    }
+    const parent = topicKey.slice(0, topicKey.length - suffix.length);
+    if (parent.length >= topicKey.length) {
+      return null; // 保险：空后缀（已在 enableDeadLetterQueue 里禁止）会造成无限剥
+    }
+    try {
+      return getCanonicalMailboxAddressIdentifier(new URL(parent)) === parent ? parent : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 一条 topic 在死信链里的层数：按**名字**反复剥后缀（0 = 普通队列）。
+   *
+   * 为什么按名字而不是按消息头：封顶判定（写入）与 {@link deadLetterTopic}（报告）必须用同一个
+   * 口径，否则会出现「判断说没封顶、报告说已封顶」的漂移；而消息头只对那一份副本有效，
+   * 对“一个地址的死信会去哪”这个可诊断问题没有意义。深度头（{@link MBX_DEAD_LETTER_DEPTH_HEADER}）
+   * 就是从这里的层数算出来的，两者永远一致。
+   */
+  private deadLetterDepth(topicKey: string): number {
+    const suffix = this.deadLetter!.suffix;
+    let current = topicKey;
+    let level = 0;
+    for (;;) {
+      const parent = this.deadLetterParent(current, suffix);
+      if (parent === null) {
+        return level;
+      }
+      current = parent;
+      level++;
+    }
+  }
+
+  /**
+   * 某个地址的被放弃消息会去哪（canonical id）；没开启时返回 `null`。
    * 拿它去 `fetch` / `peek` / `status` 就能消费死信：返回的 key 与归档写入的 key 是同一个，
    * 而且一定是规范形式（能被任何读路径重新算出来）。
+   *
+   * 已封顶的地址返回**它自己**：那层不会再拼新后缀（见 {@link DEFAULT_MAX_DEAD_LETTER_NESTING}），
+   * 新的死信就地停放。返回一个会被拼出来、但永远不会被写入的地址，比不返回更坑：
+   * 诊断页会指着一个空队列说“死信在这”。
    */
   public deadLetterTopic(address: string | URL): string | null {
     if (!this.deadLetter) {
@@ -605,22 +731,36 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
-   * 归档一份死信记录：副本 + 控制头，追加到死信 topic 队尾。
+   * 归档一份死信记录：副本 + 控制头，追加到目标死信 topic 队尾。
    *
    * 为什么带这些头：死信记录要能回答「为什么死的 / 试了几次 / 原来在哪」，
    * 否则 DLQ 只是另一堆看不出来历的消息。控制信息走 headers，不碰 `meta`（数据平面）。
-   * 两个计数别混：`mbx-dead-letter-attempts` 是**重试链内**试了几次，
-   * `mbx-dead-letter-round` 是这条消息在进行第几轮投递（只在 > 0 时写）。
+   * 三个计数别混：`mbx-dead-letter-attempts` 是**重试链内**试了几次，
+   * `mbx-dead-letter-round` 是这条消息在进行第几轮投递（只在 > 0 时写），
+   * `mbx-dead-letter-depth` 是它现在所在的**死信链层数**（第一次归档 = 1，与队列名里的后缀层数一致）。
+   *
+   * `mbx-dead-letter-topic` 写的是**上一跳的队列**（来源 key），不是 `message.to`：
+   * 归档副本的 `to` 故意保持业务地址（重放契约），所以它早已不是「它现在在哪」的凭据；
+   * 链要靠这个头追溯（上一跳的头会被副本继承）。
+   *
+   * 到顶时（{@link DEFAULT_MAX_DEAD_LETTER_NESTING}）不再往下拼后缀：记录就地停放、
+   * 打 {@link MBX_DEAD_LETTER_TERMINAL_HEADER}，并大声记一条 CRITICAL。既不静默丢，也不把
+   * topic 数量变成无界增长。
    */
   private archiveDeadLetter(
     message: MailMessage,
-    originalTopic: string,
+    sourceTopic: string,
     detail: { reason: string; attempts?: number; error?: string; deliveryId?: string; at?: string },
   ): void {
-    const deadLetterTopicKey = this.deadLetterKey(originalTopic);
+    const deadLetterTopicKey = this.deadLetterKey(sourceTopic);
     if (deadLetterTopicKey === null) {
       return;
     }
+    // 封顶：目的地就是来源队列本身（见 deadLetterKey）——原地停放，不拆新 topic。
+    const parked = deadLetterTopicKey === sourceTopic;
+    // 深度按**目的地**那一层算（而不是“被归档了几次”）：头里的数字必须与队列名里的后缀层数
+    // 一致，否则同一件事会有两个口径（封顶后原地停放的记录仍停在第 N 层）。
+    const depth = this.deadLetterDepth(deadLetterTopicKey);
     // 拉取模式下传进来的可能是带 `ack` / `nack` 的 ackable 包装：归档副本不该带着旧消费者的句柄。
     const { ack: _ack, nack: _nack, ...envelope } = message as MailMessage & Partial<Ackable>;
     const round = readRound(message);
@@ -632,16 +772,27 @@ export class MemoryProvider extends MailboxProvider {
       headers: {
         ...(message.headers ?? {}),
         'mbx-dead-letter': 'true',
-        'mbx-dead-letter-topic': originalTopic,
+        'mbx-dead-letter-topic': sourceTopic,
         'mbx-dead-letter-reason': detail.reason,
         'mbx-dead-letter-attempts': String(detail.attempts ?? message.headers?.[MBX_ATTEMPT_HEADER] ?? 1),
         ...(round > 0 ? { 'mbx-dead-letter-round': String(round) } : {}),
         'mbx-dead-letter-error': detail.error ?? '',
         ...(detail.deliveryId ? { 'mbx-dead-letter-delivery': detail.deliveryId } : {}),
         'mbx-dead-letter-at': detail.at ?? new Date().toISOString(),
+        [MBX_DEAD_LETTER_DEPTH_HEADER]: String(depth),
+        ...(parked ? { [MBX_DEAD_LETTER_TERMINAL_HEADER]: 'true' } : {}),
       },
     };
     this.bus.enqueue(deadLetterTopicKey, record);
+
+    if (parked) {
+      console.error(
+        `[${this.protocol}] CRITICAL: Message ${record.id} reached the dead-letter nesting limit ` +
+        `(${this.deadLetter?.maxNesting}) in '${sourceTopic}'. It is parked here marked ` +
+        `${MBX_DEAD_LETTER_TERMINAL_HEADER}=true instead of opening one more dead-letter level. ` +
+        `Drain it with fetch()/ack(), or raise maxNesting if this chain is intentional.`,
+      );
+    }
   }
 
   /**
@@ -657,9 +808,17 @@ export class MemoryProvider extends MailboxProvider {
    *    时，迟到的 `nack(false)` 不是“放弃”，不该产生死信记录。
    * 4. 归档失败只记录、不把处置打断：处置已经发生，消息已离开队列；回滚处置会把它留成
    *    永久 in-flight 并被 stale 扫描无限重投（毒消息），比少一条死信更糟。
+   *
+   * 5. **归档目标用 `sourceTopic`（这次 `fetch` 真正取信的队列），不是 `ackable.to`**。
+   *    两者对普通队列相等，对死信记录则不同：归档副本的 `to` 是原始业务地址（重放契约），
+   *    用 `to` 算目标就会把从 `X_dlq` 取出的记录又归档回 `X_dlq`——同一条队列既进又出，
+   *    毒记录永不出局（补偿 worker 无限轮询它），而 `deadLetterTopic('X_dlq')` 报出的那层
+   *    永远是空的。队列层已经用的是这个口径（`MailMessageQueue.nack` 拿 `flight.topic` 回队），
+   *    两侧不能漂。
    */
   private wrapConsumerSettlement(
     ackable: SettlingAckable<MailMessage>,
+    sourceTopic: string,
   ): MailMessageAckable<MailMessage> {
     const provider = this;
     const originalAck = ackable.ack.bind(ackable);
@@ -687,7 +846,7 @@ export class MemoryProvider extends MailboxProvider {
         }
 
         try {
-          provider.archiveDeadLetter(ackable, getCanonicalMailboxAddressIdentifier(ackable.to), {
+          provider.archiveDeadLetter(ackable, sourceTopic, {
             reason: 'consumer-nack',
             // 消费者拿到的就是内核 / 队列打戳后的那份副本：头里的趟数是真的（订阅侧试过几次
             // 就写几次），轮次则由 archiveDeadLetter 从 `mbx-round` 读。

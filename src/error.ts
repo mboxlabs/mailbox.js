@@ -6,6 +6,7 @@ export type MailboxErrorCode =
   | 'MBX_INVALID_ADDRESS'
   | 'MBX_INVALID_FETCH_OPTIONS'
   | 'MBX_INVALID_DEAD_LETTER_SUFFIX'
+  | 'MBX_INVALID_DEAD_LETTER_NESTING'
   | 'MBX_UNSUPPORTED_CAPABILITY'
   | 'MBX_NO_PROVIDER'
 
@@ -83,6 +84,22 @@ export class InvalidDeadLetterSuffixError extends MailboxError {
     super('MBX_INVALID_DEAD_LETTER_SUFFIX', message, options)
     this.name = 'InvalidDeadLetterSuffixError'
     this.suffix = suffix
+  }
+}
+
+/**
+ * 死信链深度上限（`maxNesting`）非法。小于 1 的上限等于「死信无处可去」，
+ * 非整数 / NaN 等于「比较永远不成立，链永远不会封顶」——两者都是配置错误，
+ * 在 `enableDeadLetterQueue()` 的调用点直接抛，不能静默放宽。
+ */
+export class InvalidDeadLetterNestingError extends MailboxError {
+  /** 被拒绝的 `maxNesting` 原值。 */
+  public readonly maxNesting: unknown
+
+  constructor(maxNesting: unknown, message: string, options?: ErrorOptions) {
+    super('MBX_INVALID_DEAD_LETTER_NESTING', message, options)
+    this.name = 'InvalidDeadLetterNestingError'
+    this.maxNesting = maxNesting
   }
 }
 

@@ -353,11 +353,22 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    // dead.headers['mbx-dead-letter-round']    -> '1'  // 这条消息在进行第几轮投递
    // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
    // dead.headers['mbx-dead-letter-topic']    -> 它原来所在的队列
+   // dead.headers['mbx-dead-letter-depth']    -> '1'  // 它在死信链里的第几层
    ```
+
+   死信队列本身也可能被放弃——最常见的就是补偿脚本自己崩了。链是有上限的：
+   `enableDeadLetterQueue({ maxNesting })` 默认只给**一层**，所以从 `X_dlq` 里取出来、再次被判放弃
+   的记录会**就地停放**在 `X_dlq`（打 `mbx-dead-letter-terminal: 'true'`，并记一条 CRITICAL），
+   而不是开出一条 `X_dlq_dlq`、再 `X_dlq_dlq_dlq`……无穷无尽。停放不是丢弃：记录仍在队列里，
+   `peek` / `status` 都看得见，worker `fetch` 之后 `ack` 就能把它排走。要真想要一条链就传更大的
+   `maxNesting`；`Number.POSITIVE_INFINITY` 是显式的“我不要上限”。封顶时 `deadLetterTopic()` 返回
+   的是这条队列**自己**（消息真正会落的地方），而不是一个永远不会被写入的更深地址。
 
    它是 opt-in 的：死信队列是运维决定，不是内核默认——它会往一个总得有人消费的 topic 里多写
    一份消息。关掉时行为照旧（直接丢弃）。它覆盖两种放弃：订阅侧的失败投递，以及 `fetch()`
-   消费者自己 `nack(false)`。后者同样**先处置、后留痕**，而且一次 fetch 只有一次处置：重复
+   消费者自己 `nack(false)`。归档按**消息真正被取出的那条队列**定位，不按 `message.to`：归档副本
+   故意保留原来的 `to`（这样它还能被重放进业务队列），`mbx-dead-letter-topic` 写的才是它来的那一跳。
+   后者同样**先处置、后留痕**，而且一次 fetch 只有一次处置：重复
    `nack(false)` 不会留下第二条记录，`ack()` 之后的 `nack(false)` 也不会给处理成功的消息留记录。
 
    后缀接在地址 **path 的末尾**，而且必须**已经是规范形式**：会被地址规范化改写的后缀（非 ASCII、
