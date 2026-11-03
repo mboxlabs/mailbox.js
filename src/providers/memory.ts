@@ -4,7 +4,7 @@ import {
   MailMessage,
   MailboxStatus,
 } from '../interfaces';
-import { MailMessageQueue, MailMessageAckable } from '../lib/MessageQueue';
+import { MailMessageQueue, MailMessageAckable, SettlingAckable } from '../lib/MessageQueue';
 import { RetryPolicy } from '../lib/retry';
 import { DeliveryResult, MBX_ATTEMPT_HEADER } from '../lib/delivery';
 import { getCanonicalMailboxAddressIdentifier, parseMailboxAddress } from '../lib/utils';
@@ -180,7 +180,7 @@ export class MemoryEventBus {
   public fetchForAck(
     topic: string,
     options?: { staleTimeout?: number | null },
-  ): MailMessageAckable<MailMessage> | undefined {
+  ): SettlingAckable<MailMessage> | undefined {
     this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
     // 不将缺省超时压成 0：那会关掉 MessageQueue 的 stale 扫描，未 ack 的消息永久卡在 in-flight。
     return this.messageQueue.dequeue(topic, { manualAck: true, ackTimeout: options?.staleTimeout }) || undefined;
@@ -190,9 +190,10 @@ export class MemoryEventBus {
    * Acknowledges a message, confirming it has been processed and removing it
    * from the in-flight state.
    * @param messageId The ID of the message to acknowledge.
+   * @returns `true` = 这次处置真的落定；`false` = 消息已不在 in-flight（重复处置 / 已被重投）。
    */
-  public ack(messageId: string): void {
-    this.messageQueue.ack(messageId);
+  public ack(messageId: string): boolean {
+    return this.messageQueue.ack(messageId);
   }
 
   /**
@@ -201,9 +202,10 @@ export class MemoryEventBus {
    * @param messageId The ID of the message to nack.
    * @param topic The topic the message belongs to.
    * @param requeue If true, the message is added back to the front of the queue.
+   * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
    */
-  public nack(messageId: string, topic: string, requeue: boolean): void {
-    this.messageQueue.nack(messageId, topic, requeue);
+  public nack(messageId: string, topic: string, requeue: boolean): boolean {
+    return this.messageQueue.nack(messageId, topic, requeue);
   }
 
   /**
@@ -423,8 +425,9 @@ export class MemoryProvider extends MailboxProvider {
     const ackableMessage = this.bus.fetchForAck(topic, {
       staleTimeout: options?.ackTimeout,
     });
-    // 套一层：`nack(false)` 在开著死信队列时要先留痕再丢（基类钩子看不到消费者自己确实 ack）。
-    return ackableMessage ? this.wrapConsumerNack(ackableMessage) : null;
+    // 套一层：拉取侧的 `ack` / `nack` 不经过内核记账，一次 fetch = 一次处置；
+    // `nack(false)` 在开著死信队列时要先处置、后留痕（基类钩子看不到消费者自己确实 ack）。
+    return ackableMessage ? this.wrapConsumerSettlement(ackableMessage) : null;
   }
 
   /**
@@ -631,26 +634,61 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
-   * 拉取模式下的 `nack(false)` 同样是“放弃”。不开死信队列时它就是静默丢弃（默认行为）；
-   * 开着时先归档再丢。这条路径不经过内核的投递记账（消费者自己拿的 ack），所以基类钩子
-   * 看不到它——必须 provider 自己接。
+   * 拉取模式下的 `ack` / `nack` 同样是处置。这条路径不经过内核的投递结算（消费者自己拿着
+   * ackable），基类钩子看不到它，所以 provider 自己接——接的规矩与内核一致：
+   *
+   * 1. **一次 fetch = 一次处置**：同一个 handle 上只有第一次 `ack` / `nack` 生效。少了这一层，
+   *    重试 / 兜底代码里常见的「再 nack 一次」就会多留一条死信（补偿脚本会重复补偿），
+   *    `ack()` 之后再 `nack(false)` 还会给处理成功的消息写死信。
+   * 2. **先处置、后留痕**：与基类的 `_giveUpDelivery` 同一顺序——消息不会
+   *    同时待在队列（或 in-flight）和 DLQ 里。
+   * 3. **处置没落定就不留痕**：消息已被 stale 扫描重投 / 已被 `clear()` 丢弃 / 已归另一个消费者
+   *    时，迟到的 `nack(false)` 不是“放弃”，不该产生死信记录。
+   * 4. 归档失败只记录、不把处置打断：处置已经发生，消息已离开队列；回滚处置会把它留成
+   *    永久 in-flight 并被 stale 扫描无限重投（毒消息），比少一条死信更糟。
    */
-  private wrapConsumerNack(ackable: MailMessageAckable<MailMessage>): MailMessageAckable<MailMessage> {
+  private wrapConsumerSettlement(
+    ackable: SettlingAckable<MailMessage>,
+  ): MailMessageAckable<MailMessage> {
     const provider = this;
+    const originalAck = ackable.ack.bind(ackable);
     const originalNack = ackable.nack.bind(ackable);
+    let settled = false; // 这个 handle 已经处置过一次：后续 ack / nack 全部 no-op
+
     return {
       ...ackable,
+      ack: async (): Promise<void> => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        await originalAck();
+      },
       nack: async (requeue = false): Promise<void> => {
-        if (!requeue && provider.deadLetter) {
-          const topic = getCanonicalMailboxAddressIdentifier(ackable.to);
-          provider.archiveDeadLetter(ackable, topic, {
+        if (settled) {
+          return;
+        }
+        settled = true;
+
+        const dispositioned = await originalNack(requeue);
+        if (requeue || !provider.deadLetter || !dispositioned) {
+          return; // 回队不是放弃；没落定的处置也不是
+        }
+
+        try {
+          provider.archiveDeadLetter(ackable, getCanonicalMailboxAddressIdentifier(ackable.to), {
             reason: 'consumer-nack',
             attempts: Number(ackable.headers?.[MBX_ATTEMPT_HEADER] ?? 1),
             error: 'the consumer nacked the message without requeue',
             at: new Date().toISOString(),
           });
+        } catch (error) {
+          console.error(
+            `[${this.protocol}] CRITICAL: The consumer discarded message ${ackable.id}, but archiving it to the ` +
+            `dead-letter queue failed. The message is gone from its queue and has no dead-letter record.`,
+            error,
+          );
         }
-        await originalNack(requeue);
       },
     };
   }

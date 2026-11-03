@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MailMessageQueue, MailMessageAckable, DEFAULT_ACK_TIMEOUT } from './MessageQueue';
+import { MailMessageQueue, MailMessageAckable, SettlingAckable, DEFAULT_ACK_TIMEOUT } from './MessageQueue';
 
 // Define a simple message type for testing
 interface TestMessage {
@@ -42,7 +42,7 @@ describe('MessageQueue', () => {
     it('should put a message back at the head of the queue', () => {
       queue.enqueue(topic1, msg1);
       queue.enqueue(topic1, msg2);
-      const first = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      const first = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
       expect(first.id).toBe(msg1.id);
 
       first.nack(true);
@@ -82,7 +82,7 @@ describe('MessageQueue', () => {
     it('should requeue the same id again after it was dequeued', () => {
       // 去重不能把「已处理完」也当成重复，否则重试永远进不了队列。
       queue.enqueue(topic1, msg1);
-      const ackable = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      const ackable = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
       ackable.nack(true);
 
       expect(queue.getStatus(topic1).unreadCount).toBe(1);
@@ -133,8 +133,8 @@ describe('MessageQueue', () => {
 
       expect(result).not.toBeNull();
       expect(result!.id).toBe(msg1.id);
-      expect(typeof (result as MailMessageAckable<TestMessage>).ack).toBe('function');
-      expect(typeof (result as MailMessageAckable<TestMessage>).nack).toBe('function');
+      expect(typeof (result as SettlingAckable<TestMessage>).ack).toBe('function');
+      expect(typeof (result as SettlingAckable<TestMessage>).nack).toBe('function');
     });
 
     it('should move the message to in-flight, making it unavailable for dequeue', () => {
@@ -148,7 +148,7 @@ describe('MessageQueue', () => {
 
     it('ack() should permanently remove the message', async () => {
       queue.enqueue(topic1, msg1);
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
 
       await ackableMsg.ack();
 
@@ -160,7 +160,7 @@ describe('MessageQueue', () => {
 
     it('nack(false) should permanently remove the message', async () => {
       queue.enqueue(topic1, msg1);
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
 
       await ackableMsg.nack(false); // Do not requeue
 
@@ -171,7 +171,7 @@ describe('MessageQueue', () => {
     it('nack(true) should add the message back to the front of the queue', async () => {
       queue.enqueue(topic1, msg1);
       queue.enqueue(topic1, msg2); // msg2 is now at the end
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>; // Dequeues msg1
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>; // Dequeues msg1
       expect(ackableMsg.id).toBe(msg1.id);
 
       await ackableMsg.nack(true); // Requeue msg1
@@ -189,7 +189,7 @@ describe('MessageQueue', () => {
       queue.enqueue(topic1, msg1);
 
       // Dequeue a message and let it go stale
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
       expect(ackableMsg).not.toBeNull();
       expect(queue.getStatus(topic1).unreadCount).toBe(0);
 
@@ -212,10 +212,10 @@ describe('MessageQueue', () => {
       queue.enqueue(topic1, msg2);
       expect(queue.getStatus(topic1)).toEqual({ unreadCount: 2, inFlightCount: 0 });
 
-      const ackableMsg1 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
+      const ackableMsg1 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
       expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 1 });
 
-      const ackableMsg2 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as MailMessageAckable<TestMessage>;
+      const ackableMsg2 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
       expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 2 });
 
       // ack 与 nack(false) 都会把消息从 in-flight 中除名
@@ -265,7 +265,7 @@ describe('MessageQueue', () => {
       // 既取不回来也不在状态里可见，等于静默丢失。
       queue.enqueue(topic1, msg1);
 
-      const ackableMsg = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      const ackableMsg = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
       expect(ackableMsg.id).toBe(msg1.id);
       expect(queue.dequeue(topic1, { manualAck: true })).toBeNull();
 
@@ -309,7 +309,7 @@ describe('MessageQueue', () => {
     it('should drop in-flight messages of the topic too, and they must not come back via nack(requeue)', async () => {
       // in-flight 也是队列状态的一部分：只清「等待中」的那半，测试跑完还是会看到残留消息。
       queue.enqueue(topic1, msg1);
-      const inflight = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      const inflight = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
       expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
 
       expect(queue.clear(topic1)).toBe(1);
@@ -401,7 +401,7 @@ describe('MessageQueue', () => {
     it('不偷看 in-flight：已被取走、尚未 ack 的消息属于那个消费者', async () => {
       queue.enqueue(topic1, msg1);
       queue.enqueue(topic1, msg2);
-      const inflight = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      const inflight = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
 
       expect(queue.peek(topic1).map((m) => m.id)).toEqual([msg2.id]);
       expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 1 });
@@ -412,7 +412,7 @@ describe('MessageQueue', () => {
 
     it('反复快照不推进 stale 扫描：不会把 in-flight 消息提前换回队列', async () => {
       queue.enqueue(topic1, msg1);
-      const inflight = queue.dequeue(topic1, { manualAck: true, ackTimeout: 100 }) as MailMessageAckable<TestMessage>;
+      const inflight = queue.dequeue(topic1, { manualAck: true, ackTimeout: 100 }) as SettlingAckable<TestMessage>;
 
       await vi.advanceTimersByTimeAsync(500); // 已超过 ackTimeout
       expect(queue.peek(topic1)).toEqual([]); // 只读操作不能触发 stale 重投
@@ -430,7 +430,7 @@ describe('MessageQueue', () => {
       queue.enqueue(topic1, msg1);
       expect(queue.hasTopic(topic1)).toBe(true);
 
-      const inflight = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      const inflight = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
       expect(queue.hasTopic(topic1)).toBe(true); // 只是离开队列，并未处理完
 
       await inflight.ack();
@@ -448,6 +448,133 @@ describe('MessageQueue', () => {
 
       queue.dequeue(topic2, { manualAck: true });
       expect(queue.topics()).toEqual([topic2]); // in-flight 也算这个 topic 还有痕迹
+    });
+  });
+
+  /**
+   * 一次 fetch = 一次处置。
+   *
+   * 上层（`MemoryProvider` 的死信接法）要靠「这次处置到底落没落」来决定要不要留死信记录，
+   * 所以队列必须**报告**处置结果，而不是静默 no-op：
+   *   - `true` = 这一次真的把消息从 in-flight 结算掉了；
+   *   - `false` = 这条已经不在了（重复处置 / 已被 stale 重投 / 已被 clear 丢弃）。
+   * 静默 no-op 会让上层以为「放弃发生了」，于是重复死信、或给已被别人处理的消息写死信。
+   */
+  describe('一次处置：ack / nack 的幂等与归属', () => {
+    const ACK_TIMEOUT = 10_000;
+
+    const inflightOf = (topic: string, message: TestMessage) =>
+      queue.dequeue(topic, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
+
+    it('[语义] ack / nack 报告这次处置是否真的落定', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = inflightOf(topic1, msg1);
+
+      expect(await inflight.ack()).toBe(true);
+    });
+
+    it('[语义] 重复 nack(false) 返回 false，且不产生第二次效果', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = inflightOf(topic1, msg1);
+
+      expect(await inflight.nack(false)).toBe(true);
+      expect(await inflight.nack(false)).toBe(false);
+      expect(await inflight.nack(true)).toBe(false); // 已放弃：之后再喊回队也不作数
+
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('[语义] nack(true) 之后再 nack(false) 不作数：回队的消息不会被判死刑', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = inflightOf(topic1, msg1);
+
+      expect(await inflight.nack(true)).toBe(true);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 0 });
+
+      expect(await inflight.nack(false)).toBe(false);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 0 });
+    });
+
+    it('[语义] ack 之后的 nack 不作数：已确认的消息不会被退回队列，也不会被丢弃', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = inflightOf(topic1, msg1);
+
+      expect(await inflight.ack()).toBe(true);
+      expect(await inflight.nack(true)).toBe(false);
+      expect(await inflight.nack(false)).toBe(false);
+      expect(await inflight.ack()).toBe(false);
+
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('[语义] 处置只认自己那一次 fetch：stale 重投后的旧 handle 不能动新消费者的 in-flight', async () => {
+      queue.enqueue(topic1, msg1);
+      const stale = inflightOf(topic1, msg1);
+
+      vi.advanceTimersByTime(ACK_TIMEOUT + 1);
+      // 下一次 dequeue 触发 stale 扫描：同一条消息交给新的消费者
+      const fresh = inflightOf(topic1, msg1);
+      expect(fresh.id).toBe(msg1.id);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+
+      // 旧 handle 现在手里没有东西可结算：既不能把新消费者的 in-flight 抹掉，也不能再回队
+      expect(await stale.nack(false)).toBe(false);
+      expect(await stale.nack(true)).toBe(false);
+      expect(await stale.ack()).toBe(false);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+
+      // 新消费者的处置照旧有效
+      expect(await fresh.ack()).toBe(true);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('[语义] 被 clear() 丢弃的 in-flight：之后的 ack / nack 报告 false，不复活消息', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = inflightOf(topic1, msg1);
+
+      expect(queue.clear(topic1)).toBe(1);
+
+      expect(await inflight.nack(false)).toBe(false);
+      expect(await inflight.nack(true)).toBe(false);
+      expect(await inflight.ack()).toBe(false);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('[事实] 队列的 ackable 仍是普通信封 + 两个处置方法（忽略返回值的用法不变）', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = inflightOf(topic1, msg1);
+
+      const envelope: Omit<MailMessageAckable<TestMessage>, 'ack' | 'nack'> = inflight;
+      expect(envelope.id).toBe(msg1.id);
+
+      await inflight.ack(); // 不读 boolean 的老写法仍然成立
+      expect(queue.getStatus(topic1).inFlightCount).toBe(0);
+    });
+
+    it('[事实] 不带 handle 的总线级 ack / nack 仍按消息 id 结算（向后兼容的旧语义）', async () => {
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic2, msg2);
+      inflightOf(topic1, msg1);
+      inflightOf(topic2, msg2);
+
+      expect(queue.nack(msg1.id, topic1, false)).toBe(true);
+      expect(queue.nack(msg1.id, topic1, false)).toBe(false);
+      expect(queue.ack(msg2.id)).toBe(true);
+      expect(queue.ack(msg2.id)).toBe(false);
+      expect(queue.nack('never-was', topic1, true)).toBe(false);
+
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic2)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+
+    it('[事实] 队列自带的 ackable 句柄也走同一套归属判定（重复 ack 不会误伤后来者）', async () => {
+      queue.enqueue(topic1, msg1);
+      const stale = inflightOf(topic1, msg1);
+      vi.advanceTimersByTime(ACK_TIMEOUT + 1);
+      inflightOf(topic1, msg1); // 重投给新消费者
+
+      await stale.ack(); // 旧 handle 迟到
+      expect(queue.getStatus(topic1).inFlightCount).toBe(1);
     });
   });
 });

@@ -309,6 +309,11 @@ up — those belong to the provider. Consequences worth knowing:
   is the shipped reference wiring; the hook is called **after** the disposition (`nack`) so a
   message never sits in the queue and the DLQ at the same time. A hook that throws (or rejects)
   is logged and cannot swallow the disposition.
+- The pull side (`fetch()` consumers settling with their own `ack` / `nack`, invisible to the kernel)
+  follows the same two rules: one `fetch()` is one disposition (a second `ack` / `nack` on the same
+  handle is a no-op), and a disposition that did not land — the message was already requeued by the
+  stale sweep, dropped by `clear()`, or belongs to another consumer — is not a give-up. One give-up
+  therefore leaves exactly one dead-letter record, so a compensation script cannot compensate twice.
 - Each delivery carries its attempt count on `headers['mbx-attempt']` (plus
   `mbx-max-attempts` when a retry policy is set), and `DeliveryResult` carries `attempts` and an
   `error` summary — so a DLQ record can answer "why did it die, and how many times did we try".
@@ -380,7 +385,9 @@ spelling (`_死信` → `_%E6%AD%BB%E4%BF%A1`) or plain ASCII.
 It is opt-in because a dead-letter queue is an operational decision, not a kernel default: it
 writes a second copy of the message into a topic somebody has to consume. Off, the default stays
 what it always was — dropped. It covers both ways a message gets given up: a subscriber's failed
-delivery, and a `fetch()` consumer calling `nack(false)`.
+delivery, and a `fetch()` consumer calling `nack(false)`. The pull side disposes **first** and
+archives afterwards, and one `fetch()` settles only once: repeating `nack(false)` does not add a
+second record, and `nack(false)` after an `ack()` does not dead-letter a message that succeeded.
 
 The same policy — same retriable check, same backoff formula, same "never queue twice" rule — is
 implemented in the [Python](https://github.com/mboxlabs/mailbox.py) and

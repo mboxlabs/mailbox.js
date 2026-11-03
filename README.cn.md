@@ -291,6 +291,10 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    - 死信队列默认不存在，除非你接上。`MemoryProvider#enableDeadLetterQueue()` 就是随包提供的
      参考接法；钩子在处置（`nack`）**之后**被调，因此消息不会同时出现在队列和 DLQ 里；钩子自己
      抛错 / reject 会被记录，且不会吞掉处置判定。
+   - 拉取侧（`fetch()` 消费者自己 `ack` / `nack`，内核看不到）照同样的两条：一次 fetch 只算
+     一次处置（同一个 handle 上第二次 `ack` / `nack` 不再作数），处置没落定（消息已被 stale
+     重投、已被 `clear()` 丢弃、或已归另一个消费者）就不算放弃。因此一次放弃只留一条死信，
+     补偿脚本不会重复补偿。
    - 每次投递都在 `headers['mbx-attempt']` 上带尝试次数（开了重试策略还带
      `mbx-max-attempts`），`DeliveryResult` 也带 `attempts` 与 `error` 摘要——死信记录因此能回答
      “为什么死的、试了几次”。
@@ -349,7 +353,8 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
 
    它是 opt-in 的：死信队列是运维决定，不是内核默认——它会往一个总得有人消费的 topic 里多写
    一份消息。关掉时行为照旧（直接丢弃）。它覆盖两种放弃：订阅侧的失败投递，以及 `fetch()`
-   消费者自己 `nack(false)`。
+   消费者自己 `nack(false)`。后者同样**先处置、后留痕**，而且一次 fetch 只有一次处置：重复
+   `nack(false)` 不会留下第二条记录，`ack()` 之后的 `nack(false)` 也不会给处理成功的消息留记录。
 
    后缀接在地址 **path 的末尾**，而且必须**已经是规范形式**：会被地址规范化改写的后缀（非 ASCII、
    ``" < > ` { }``、`.` / `..` 路径段）会在 `enableDeadLetterQueue()` 直接被拒——否则死信会落进

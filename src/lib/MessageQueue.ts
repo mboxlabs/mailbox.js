@@ -19,6 +19,28 @@ export type MailMessageAckable<T> = T & {
 };
 
 /**
+ * 队列自己交给消费者的那个 ackable：与 {@link MailMessageAckable} 同一个形状，但 `ack` / `nack`
+ * **报告这次处置有没有落定**。
+ *
+ * 为什么要把这个数报出来：“处置已经落定”与“处置没发生”在静默 no-op 下完全看不出来，
+ * 而上层（provider 的死信接法）必须分清这两者 —— 否则一次重复 `nack(false)` 就会多留一条
+ * 死信，而一条已被 stale 扫描重投的消息也会被旧 handle 迟到地判成“放弃”。
+ *
+ * 对外（`interfaces.ts` 里的 `Ackable`）仍是 `Promise<void>`：忽略返回值的调用方在运行时不受影响，
+ * 但这个类型单独存在，因为 TS 里 `Promise<boolean>` 并不可赋给 `Promise<void>` —— 直接改公开
+ * 契约会让第三方 provider 的 `_fetch` 编译不过。
+ */
+export type SettlingAckable<T> = T & {
+  /** @returns `true` = 这次真的把消息从 in-flight 结算掉了；`false` = 它已经不归这次 `fetch` 了。 */
+  ack: () => Promise<boolean>;
+  /**
+   * @param requeue 回队（`true`）还是放弃（`false`）。
+   * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
+   */
+  nack: (requeue?: boolean) => Promise<boolean>;
+};
+
+/**
  * A generic, in-memory message queue that supports topic-based queuing and manual acknowledgement.
  *
  * This class provides a reliable queuing mechanism for producer-consumer patterns where consumers
@@ -29,6 +51,8 @@ export type MailMessageAckable<T> = T & {
  * - Manual acknowledgement mode, which places messages "in-flight" until they are explicitly
  *   acknowledged (`ack`) or negatively acknowledged (`nack`).
  * - Timeout-based requeueing for stale in-flight messages to prevent message loss.
+ * - One disposition per handle: a stale (requeued) handle cannot settle the copy a newer consumer
+ *   holds, and repeating `ack` / `nack` does not take effect twice.
  *
  * @template T The type of messages in the queue. Must have an `id` property of type string.
  */
@@ -44,7 +68,12 @@ export const DEFAULT_ACK_TIMEOUT = 30_000;
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
   // Stores in-flight messages with their original topic for reliable requeueing.
-  private inFlight: Map<string, { message: T; timestamp: number; topic: string }> = new Map();
+  // `token` 认出“哪一次 fetch 拿走的”：同一条消息被 stale 扫描重投后，旧 handle 不能再把
+  // 新消费者手里的那份结算掉（按 id 处理会误伤）。
+  private inFlight: Map<string, { message: T; timestamp: number; topic: string; token: number }> = new Map();
+
+  /** in-flight 归属凭据的发号器（仅在本队列实例内比较，不需全局唯一）。 */
+  private settlementToken = 0;
 
   /**
    * Adds a message to the end of a specific topic's queue.
@@ -78,7 +107,7 @@ export class MailMessageQueue<T extends { id: string }> {
   public dequeue(
     topic: string,
     options: { manualAck: true; ackTimeout?: number | null }
-  ): MailMessageAckable<T> | null;
+  ): SettlingAckable<T> | null;
   public dequeue(
     topic: string,
     options?: { manualAck?: false }
@@ -86,7 +115,7 @@ export class MailMessageQueue<T extends { id: string }> {
   public dequeue(
     topic: string,
     options?: { manualAck?: boolean; ackTimeout?: number | null }
-  ): T | MailMessageAckable<T> | null {
+  ): T | SettlingAckable<T> | null {
     // Requeue stale messages whenever manual-ack mode is used. A missing timeout must not
     // mean "never requeue": that leaked the message forever (invisible in status, unrecoverable).
     if (options?.manualAck) {
@@ -110,16 +139,14 @@ export class MailMessageQueue<T extends { id: string }> {
 
     // Manual-ack: move message to in-flight and wrap with ack/nack functions.
     // Store the topic along with the message in inFlight
-    this.inFlight.set(message.id, { message, timestamp: Date.now(), topic });
+    const token = ++this.settlementToken;
+    this.inFlight.set(message.id, { message, timestamp: Date.now(), topic, token });
 
+    // 句柄自己带 `token`：只有取走它的那一次 fetch 能结算它。
     return {
       ...message,
-      ack: async () => {
-        this.ack(message.id);
-      },
-      nack: async (requeue = false) => {
-        this.nack(message.id, topic, requeue); // Pass topic to nack
-      },
+      ack: async () => this.ack(message.id, token),
+      nack: async (requeue = false) => this.nack(message.id, topic, requeue, token),
     };
   }
 
@@ -188,28 +215,48 @@ export class MailMessageQueue<T extends { id: string }> {
 
   /**
    * Acknowledges a message, permanently removing it from the in-flight state.
+   *
+   * 一次处置：同一个 handle 重复 `ack`（或 `ack` 之后再 `nack`）不会第二次生效。
+   *
    * @param messageId The ID of the message to acknowledge.
+   * @param token 取信时发下的归属凭据（队列自带的 ackable 自己传）。带上它时，只结算
+   *   **这一次** fetch 拿走的那份；不带则保持按消息 id 的旧语义（总线级 API）。
+   * @returns `true` = 真的结算了；`false` = 已经不在（重复处置 / 已被重投 / 已被丢弃）。
    */
-  public ack(messageId: string): void {
+  public ack(messageId: string, token?: number): boolean {
+    const flight = this.inFlight.get(messageId);
+    if (!flight || (token !== undefined && flight.token !== token)) {
+      return false;
+    }
     this.inFlight.delete(messageId);
+    return true;
   }
 
   /**
    * Negatively acknowledges a message, removing it from the in-flight state.
    * If `requeue` is true, the message is added back to the front of its original queue.
+   *
+   * 一次处置：重复 `nack`、或在 `ack` 之后的 `nack` 都不再生效（也不会把已确认的消息
+   * 退回队列）。上层要靠这个返回值区分“真的放弃了”与“这次根本没落定”，否则会重复
+   * 写死信记录。
+   *
    * @param messageId The ID of the message to nack.
    * @param topic The topic the message belongs to. This is used for requeueing.
    * @param requeue If true, the message is re-added to the front of the queue.
+   * @param token 取信时的归属凭据；带上就只结算那一次 fetch 拿走的份（见 {@link ack}）。
+   * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
    */
-  public nack(messageId: string, topic: string, requeue: boolean): void {
+  public nack(messageId: string, topic: string, requeue: boolean, token?: number): boolean {
     const flight = this.inFlight.get(messageId);
-    if (flight) {
-      this.inFlight.delete(messageId);
-      if (requeue) {
-        // Use the topic stored in inFlight for reliability
-        this.requeue(flight.topic, flight.message);
-      }
+    if (!flight || (token !== undefined && flight.token !== token)) {
+      return false;
     }
+    this.inFlight.delete(messageId);
+    if (requeue) {
+      // Use the topic stored in inFlight for reliability
+      this.requeue(flight.topic, flight.message);
+    }
+    return true;
   }
 
   /**

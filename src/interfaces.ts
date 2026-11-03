@@ -67,6 +67,11 @@ export interface MailMessage extends Omit<OutgoingMail, 'from' | 'to'> {
 
 /**
  * 代表一个可被手动确认或拒绝的信件。
+ *
+ * **一次取信 = 一次处置**：只有第一次 `ack` / `nack` 生效，同一个 handle 上重复确认不再作数
+ * （`ack()` 之后再 `nack(false)` 既不会退回队列也不会丢弃）。provider 必须守住这条：重复处置
+ * 若还能生效，接了死信队列的 provider 就会为同一次放弃留下多条记录，而迟到的处置会误伤
+ * 重投后新消费者手里的同一条消息。
  */
 export interface Ackable {
   /**
