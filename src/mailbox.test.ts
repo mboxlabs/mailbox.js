@@ -312,16 +312,19 @@ describe('status', () => {
   it('should return status for MemoryProvider', async () => {
     const address = 'mem://test/status';
 
-    // 1. Initial status
+    // 1. Initial status —— 这个地址还没人碰过：不是「在线且空闲」，是「provider 认不得它」（issue#4）
     const initialStatus = await mailbox.status(address);
-    expect(initialStatus.state).toBe('online');
+    expect(initialStatus.state).toBe('unknown');
+    expect(initialStatus.exists).toBe(false);
     expect(initialStatus.unreadCount).toBe(0);
     expect(initialStatus.subscriberCount).toBe(0);
-    expect(initialStatus.lastActivityTime).toBeUndefined();
+    expect(initialStatus.lastActivityTime).toBeNull();
 
     // 2. Post a message and check status
     await mailbox.post({ from: 'mem://a', to: address, body: 'status check 1' });
     const afterPostStatus = await mailbox.status(address);
+    expect(afterPostStatus.state).toBe('online');
+    expect(afterPostStatus.exists).toBe(true);
     expect(afterPostStatus.unreadCount).toBe(1);
     expect(afterPostStatus.lastActivityTime).toBeTypeOf('string');
 
@@ -360,8 +363,9 @@ describe('status', () => {
     const address = 'mock://test/status';
     const status = await mailbox.status(address);
 
-    // 4. Assert the default response
+    // 4. Assert the default response（问不到 ≠ 不存在：不该报 exists: false）
     expect(status.state).toBe('unknown');
+    expect(status.exists).toBeUndefined();
     expect(status.message).toBe("The 'mock' provider does not support status queries.");
   });
 });

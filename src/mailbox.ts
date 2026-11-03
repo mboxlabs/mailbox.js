@@ -1,17 +1,28 @@
-import { IMailboxProvider, MailMessage, OutgoingMail, Subscription, AckableMailMessage, MailboxStatus } from './interfaces';
+import {
+  IMailboxProvider,
+  MailMessage,
+  MailboxAddressSnapshot,
+  MailboxSnapshot,
+  MailboxStatus,
+  OutgoingMail,
+  Subscription,
+  AckableMailMessage,
+  PeekFetchOptions,
+  ManualAckFetchOptions,
+  PlainFetchOptions,
+  FetchOptions,
+} from './interfaces';
+import { parseMailboxAddress } from './lib/utils';
+import { NoProviderError } from './error';
 
-export interface MailBoxFetchOptions {
-  manualAck?: boolean;
-  [name: string]: any;
-}
+/** `fetch()` 的全量选项（保留历史名字，实体见 {@link FetchOptions}）。 */
+export type MailBoxFetchOptions = FetchOptions;
+/** `fetch({ peek: true })` 的只读快照选项。 */
+export type MailBoxPeekOptions = PeekFetchOptions;
 
-interface ManualAckedMailBoxFetchOptions extends MailBoxFetchOptions {
-  manualAck: true;
-}
+type ManualAckedMailBoxFetchOptions = ManualAckFetchOptions;
 
-interface AutoAckedMailBoxFetchOptions extends MailBoxFetchOptions {
-  manualAck?: false;
-}
+type AutoAckedMailBoxFetchOptions = PlainFetchOptions;
 
 export interface MailBoxStopOptions {
   /**
@@ -53,7 +64,7 @@ export class Mailbox {
     const key = protocol.endsWith(':') ? protocol.slice(0, -1) : protocol;
     const provider = this._providers.get(key);
     if (!provider && raiseErrorIfFailed) {
-      throw new Error(`No provider for protocol: ${protocol}`);
+      throw new NoProviderError(protocol);
     }
     return provider;
   }
@@ -104,8 +115,8 @@ export class Mailbox {
   }
 
   public async post(mail: OutgoingMail) {
-    const toUrl = new URL(mail.to);
-    const fromUrl = new URL(mail.from);
+    const toUrl = parseMailboxAddress(mail.to, 'post()');
+    const fromUrl = parseMailboxAddress(mail.from, 'post() (from)');
     const provider = this.getProvider(toUrl.protocol, true);
 
     const message: MailMessage = {
@@ -121,31 +132,58 @@ export class Mailbox {
   }
 
   public subscribe(address: string | URL, onReceive: (message: MailMessage) => void): Subscription {
-    const addrUrl = new URL(address);
+    const addrUrl = parseMailboxAddress(address, 'subscribe()');
     const provider = this.getProvider(addrUrl.protocol, true);
 
     return provider.subscribe(addrUrl, onReceive);
   }
 
+  /**
+   * 取信 / 只读快照。
+   *
+   * - 默认：取一封，隐式 ACK（出队即完成）。
+   * - `{ manualAck: true }`：取一封，进 in-flight，直到 ack / nack 或超时重投。
+   * - `{ peek: true, limit?: n }`：**只读**——返回副本数组（空队列是 `[]`），不出队、
+   *   不建 in-flight、不刷活动时间。诊断与测试断言用这个，不要用「manualAck 但不 ack」凑。
+   *
+   * `peek` 与 `manualAck` 同时给出会直接报错（互相矛盾），provider 不支持只读时抛
+   * `UnsupportedCapabilityError`——都不会被静默降级成普通取信。
+   */
+  public async fetch(address: string | URL, options: PeekFetchOptions): Promise<MailMessage[]>;
   public async fetch(address: string | URL, options: ManualAckedMailBoxFetchOptions): Promise<AckableMailMessage | null>;
   public async fetch(address: string | URL, options?: AutoAckedMailBoxFetchOptions): Promise<MailMessage | null>;
-  public async fetch(address: string | URL, options?: MailBoxFetchOptions): Promise<MailMessage | AckableMailMessage | null> {
-    const addrUrl = new URL(address);
+  public async fetch(address: string | URL, options?: MailBoxFetchOptions): Promise<MailMessage | AckableMailMessage | MailMessage[] | null> {
+    const addrUrl = parseMailboxAddress(address, 'fetch()');
     const provider = this.getProvider(addrUrl.protocol, true);
     return provider.fetch(addrUrl, options);
   }
 
   /**
    * 查询指定地址的状态信息。
+   *
+   * 地址在 provider 里没有任何记录（没投过、没订阅过、没有活动）时，返回
+   * `state: 'unknown'` + `exists: false`，而不是 `state: 'online'` + 0——诊断页要能区分
+   * “这个地址不存在”和“这个地址空闲”。
+   *
    * @param address 要查询的地址。
    * @returns 返回该地址的邮箱状态。
    */
-  public async status(address: string | URL): Promise<MailboxStatus> {
-    const addrUrl = new URL(address);
+  public async status(address: string | URL): Promise<MailboxStatus>;
+  /**
+   * 不带地址 = 全量快照：所有 provider、所有 topic 的一时刻诊断视图（见 {@link snapshot}）。
+   */
+  public async status(): Promise<MailboxSnapshot>;
+  public async status(address?: string | URL): Promise<MailboxStatus | MailboxSnapshot> {
+    if (address === undefined) {
+      return this.snapshot();
+    }
+
+    const addrUrl = parseMailboxAddress(address, 'status()');
     const provider = this.getProvider(addrUrl.protocol, true);
 
     if (!provider.status) {
       // 如果 Provider 没有实现 status 方法，返回一个默认的未知状态。
+      // 注意这里**不**设 `exists: false`：问不到不等于不存在。
       return {
         state: 'unknown',
         message: `The '${provider.protocol}' provider does not support status queries.`
@@ -153,6 +191,83 @@ export class Mailbox {
     }
 
     return provider.status(addrUrl);
+  }
+
+  /**
+   * 全量快照：把所有能枚举自身地址的 provider 的 topic 状态汇成一个可断言的结构。
+   *
+   * 等价于无参的 `status()`，只是名字更直白（诊断页里 `mailbox.snapshot()` 比 `mailbox.status()`
+   * 更好读）。不能枚举的 provider（消息不在本地，如 AMQP / SQS）会列在
+   * `unsupportedProviders` 里，不会被误报成“队列为空”。
+   */
+  public async snapshot(): Promise<MailboxSnapshot> {
+    const protocols = Array.from(this._providers.keys()).sort();
+    const addresses: MailboxAddressSnapshot[] = [];
+    const unsupportedProviders: string[] = [];
+
+    for (const [protocol, provider] of this._providers) {
+      if (typeof provider.listAddresses !== 'function') {
+        unsupportedProviders.push(protocol);
+        continue;
+      }
+
+      for (const canonicalId of await provider.listAddresses()) {
+        addresses.push({
+          canonicalId,
+          protocol,
+          ...(await statusOfCanonicalAddress(provider, canonicalId)),
+        });
+      }
+    }
+
+    addresses.sort((a, b) => (a.canonicalId < b.canonicalId ? -1 : a.canonicalId > b.canonicalId ? 1 : 0));
+
+    const unreadCount = addresses.reduce((total, entry) => total + (entry.unreadCount ?? 0), 0);
+    const inFlightCount = addresses.reduce((total, entry) => total + (entry.inFlightCount ?? 0), 0);
+    const enumerated = protocols.length - unsupportedProviders.length;
+
+    let state: MailboxSnapshot['state'];
+    if (enumerated === 0) {
+      state = 'unknown'; // 没有任何 provider 能枚举：这份快照什么都没说
+    } else if (unsupportedProviders.length > 0 || addresses.some((entry) => entry.state !== 'online')) {
+      state = 'degraded'; // 只看到一部分，或有地址本身就不在线
+    } else {
+      state = 'online';
+    }
+
+    return {
+      state,
+      protocols,
+      addressCount: addresses.length,
+      unreadCount,
+      inFlightCount,
+      addresses,
+      unsupportedProviders: unsupportedProviders.sort(),
+      takenAt: new Date().toISOString(),
+    };
+  }
+}
+
+/**
+ * 快照里对单个地址的查询：canonical id 本身可以重新解析成 URL（它已经是
+ * `protocol://user@host/path` 形式）。解析不了是 provider 的 bug，宁可报 unknown
+ * 也不能让整个快照崩掉。
+ */
+async function statusOfCanonicalAddress(provider: IMailboxProvider, canonicalId: string): Promise<MailboxStatus> {
+  if (!provider.status) {
+    // 能枚举但不能报状态：至少把“这个地址存在”说出来。
+    return { state: 'unknown', exists: true, message: `The '${provider.protocol}' provider does not support status queries.` };
+  }
+
+  try {
+    return await provider.status(new URL(canonicalId));
+  } catch (error) {
+    return {
+      state: 'unknown',
+      exists: true,
+      message: `The '${provider.protocol}' provider listed '${canonicalId}', but it could not be queried back.`,
+      ...(error instanceof Error ? { cause: error.message } : {}),
+    };
   }
 }
 

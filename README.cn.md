@@ -91,6 +91,12 @@ flowchart LR
 - **`/logical_address`（逻辑地址）** (可选): 一个可选的路径，可用于内部路由。例如，当与 `tool-rpc` 结合使用时，它可以将消息路由到更庞大服务中的特定工具，允许一个物理地址作为多个逻辑功能的统一网关。
   - 注意：不是所有的提供者都支持。
 
+**query 与 fragment 不属于地址。** 地址在成为 topic 之前会被规范化为 `protocol://user@host/path`，
+`?` 与 `#` 后面的内容会被静默丢掉——`mem:sales@example.com/inbox?thread=1` 和
+`mem:sales@example.com/inbox` 会溻成同一个 topic，共用一条队列与一条投递路径。库不会把两个逻辑
+地址合并，而是在**每个**入口（`post()` / `subscribe()` / `fetch()` / `status()`）直接拒绝这种写法
+（`InvalidMailboxAddressError`）。逻辑分区的区别请写进 path：`mem:sales@example.com/inbox/thread-1`。
+
 ## 🚀 快速开始
 
 只需三步，即可体验 Mailbox 的核心魅力：
@@ -154,24 +160,51 @@ flowchart LR
 
    ```ts
    const status = await mailbox.status('mem:service@example.com/inbox')
-   console.log(`状态: ${status.state}`)
+   console.log(`状态: ${status.state}`) // 'online' | 'unknown' | 'degraded' | 'offline'
+   console.log(`存在性: ${status.exists}`) // provider 到底认不认这个地址
    console.log(`未读数量: ${status.unreadCount}`) // 仍在队列里等待
    console.log(`in-flight: ${status.inFlightCount}`) // 已取出、尚未 ack/nack
    console.log(`订阅数: ${status.subscriberCount}`)
+   console.log(`最后活动: ${status.lastActivityTime}`) // ISO 8601，没有记录时是 null
    ```
 
    `unreadCount` 只统计队列里等待的消息。用 `manualAck: true` 取出的消息已经离开队列但尚未
    处理完，它单独计入 `inFlightCount`；如果一直不 ack，会回到队列。
 
+   `state` 描述的是 provider 对**这个地址**的看法。从未被碰过的地址（没投过、没订阅过、没有
+   活动记录）会报 `state: 'unknown'` + `exists: false`——统一报 `online` + 0 会让诊断页分不出
+   “这个地址不存在”和“这个地址空闲”。取空但确实存在的地址仍然 `online`；只有订阅者的地址也仍然
+   `online`。provider 完全不支持状态查询时不会设 `exists`：“问不到”不等于“不存在”。
+   `lastActivityTime` 没有记录时是 `null`，而不是 `undefined`——后者在 `JSON.stringify` 后会让整个
+   字段消失。
+
+   诊断页与测试通常要一次看到全局面。不带地址调用 `status()`（或同义的 `snapshot()`）就能拿到所有
+   已注册 provider 的所有 topic：
+
+   ```ts
+   const snap = await mailbox.status()
+   console.log(snap.state) // 'online' | 'degraded' | 'unknown'
+   console.log(snap.addressCount) // 已注册 provider 认得的 topic 数
+   console.log(snap.unreadCount, snap.inFlightCount)
+   for (const entry of snap.addresses) {
+     console.log(entry.canonicalId, entry.state, entry.unreadCount)
+   }
+   ```
+
+   `addresses` 按 `canonicalId` 排序，快照因此可重复。AMQP / SQS 这类消息不在本地的 broker 无法枚举
+   自己的 topic，它们会被列进 `unsupportedProviders`，快照降级为 `state: 'degraded'`，而不是假装
+   队列为空。
+
    ### 2. 取消息的两种方式：订阅与取回
 
-   三个动作对应三个 API，文档与代码里统一用这三个词：
+   四个动作对应四个 API，文档与代码里统一用这几个词：
 
-   | 动作     | API                 | 谁在做                           |
-   | -------- | ------------------- | -------------------------------- |
-   | **发布** | `post()` / `send()` | 生产者把一封信写进地址           |
-   | **订阅** | `subscribe()`       | 消费者登记回调，消息到达时被调用 |
-   | **取回** | `fetch()`           | 消费者自己主动取下一条           |
+   | 动作     | API                           | 谁在做                           |
+   | -------- | ----------------------------- | -------------------------------- |
+   | **发布** | `post()` / `send()`           | 生产者把一封信写进地址           |
+   | **订阅** | `subscribe()`                 | 消费者登记回调，消息到达时被调用 |
+   | **取回** | `fetch()`                     | 消费者自己主动取下一条           |
+   | **只读** | `fetch(addr, { peek: true })` | 观察者看一眼队列，不消耗任何东西 |
 
    发布只是写入。一条消息只会进两个入口的**其中一个**，在 `post()` 执行那一刻定：
 
@@ -197,7 +230,18 @@ flowchart LR
 
    // fetch：自己主动取下一条
    const message = await mailbox.fetch(addr)
+
+   // peek：只读地看队列——不出队、不建 in-flight、不刷活动时间
+   const pending = await mailbox.fetch(addr, { peek: true, limit: 5 })
    ```
+
+   `peek` 以**副本**形式返回队列里的消息（数组，队列空时是 `[]`），且什么都不改：`unreadCount` /
+   `inFlightCount` 不动，`lastActivityTime` 不会被刷新，改返回的东西也改不到队列里那一份。在 `peek`
+   之前最接近的做法是 `fetch(addr, { manualAck: true })` 然后不 ack——那会把消息卡进 in-flight
+   （默认 30s 超时后重投），既不是只读，也会干扰正常消费者看到的计数。`peek` 不会列出已被别的
+   消费者取走的消息，那些只体现在 `inFlightCount` 里。`peek` 与 `manualAck` 同时给出会报错
+   （`InvalidFetchOptionsError`）；不支持只读快照的 provider 会报 `UnsupportedCapabilityError`，
+   不会静默退化成会取信的 `fetch`。
 
    ### 3. 订阅失败时
 

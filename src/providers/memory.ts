@@ -193,22 +193,63 @@ export class MemoryEventBus {
   }
 
   /**
+   * 【只读】取一份队列快照（副本），不出队、不建 in-flight、不刷活动时间。
+   *
+   * @param topic 要看的 topic。
+   * @param limit 最多看几条；省略 = 整个队列。
+   */
+  public peek(topic: string, limit?: number): MailMessage[] {
+    // 注意：这里**不** `lastActivity.set(...)`。只读诊断不该把一个空闲地址刷成「刚刚有活动」，
+    // 否则一个每隔几秒轮询一次的诊断页会让 `lastActivityTime` 永远假绿。
+    return this.messageQueue.peek(topic, limit);
+  }
+
+  /**
+   * 这份总线认不认这个 topic：有过订阅、有过活动记录，或现在/曾有未结算的消息。
+   *
+   * 这是 `status().exists` 的依据。“地址不存在”与“地址空闲但确实存在”在诊断上是两件事
+   *（issue#4）：前者 `exists: false` / `state: 'unknown'`，后者 `exists: true` / `state: 'online'`。
+   */
+  public knows(topic: string): boolean {
+    return this.topics.has(topic)
+      || this.lastActivity.has(topic)
+      || this.messageQueue.hasTopic(topic);
+  }
+
+  /**
+   * 这份总线上所有“认得”的 topic（订阅过 / 有过活动 / 有消息），按字典序排序。
+   * 供 `Mailbox#status()`（无参）做全量快照。
+   */
+  public listTopics(): string[] {
+    const known = new Set<string>([
+      ...this.topics.keys(),
+      ...this.lastActivity.keys(),
+      ...this.messageQueue.topics(),
+    ])
+    return Array.from(known).sort();
+  }
+
+  /**
    * Gets the current status of a topic.
    * @param topic The topic to get the status for.
-   * @returns An object containing status information.
+   * @returns An object containing status information. `exists` 区分「不存在」与「空闲」，
+   *          `lastActivityTime` 没活动记录时是 `null`（不是 `undefined`，否则 JSON 序列化后整个字段消失）。
    */
   public getStatus(topic: string): {
+    exists: boolean;
     unreadCount: number;
     inFlightCount: number;
-    lastActivityTime?: string;
+    lastActivityTime: string | null;
     subscriberCount: number;
   } {
     const { unreadCount, inFlightCount } = this.messageQueue.getStatus(topic);
     const listeners = this.topics.get(topic) || [];
+    const lastActivityTime = this.lastActivity.get(topic);
     return {
+      exists: this.knows(topic),
       unreadCount,
       inFlightCount,
-      lastActivityTime: this.lastActivity.get(topic),
+      lastActivityTime: lastActivityTime ?? null,
       subscriberCount: listeners.length,
     };
   }
@@ -314,13 +355,45 @@ export class MemoryProvider extends MailboxProvider {
     return ackableMessage || null;
   }
 
+  /**
+   * 只读快照：副本，不动队列、不建 in-flight、不刷活动时间。
+   *
+   * 之前没有这个能力：想“看一眼”只能 `fetch({ manualAck: true })` 不 ack，消息就进了
+   * in-flight（默认 30s 后重投），既干扰正常消费者的计数，也不是只读（issue#4）。
+   */
+  protected async _peek(address: URL, options?: { limit?: number }): Promise<MailMessage[]> {
+    const topic = getCanonicalMailboxAddressIdentifier(address);
+    return this.bus.peek(topic, options?.limit);
+  }
+
+  /**
+   * 本总线认得的地址（canonical id）—— `mem:` 的消息就在本地，所以能枚举。
+   */
+  public async listAddresses(): Promise<string[]> {
+    return this.bus.listTopics();
+  }
+
   protected async _status(address: URL): Promise<MailboxStatus> {
     const topic = getCanonicalMailboxAddressIdentifier(address);
-    const { unreadCount, inFlightCount, lastActivityTime, subscriberCount } =
+    const { exists, unreadCount, inFlightCount, lastActivityTime, subscriberCount } =
       this.bus.getStatus(topic);
+
+    if (!exists) {
+      // 对“这个地址从不存在”回 `online` + 0，诊断页就分不出「不存在」和「空闲」（issue#4）。
+      return {
+        state: 'unknown',
+        exists: false,
+        message: `No queue, subscription or activity is known for '${topic}'.`,
+        unreadCount,
+        inFlightCount,
+        lastActivityTime,
+        subscriberCount,
+      };
+    }
 
     return {
       state: 'online',
+      exists: true,
       unreadCount,
       // in-flight 消息已离开队列但尚未确认，单独报出来，否则 status 会把它们当作已处理完。
       inFlightCount,

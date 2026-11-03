@@ -82,13 +82,67 @@ export interface Ackable {
 export type AckableMailMessage = MailMessage & Ackable;
 
 /**
+ * `fetch()` 的只读快照形式（issue#4）：返回副本，不出队、不建 in-flight、不动活动时间。
+ *
+ * 返回总是**数组**（空队列是 `[]`），与单条取回的 `MailMessage | null` 刻意不同：
+ * 只读快照没有「取不到」这种状态，只有「看到几条」。
+ */
+export interface PeekFetchOptions {
+  peek: true;
+  /** 最多看几条；省略（或 `Infinity`）看整个队列。必须是非负整数。 */
+  limit?: number;
+  [name: string]: any;
+}
+
+/** `fetch()` 的手动 ACK 形式：消息进 in-flight，直到 ack / nack 或超时重投。 */
+export interface ManualAckFetchOptions {
+  manualAck: true;
+  /**
+   * in-flight 超时（毫秒）。省略用 {@link DEFAULT_ACK_TIMEOUT}；`0` / `null` 关闭超时扇描
+   *（消息常驻 in-flight 直到 ack / nack）。
+   */
+  ackTimeout?: number | null;
+  [name: string]: any;
+}
+
+/** `fetch()` 的默认（隐式 ACK）形式：取到即出队。 */
+export interface PlainFetchOptions {
+  manualAck?: false;
+  [name: string]: any;
+}
+
+/** `fetch()` 的全量选项形状（实现侧签名用）。 */
+export interface FetchOptions {
+  manualAck?: boolean;
+  peek?: boolean;
+  limit?: number;
+  ackTimeout?: number | null;
+  [name: string]: any;
+}
+
+/**
  * 代表一个邮箱地址的状态信息。
  */
 export interface MailboxStatus {
   /**
-   * 提供者自身的连接或运行状态。
+   * provider 对**这个地址**的可观测状态：
+   *
+   * - `online`：provider 在线，且认得这个地址（有队列 / 订阅 / 活动记录）；
+   * - `unknown`：provider 在线，但对这份地址**没有任何记录**（地址不存在、拼错，
+   *   或者 provider 本身不支持状态查询）；
+   * - `offline` / `degraded`：provider 自己连不上 / 只能给出部分答复。
+   *
+   * 不要把「地址不存在」报成 `online` + 0：诊断页区分不出「不存在」与「空闲」。
+   * 要区分「地址不存在」和「provider 答不了」，看 {@link MailboxStatus.exists}。
    */
   state: 'online' | 'offline' | 'degraded' | 'unknown';
+  /**
+   * provider 是否认得这个地址（有过消息 / 订阅 / 活动记录）。
+   *
+   * 只有在 provider **明确回答了**状态查询时才有值；不支持 `status` 的 provider 不会把它
+   * 设成 `false`（那会把「问不到」误报成「不存在」）。
+   */
+  exists?: boolean;
   /**
    * 队列中未被消费的消息数量（不包含 in-flight）。
    */
@@ -102,15 +156,59 @@ export interface MailboxStatus {
    */
   inFlightCount?: number;
   /**
-   * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)。
+   * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)；没有活动记录时为 `null`。
+   *
+   * 必须是 `null` 而不是 `undefined`：`undefined` 会在 `JSON.stringify` 后整个字段消失，
+   * 诊断页拿到的是 `undefined` 而不是「没有活动」。
    */
-  lastActivityTime?: string;
+  lastActivityTime?: string | null;
 
   /**
    * 索引签名，允许 MailboxStatus 包含任意其他字符串键的属性。
    * 这些属性将作为提供者特定的扩展信息。
    */
   [key: string]: any;
+}
+
+/**
+ * 快照里一个地址的状态：{@link MailboxStatus} 加地址身份。
+ */
+export interface MailboxAddressSnapshot extends MailboxStatus {
+  /** 寻址用的规范形式（见 {@link getCanonicalMailboxAddressIdentifier}）。 */
+  canonicalId: string;
+  /** 处理这个地址的 provider 协议名。 */
+  protocol: string;
+}
+
+/**
+ * 全量快照：一时刻整个 `Mailbox`（所有 provider、所有 topic）的诊断视图。
+ *
+ * 给诊断页、测试断言用（issue#4）。只能由能枚举自身 topic 的 provider（实现
+ * {@link IMailboxProvider.listAddresses}）提供地址；不能枚举的（AMQP / SQS 这类消息不在本地的
+ * broker）列在 {@link MailboxSnapshot.unsupportedProviders} 里，避免快照把「枚举不了」误读成「队列为空」。
+ */
+export interface MailboxSnapshot {
+  /**
+   * 快照的完整度：
+   * - `online`：所有 provider 都能枚举，且所有地址都是 `online`；
+   * - `degraded`：有 provider 无法枚举，或某个地址不是 `online`（看到了一部分）；
+   * - `unknown`：没有任何 provider 能枚举（包括一个 provider 都没有注册）。
+   */
+  state: 'online' | 'offline' | 'degraded' | 'unknown';
+  /** 已注册的协议名（排序后）。 */
+  protocols: string[];
+  /** 快照里的地址总数。 */
+  addressCount: number;
+  /** 所有地址的 `unreadCount` 之和。 */
+  unreadCount: number;
+  /** 所有地址的 `inFlightCount` 之和。 */
+  inFlightCount: number;
+  /** 按 `canonicalId` 排序的地址状态，保证快照可重复、断言可写死。 */
+  addresses: MailboxAddressSnapshot[];
+  /** 不支持枚举自身地址的 provider（它们的队列不在本次快照里）。 */
+  unsupportedProviders: string[];
+  /** 快照生成的时间（ISO 8601）。 */
+  takenAt: string;
 }
 
 /**
@@ -152,18 +250,36 @@ export interface IMailboxProvider {
   /**
    * 【拉取模式】从指定地址主动拉取一封信件。
    * 支持自动ACK (默认) 和手动ACK两种模式。
+   *
+   * 【只读】`{ peek: true, limit?: n }`：返回副本数组，不出队、不建 in-flight（诊断 / 审计用）。
+   * 参数名在三端（TS / Python / Rust）保持一致。
+   *
+   * 实现注意：不认识 `peek` 的 provider **不能默默把它当普通 fetch 跑**（那会把消息取走，
+   * 而调用方以为自己在只读快照）。继承 {@link MailboxProvider} 基类的实现会在入口报错；
+   * 直接实现本接口的 provider 必须自己处理或拒绝 `peek`。
    */
-  fetch(address: URL, options: { manualAck: true }): Promise<AckableMailMessage | null>;
-  fetch(address: URL, options?: { manualAck?: false }): Promise<MailMessage | null>;
-  fetch(address: URL, options?: { manualAck?: boolean }): Promise<MailMessage | AckableMailMessage | null>;
+  fetch(address: URL, options: PeekFetchOptions): Promise<MailMessage[]>;
+  fetch(address: URL, options: ManualAckFetchOptions): Promise<AckableMailMessage | null>;
+  fetch(address: URL, options?: PlainFetchOptions): Promise<MailMessage | null>;
+  fetch(address: URL, options?: FetchOptions): Promise<MailMessage | AckableMailMessage | MailMessage[] | null>;
 
   /**
    * 查询指定地址的状态。
    * 这是一个可选实现的方法。如果 Provider 不支持，可以抛出 "Not Implemented" 错误或返回一个默认状态。
    * @param address 要查询状态的地址。
-   * @returns 返回地址的状态信息。
+   * @returns 返回地址的状态信息。地址不存在时返回 `state: 'unknown'` + `exists: false`，
+   *          而不是 `state: 'online'` + 0（issue#4）。
    */
   status?(address: URL): Promise<MailboxStatus>;
+
+  /**
+   * 列出本 provider 当前认得的地址（canonical id，见 {@link getCanonicalMailboxAddressIdentifier}）。
+   *
+   * 可选能力：只有消息确实存在本地的 provider（如 `MemoryProvider`）能实现。
+   * 没实现就不实现——{@link MailboxSnapshot} 会把这类 provider 归入
+   * {@link MailboxSnapshot.unsupportedProviders}，不会把「枚举不了」当成「队列为空」。
+   */
+  listAddresses?(): Promise<string[]>;
 
   /**
    * 创建一个唯一标识符。主要是用于生成邮件的 ID。

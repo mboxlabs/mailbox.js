@@ -1,5 +1,7 @@
 // src/lib/MessageQueue.ts
 
+import { copyForPeek, normalizePeekLimit } from './utils'
+
 /**
  * Represents a message that can be manually acknowledged or negatively acknowledged.
  * @template T The type of the message payload.
@@ -119,6 +121,69 @@ export class MailMessageQueue<T extends { id: string }> {
         this.nack(message.id, topic, requeue); // Pass topic to nack
       },
     };
+  }
+
+  /**
+   * 【只读】看一眼队列头部最多 `limit` 条消息，**不**改动任何投递状态。
+   *
+   * 诊断 / 审计需要「看一眼但不消费」。在这之前最接近的做法是 `fetch(addr, { manualAck: true })`
+   * 然不 ack（issue#4）：那会把消息弄进 in-flight（默认 30s 后重投），既不是只读，
+   * 也会干扰正常消费者的 `unreadCount` / `inFlightCount`。
+   *
+   * 保证：
+   * - 不出队、不建 in-flight、不动 stale 扫描、不改任何时间戳；
+   * - 返回副本（见 `copyForPeek`），调用方改不到队列里的对象；
+   * - 只涵盖**等待中**的消息；in-flight（已被消费者取走、尚未 ack）不在快照里 ——
+   *   它属于那个消费者，只能在 `getStatus().inFlightCount` 里看到。
+   *
+   * @param topic 要快照的 topic。
+   * @param limit 最多返回几条；省略则整个队列。必须是**非负整数**（或 `Infinity`）。
+   * @returns 按 FIFO 顺序的消息副本数组；队列为空时是空数组（不是 `null`）。
+   * @throws {InvalidFetchOptionsError} `limit` 非法时抛出。
+   */
+  public peek(topic: string, limit?: number): T[] {
+    const capped = normalizePeekLimit(limit)
+
+    const queue = this.queues.get(topic)
+    if (!queue || queue.length === 0) {
+      return []
+    }
+
+    const count = capped === undefined ? queue.length : Math.min(capped, queue.length)
+    return queue.slice(0, count).map(copyForPeek) // slice + map：不取走、不反转、不重新排序
+  }
+
+  /**
+   * 这个 topic 在队列里有没有痕迹（等待中的消息或 in-flight）。
+   * 与 {@link has}（按消息 id）不同：这是按 topic 的「存不存在」，用于 status 的 `exists`。
+   */
+  public hasTopic(topic: string): boolean {
+    const queue = this.queues.get(topic)
+    if (queue && queue.length > 0) {
+      return true
+    }
+    for (const flight of this.inFlight.values()) {
+      if (flight.topic === topic) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * 当前有消息（等待中或 in-flight）的 topic 列表，按字典序排序（快照与测试断言需要确定性）。
+   */
+  public topics(): string[] {
+    const known = new Set<string>()
+    for (const [topic, queue] of this.queues) {
+      if (queue.length > 0) {
+        known.add(topic)
+      }
+    }
+    for (const { topic } of this.inFlight.values()) {
+      known.add(topic)
+    }
+    return Array.from(known).sort()
   }
 
   /**

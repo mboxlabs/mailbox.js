@@ -90,6 +90,14 @@ A MailAddress is composed of three parts:
 - **`user@physical_address`**: The **Physical Mailbox Address**. This is the globally unique, protocol-independent ID for a logical mailbox or service. The same physical address can be accessed via different protocols (e.g., `mem:api@myservice.com` and `mailto:api@myservice.com` point to the same logical entity).
 - **`/logical_address`** (Optional): An optional path that can be used for internal routing. For example, when used with `tool-rpc`, this can route a message to a specific tool within a larger service, allowing one physical address to serve as a unified gateway for multiple logical functions.
 
+**Query strings and fragments are not part of an address.** An address is normalized to
+`protocol://user@host/path` before it becomes a topic, so anything after `?` or `#` would be
+dropped silently — `mem:sales@example.com/inbox?thread=1` and `mem:sales@example.com/inbox`
+would end up sharing one queue and one delivery path, invisibly. Instead of merging two logical
+addresses, Mailbox rejects such addresses at every entry point (`post()`, `subscribe()`,
+`fetch()`, `status()`) with an `InvalidMailboxAddressError`. Put what distinguishes the logical
+partitions in the path: `mem:sales@example.com/inbox/thread-1`.
+
 ## 🚀 Quick Start
 
 Get a taste of Mailbox's core power in just three steps:
@@ -155,25 +163,55 @@ This example demonstrates the basic loop of Mailbox: **Initialize -> Start -> Su
 
 ```ts
 const status = await mailbox.status('mem:service@example.com/inbox')
-console.log(`State: ${status.state}`)
+console.log(`State: ${status.state}`) // 'online' | 'unknown' | 'degraded' | 'offline'
+console.log(`Exists: ${status.exists}`) // does the provider know this address at all?
 console.log(`Unread count: ${status.unreadCount}`) // still waiting in the queue
 console.log(`In flight: ${status.inFlightCount}`) // handed out, awaiting ack/nack
 console.log(`Subscribers: ${status.subscriberCount}`)
+console.log(`Last activity: ${status.lastActivityTime}`) // ISO 8601, or null
 ```
 
 `unreadCount` only counts messages still waiting in the queue. A message taken with
 `manualAck: true` has left the queue but is not yet processed — it is reported separately as
 `inFlightCount`, and it returns to the queue if it is never acknowledged.
 
+`state` describes the provider's view **of that address**. An address the provider has never
+seen (never posted to, never subscribed, no recorded activity) reports `state: 'unknown'` and
+`exists: false` — reporting `online` + 0 for it would make a dashboard unable to tell
+"this address does not exist" from "this address is idle". A drained but real address stays
+`online`; so does an address that only has subscribers. `exists` is left unset when the provider
+cannot answer status queries at all: "I cannot ask" is not "it does not exist".
+`lastActivityTime` is `null` when there is no record — never `undefined`, which would vanish
+entirely from `JSON.stringify`.
+
+Diagnostics pages and tests usually want the whole picture at once. Call `status()` with no
+arguments (or `snapshot()`, same view) to get every topic of every registered provider:
+
+```ts
+const snap = await mailbox.status()
+console.log(snap.state) // 'online' | 'degraded' | 'unknown'
+console.log(snap.addressCount) // topics known across the registered providers
+console.log(snap.unreadCount, snap.inFlightCount)
+for (const entry of snap.addresses) {
+  console.log(entry.canonicalId, entry.state, entry.unreadCount)
+}
+```
+
+`addresses` is sorted by `canonicalId` so snapshots are reproducible. Providers whose messages do
+not live locally (AMQP / SQS style brokers) cannot enumerate their topics; they are listed in
+`unsupportedProviders` and the snapshot degrades to `state: 'degraded'` instead of pretending the
+queues are empty.
+
 ### 2. Receiving mail: `subscribe` vs `fetch`
 
-Three verbs, three APIs — use these words consistently:
+Four verbs, four APIs — use these words consistently:
 
-| Verb      | API                 | Who acts                                                     |
-| --------- | ------------------- | ------------------------------------------------------------ |
-| publish   | `post()` / `send()` | the producer writes a message to an address                  |
-| subscribe | `subscribe()`       | the consumer registers a callback; it runs when mail arrives |
-| fetch     | `fetch()`           | the consumer asks for the next message itself                |
+| Verb      | API                           | Who acts                                                     |
+| --------- | ----------------------------- | ------------------------------------------------------------ |
+| publish   | `post()` / `send()`           | the producer writes a message to an address                  |
+| subscribe | `subscribe()`                 | the consumer registers a callback; it runs when mail arrives |
+| fetch     | `fetch()`                     | the consumer asks for the next message itself                |
+| peek      | `fetch(addr, { peek: true })` | an observer looks at the queue without consuming anything    |
 
 Publishing only writes. A published message goes to **one** of the two receiving paths,
 decided at the moment `post()` runs:
@@ -201,7 +239,20 @@ const sub = mailbox.subscribe(addr, (message) => {
 
 // fetch: you ask for the next message yourself
 const message = await mailbox.fetch(addr)
+
+// peek: read-only audit of the queue — never dequeue, never in-flight, never bumps activity
+const pending = await mailbox.fetch(addr, { peek: true, limit: 5 })
 ```
+
+`peek` returns **copies** of the queued messages as an array (`[]` when the queue is idle), and it
+changes nothing: `unreadCount` and `inFlightCount` stay put, `lastActivityTime` is not refreshed,
+and mutating what you got back cannot touch the queue. Before `peek` existed, the closest trick
+was `fetch(addr, { manualAck: true })` without acking — that parks the message in-flight (requeued
+after the 30s ack timeout by default), which is not read-only and distorts what real consumers
+see. `peek` never lists messages another consumer is holding; those only show up as
+`inFlightCount`. Combining `peek` with `manualAck` throws (`InvalidFetchOptionsError`), and a
+provider that cannot do read-only snapshots throws `UnsupportedCapabilityError` rather than
+silently falling back to a consuming fetch.
 
 ### 3. When a subscriber fails
 

@@ -116,7 +116,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       // lastActivity 各自一份：y 没碰过的 topic 在 y 上是空的
       x.publish('mem://only-on-x/inbox', busMsg('x-2', 'mem://only-on-x/inbox'));
       expect(x.getStatus('mem://only-on-x/inbox').lastActivityTime).toBeTypeOf('string');
-      expect(y.getStatus('mem://only-on-x/inbox').lastActivityTime).toBeUndefined();
+      expect(y.getStatus('mem://only-on-x/inbox').lastActivityTime).toBeNull();
     });
 
     it('同一个 bus 实例上的两个 provider 仍然互通（共享"服务端"能力没被拆掉）', async () => {
@@ -347,7 +347,9 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       expect((await mailbox.status(dropped)).unreadCount).toBe(0);
       expect((await mailbox.status(dropped)).inFlightCount).toBe(0);
       expect((await mailbox.status(kept)).unreadCount).toBe(1);
-      expect((await mailbox.status(dropped)).lastActivityTime).toBeUndefined();
+      expect((await mailbox.status(dropped)).lastActivityTime).toBeNull();
+      expect((await mailbox.status(dropped)).state).toBe('unknown'); // 消息与活动记录都没了：这个地址在 bus 上不再存在
+      expect((await mailbox.status(dropped)).exists).toBe(false);
       expect((await mailbox.status(dropped)).subscriberCount).toBe(0);
     });
 
@@ -379,8 +381,8 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       bus.fetchForAck(b, { staleTimeout: 1000 });
 
       expect(bus.clear()).toBe(3); // 2 条等待 + 1 条 in-flight
-      expect(bus.getStatus(a)).toMatchObject({ unreadCount: 0, inFlightCount: 0, lastActivityTime: undefined });
-      expect(bus.getStatus(b)).toMatchObject({ unreadCount: 0, inFlightCount: 0, lastActivityTime: undefined });
+      expect(bus.getStatus(a)).toMatchObject({ exists: false, unreadCount: 0, inFlightCount: 0, lastActivityTime: null });
+      expect(bus.getStatus(b)).toMatchObject({ exists: false, unreadCount: 0, inFlightCount: 0, lastActivityTime: null });
       expect(bus.clear()).toBe(0);
       expect(bus.clear('never-seen')).toBe(0);
     });

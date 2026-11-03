@@ -5,7 +5,13 @@ import {
   Subscription,
   AckableMailMessage,
   MailboxStatus,
+  FetchOptions,
+  ManualAckFetchOptions,
+  PeekFetchOptions,
+  PlainFetchOptions,
 } from '../interfaces';
+import { normalizePeekLimit } from '../lib/utils';
+import { UnsupportedCapabilityError, InvalidFetchOptionsError } from '../error';
 import {
   RetryPolicy,
   AttemptLedger,
@@ -215,15 +221,42 @@ export abstract class MailboxProvider implements IMailboxProvider {
   /**
    * Fetches a message.
    * Delegates directly to the concrete provider's implementation.
+   *
+   * `peek` 在基类里分流（不交给 `_fetch`）：只读快照走 {@link MailboxProvider._peek}，
+   * 不实现这个能力的 provider 直接报错 —— 把 `peek` 当普通 fetch 跑就是把消息取走，
+   * 而调用方以为自己在看一眼（issue#3）。
    */
-  public async fetch(address: URL, options: { manualAck: true }): Promise<AckableMailMessage | null>;
-  public async fetch(address: URL, options?: { manualAck?: false }): Promise<MailMessage | null>;
+  public async fetch(address: URL, options: PeekFetchOptions): Promise<MailMessage[]>;
+  public async fetch(address: URL, options: ManualAckFetchOptions): Promise<AckableMailMessage | null>;
+  public async fetch(address: URL, options?: PlainFetchOptions): Promise<MailMessage | null>;
   public async fetch(
     address: URL,
-    options?: { manualAck?: boolean }
-  ): Promise<MailMessage | AckableMailMessage | null> {
+    options?: FetchOptions
+  ): Promise<MailMessage | AckableMailMessage | MailMessage[] | null> {
+    if (options?.peek) {
+      return this._peekOrThrow(address, options);
+    }
     const message = await this._fetch(address, options);
     return message;
+  }
+
+  /**
+   * 只读快照入口：选项校验 + 能力检查，然后交给子类的 `_peek`。
+   */
+  private async _peekOrThrow(address: URL, options: FetchOptions): Promise<MailMessage[]> {
+    if (options.manualAck) {
+      throw new InvalidFetchOptionsError(
+        '`fetch({ peek: true, manualAck: true })` is contradictory: a peeked message is never handed to a consumer, ' +
+        'so there is nothing to acknowledge. Drop one of the two options.',
+      );
+    }
+    if (!this._peek) {
+      throw new UnsupportedCapabilityError(
+        this.protocol,
+        'read-only peek (implement `_peek(address, { limit })` on the provider, or fetch without `peek`)',
+      );
+    }
+    return this._peek(address, { limit: normalizePeekLimit(options.limit) });
   }
 
   /**
@@ -277,11 +310,21 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
   /**
    * [Subclass Responsibility] Performs the actual message fetching logic.
+   * 基类不会把 `peek: true` 送进这里（只读快照走 `_peek`），实现无需考虑只读分支。
    */
   protected abstract _fetch(
     address: URL,
-    options?: { manualAck?: boolean }
+    options?: FetchOptions
   ): Promise<MailMessage | AckableMailMessage | null>;
+
+  /**
+   * [Subclass Responsibility - Optional] 只读快照：返回队列头部消息的**副本**，
+   * 不出队、不建 in-flight、不改活动时间。不实现的 provider 在 `fetch({ peek: true })` 时
+   * 会收到 {@link UnsupportedCapabilityError}，而不是被静默降级成普通 fetch。
+   *
+   * @param limit 已经过 {@link normalizePeekLimit} 归一：`undefined` = 整个队列。
+   */
+  protected _peek?(address: URL, options?: { limit?: number }): Promise<MailMessage[]>;
 
   /**
    * [Subclass Responsibility - Optional] Specific closing logic.

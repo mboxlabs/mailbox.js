@@ -344,4 +344,110 @@ describe('MessageQueue', () => {
       expect(queue.dequeue(topic1)!.id).toBe(msg1.id);
     });
   });
+
+  // issue#4：缺只读语义。之前只能 `fetch({ manualAck: true })` 不 ack，“看一眼”
+  // 会把消息弄进 in-flight（默认 30s 后重投），干扰正常消费者的 unreadCount / inFlightCount。
+  describe('peek（只读快照）', () => {
+    it('返回头部消息副本，不出队、不建 in-flight', () => {
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic1, msg2);
+
+      const snapshot = queue.peek(topic1);
+
+      expect(snapshot.map((m) => m.id)).toEqual([msg1.id, msg2.id]);
+      // 关键：快照完全不留痕迹
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 2, inFlightCount: 0 });
+      expect(queue.has(msg1.id)).toBe(true);
+    });
+
+    it('空队列 / 不存在的 topic 都是空数组（不是 null）', () => {
+      expect(queue.peek(topic1)).toEqual([]);
+      expect(queue.peek('never-seen')).toEqual([]);
+      expect(queue.peek('never-seen', 3)).toEqual([]);
+    });
+
+    it('返回的是副本：改它不会污染队列里的那一份', () => {
+      queue.enqueue(topic1, { id: 'msg-1', payload: 'original' });
+
+      const [copy] = queue.peek(topic1);
+      copy.payload = 'mutated by the observer';
+      (copy as TestMessage & { extra?: string }).extra = 'should not leak';
+
+      expect(queue.peek(topic1)[0].payload).toBe('original');
+      expect(queue.dequeue(topic1)).toEqual({ id: 'msg-1', payload: 'original' });
+    });
+
+    it('limit 只取头部 N 条；0 是空快照，Infinity 与省略都是整个队列', () => {
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic1, msg2);
+      queue.enqueue(topic1, { id: 'msg-3', payload: 'message 3' });
+
+      expect(queue.peek(topic1, 0)).toEqual([]);
+      expect(queue.peek(topic1, 2).map((m) => m.id)).toEqual([msg1.id, msg2.id]);
+      expect(queue.peek(topic1, 99).map((m) => m.id)).toEqual([msg1.id, msg2.id, 'msg-3']);
+      expect(queue.peek(topic1, Number.POSITIVE_INFINITY).length).toBe(3);
+      expect(queue.getStatus(topic1).unreadCount).toBe(3); // limit 不消耗消息
+    });
+
+    it('非法 limit 直接报错，不能静默退化成“取全部”', () => {
+      queue.enqueue(topic1, msg1);
+
+      for (const bad of [-1, -Infinity, 1.5, Number.NaN]) {
+        expect(() => queue.peek(topic1, bad)).toThrow(/non-negative integer/);
+      }
+      expect(queue.getStatus(topic1).unreadCount).toBe(1);
+    });
+
+    it('不偷看 in-flight：已被取走、尚未 ack 的消息属于那个消费者', async () => {
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic1, msg2);
+      const inflight = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+
+      expect(queue.peek(topic1).map((m) => m.id)).toEqual([msg2.id]);
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 1 });
+
+      await inflight.nack(true);
+      expect(queue.peek(topic1).map((m) => m.id)).toEqual([msg1.id, msg2.id]);
+    });
+
+    it('反复快照不推进 stale 扫描：不会把 in-flight 消息提前换回队列', async () => {
+      queue.enqueue(topic1, msg1);
+      const inflight = queue.dequeue(topic1, { manualAck: true, ackTimeout: 100 }) as MailMessageAckable<TestMessage>;
+
+      await vi.advanceTimersByTimeAsync(500); // 已超过 ackTimeout
+      expect(queue.peek(topic1)).toEqual([]); // 只读操作不能触发 stale 重投
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+
+      await inflight.ack();
+      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+    });
+  });
+
+  describe('hasTopic / topics（地址存在性与枚举）', () => {
+    it('hasTopic 在入队后为真，取走后为假，in-flight 期间仍为真', async () => {
+      expect(queue.hasTopic(topic1)).toBe(false);
+
+      queue.enqueue(topic1, msg1);
+      expect(queue.hasTopic(topic1)).toBe(true);
+
+      const inflight = queue.dequeue(topic1, { manualAck: true }) as MailMessageAckable<TestMessage>;
+      expect(queue.hasTopic(topic1)).toBe(true); // 只是离开队列，并未处理完
+
+      await inflight.ack();
+      expect(queue.hasTopic(topic1)).toBe(false);
+    });
+
+    it('topics() 只列出有消息（等待中或 in-flight）的 topic，且按字典序', () => {
+      queue.enqueue(topic2, msg2);
+      queue.enqueue(topic1, msg1);
+      queue.enqueue(topic1, { id: 'msg-3', payload: 'message 3' });
+      expect(queue.topics()).toEqual([topic1, topic2]);
+
+      queue.clear(topic1);
+      expect(queue.topics()).toEqual([topic2]);
+
+      queue.dequeue(topic2, { manualAck: true });
+      expect(queue.topics()).toEqual([topic2]); // in-flight 也算这个 topic 还有痕迹
+    });
+  });
 });
