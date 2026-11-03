@@ -15,7 +15,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Mailbox } from '../mailbox';
 import { MemoryProvider } from './memory';
-import { MBX_ATTEMPT_HEADER } from '../lib/delivery';
 
 const tick = (ms = 20) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -238,16 +237,19 @@ describe('[语义] 拉取侧留痕的顺序：先处置、后 DLQ', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it('[事实] 记录内容不受幂等改造影响：reason / attempts / 不带旧句柄', async () => {
+  it('[事实] 记录内容不受幂等改造影响：reason / attempts / round / 不带旧句柄', async () => {
     const address = addrOf('record-shape');
     const sent = await mailbox.post({
       from: 'mem://s@bus/u',
       to: address,
       body: { n: 1 },
-      headers: { [MBX_ATTEMPT_HEADER]: '2' },
       meta: { order: 42 },
     });
 
+    // 真的走两轮取信、第 2 轮才放弃：计数由内核 / 队列写，**不是**调用方手填的
+    //（拉取侧没有订阅重试链，所以「链内次数」是 1，跨轮计数才是 2）。
+    const first = await mailbox.fetch(address, { manualAck: true });
+    await first!.nack(true);
     const taken = await mailbox.fetch(address, { manualAck: true });
     await taken!.nack(false);
     await taken!.nack(false);
@@ -256,7 +258,8 @@ describe('[语义] 拉取侧留痕的顺序：先处置、后 DLQ', () => {
     expect(entry.id).toBe(sent.id);
     expect(entry.headers?.['mbx-dead-letter']).toBe('true');
     expect(entry.headers?.['mbx-dead-letter-reason']).toBe('consumer-nack');
-    expect(entry.headers?.['mbx-dead-letter-attempts']).toBe('2');
+    expect(entry.headers?.['mbx-dead-letter-attempts']).toBe('1');
+    expect(entry.headers?.['mbx-dead-letter-round']).toBe('2');
     expect(entry.headers?.['mbx-dead-letter-topic']).toBe(address);
     expect(entry.meta).toEqual({ order: 42 });
     expect(typeof (entry as unknown as { nack?: unknown }).nack).toBe('undefined');

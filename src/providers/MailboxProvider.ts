@@ -24,6 +24,7 @@ import {
   DEFAULT_DELIVERY_SETTLE_TIMEOUT,
   deliveryKey,
   describeDeliveryError,
+  readRound,
   shouldRequeueAfterBroadcast,
   subscriptionIdOfDelivery,
   toDeliveryResults,
@@ -53,9 +54,10 @@ type PendingRetryTimer = ReturnType<typeof setTimeout>;
  */
 interface PendingDelivery {
   /**
-   * 当前这次投递的消息。**尝试次数 >= 2 时它是一份带 `mbx-attempt` 的副本**（见
-   * {@link withAttemptHeaders}），不是发送侧那个共享对象——否则 A 的重投次数会串给 B。
-   * 结算后的 `nack` / 死信钩子都用这份，所以 provider 在 `_nack(false)` 里落 DLQ 时能看到次数。
+   * 本次投递的消息，始终是一份带 `mbx-attempt` / `mbx-round`（开了重试还有 `mbx-max-attempts`）
+   * 的**副本**，不是发送侧那个共享对象——否则 A 的重投次数会串给 B。
+   * 结算后的 `nack` / 死信钩子都用这份（广播 barrier 也一样），所以 provider 在 `_nack(false)`
+   * 里落 DLQ 时能看到真实次数，而 `_nack(true)` 退回队列的那一份也带着次数与轮次。
    */
   message: MailMessage;
   /** 投递身份（`subscriptionId + messageId`）。`key` 只是内部 map 键，可能带并发序号后缀。 */
@@ -70,9 +72,17 @@ interface PendingDelivery {
   watchdog?: PendingRetryTimer;
   /** 已经跑过几次尝试（含首次）。死信记录里的「试了几次」就是它。 */
   attemptsMade: number;
+  /**
+   * 本轮投递轮次（{@link MBX_ROUND_HEADER}）：开始一条投递时 = 消息上已有轮次 + 1，
+   * 同一条重试链里不变。它是消息级的跨轮计数，回队时随副本交回队列，provider 拿它能封顶。
+   */
+  round: number;
   /** 最后一次尝试抛出的错误（结算成失败时写进 `DeliveryResult.error`）。 */
   lastError?: unknown;
 }
+
+/** 已结算副本表的长度上界：没接 barrier 的 provider 不会来取，不能让这张表无限长。 */
+const MAX_SETTLED_COPIES = 500;
 
 /** 投递结算原因。`ok` 表示回调成功。 */
 type DeliveryOutcome = 'ok' | 'retriable' | 'fatal' | 'cancelled';
@@ -104,6 +114,11 @@ export abstract class MailboxProvider implements IMailboxProvider {
   private readonly attempts = new AttemptLedger();
   /** 按投递身份（`subscriptionId + messageId`）记账尚未结算的投递。 */
   private readonly pendingDeliveries: Map<string, PendingDelivery> = new Map();
+  /**
+   * 本轮**已结算**投递的副本（按消息 id 保留趟数最大的那一份），给广播 barrier 处置时用。
+   * 传输 / 队列型 provider 直接用 `pending.message`，用不到这张表。
+   */
+  private readonly settledCopies: Map<string, { message: MailMessage; attempts: number }> = new Map();
 
   /**
    * 单次投递尝试的结算超时（毫秒）。`0` / 负数关闭（调用方自己负责长任务）。
@@ -178,6 +193,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
       this._cancelPendingDeliveries(subscriptionIdOfDelivery(key));
     }
     this.attempts.clear();
+    this.settledCopies.clear();
 
     // 2. 调用具体的清理逻辑
     await this._close?.();
@@ -379,6 +395,9 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * - `requeue = true`：回队（回到哪个位置、重投几次，由 provider 定，内核不管）；
    * - `requeue = false`：**放弃**——永久移出队列；丢弃还是落 DLQ 由 provider 定。
    *
+   * `message` 始终是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`）：回队时它带着
+   * 「本轮试了几次 / 这是第几轮」落回队列，`requeue=false` 落 DLQ 时同样有次数可写。
+   *
    * 广播型 provider 里它只会在**广播全部投递都结算之后**被调用一次（由发送侧的结算判定决定
    * `requeue` 与否），不会再在每个订阅者失败时各回队一次。队列 / 传输型 provider 里它按投递
    * 调用：可重试失败 `requeue = true`，不可重试失败 `requeue = false`（先永久移出队列，
@@ -432,6 +451,8 @@ export abstract class MailboxProvider implements IMailboxProvider {
       settle = resolve;
     });
 
+    // 轮次是“谁把消息交给消费者谁 +1”里的订阅侧那一半：读消息上已有的轮次（broker / 队列
+    // 带回来的）+1。重试链里不再 +1（见 _runDelivery 用的是 pending.round）。
     this.pendingDeliveries.set(key, {
       message,
       deliveryId: deliveryKey(subscriptionId, message.id),
@@ -439,6 +460,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
       settle,
       promise,
       attemptsMade: 0,
+      round: readRound(message) + 1,
     });
     this._runDelivery(subscriptionId, message, key);
 
@@ -488,7 +510,8 @@ export abstract class MailboxProvider implements IMailboxProvider {
       pending.attemptsMade += 1;
     }
     const attempt = Math.max(1, pending?.attemptsMade ?? 1);
-    const stamped = withAttemptHeaders(message, attempt, this.retry?.maxAttempts);
+    // 轮次只在 _startDelivery 里定一次：重试链里的每次尝试同属一轮，不能各 +1。
+    const stamped = withAttemptHeaders(message, attempt, this.retry?.maxAttempts, pending?.round);
     if (pending) {
       pending.message = stamped;
     }
@@ -615,7 +638,8 @@ export abstract class MailboxProvider implements IMailboxProvider {
    *   处理过的消息再投一次，代价是失败的投递从此隐形——这个钩子就是补上那个可观测性缺口。
    *
    * 内核只发信号，不知道也不关心你往哪写：`<topic>/_dlq`、外部 DLQ、日志都行。
-   * `MemoryProvider#enableDeadLetterQueue()` 是一个可参考的接法。
+   * `message` 是本轮结算后的投递副本（带 `mbx-attempt` / `mbx-round`），`failed[].attempts`
+   * 是各自那条重试链的次数。`MemoryProvider#enableDeadLetterQueue()` 是一个可参考的接法。
    * 钩子自己抛错 / 返回 rejected promise 不会吞掉回队 / 丢弃判定，错误会被记录。
    */
   protected _onDeliveryDeadLettered?(message: MailMessage, failed: readonly DeliveryResult[]): void | Promise<void>;
@@ -697,6 +721,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * 广播的结算 barrier：把 `publish` 返回的每次投递绑成一个后台任务，全部投递
    * （含重试链）落定后统一判定要不要 `nack(requeue)`。给广播型 provider 的 `_send` 用。
    *
+   * **处置信号里的消息是本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`），不是
+   * `_send` 传进来的那份共享对象——否则回队的那一份不带任何计数，`fetch()` 兜底消费者与
+   * 想设上限的 provider 就都没东西可数。
+   *
    * 不阻塞 `post()`：`post()` 在派发完成时就 resolve，判定在投递结算后才发生。
    * 这正是 issue#2 的坑：“按成功订阅者数 > 0 跳过回队”在 fire-and-forget 广播上会误判 ——
    * 先失败的订阅者可能比慢而成功的订阅者先结算。
@@ -714,13 +742,17 @@ export abstract class MailboxProvider implements IMailboxProvider {
         const results = toDeliveryResults(settled);
         const requeue = shouldRequeueAfterBroadcast(results);
         const failed = results.filter((result) => !result.ok);
+        // 处置与钩子都用**本轮结算后的投递副本**：`_send` 那份共享对象上没有 `mbx-attempt` /
+        // `mbx-round`，把它退回队列就等于把计数抹了——兜底消费者看不出已经投过几轮，
+        // 想自己封顶的 provider 也没东西可数。
+        const disposition = this._takeSettledCopy(message.id) ?? message;
 
         // 先发处置信号，再落死信：钩子写 DLQ 时，队列侧的处置必须已经落定，
         // 否则同一消息会同时出现在队列和 DLQ 里（与传输型的 `nack(false)` → 钩子同一顺序）。
-        await this.nack(message, requeue);
+        await this.nack(disposition, requeue);
 
         if (!requeue && failed.length > 0) {
-          this._invokeDeadLetteredHook(message, failed);
+          this._invokeDeadLetteredHook(disposition, failed);
         }
       })
       .catch((error) => {
@@ -910,8 +942,35 @@ export abstract class MailboxProvider implements IMailboxProvider {
         ? {}
         : { error: describeDeliveryError(pending.lastError) }),
     };
+    if (this.broadcastDeliveries) {
+      // 广播的处置由 barrier 统一发，而 barrier 手里只有 `send()` 那份共享对象；这里把带计数
+      // 的副本存下来，否则回队的那一份没有任何计数可数（见 _trackBroadcastSettlement）。
+      this._recordSettledCopy(pending.message, result.attempts ?? 1);
+    }
     pending.settle(result);
     return result;
+  }
+
+  /** 记下已结算投递的副本，保留趟数最大的那一份（本轮“跑得最远”的那条投递）。 */
+  private _recordSettledCopy(message: MailMessage, attempts: number): void {
+    const existing = this.settledCopies.get(message.id);
+    if (existing && existing.attempts >= attempts) {
+      return;
+    }
+    if (this.settledCopies.size >= MAX_SETTLED_COPIES) {
+      const oldest = this.settledCopies.keys().next();
+      if (!oldest.done) {
+        this.settledCopies.delete(oldest.value);
+      }
+    }
+    this.settledCopies.set(message.id, { message, attempts });
+  }
+
+  /** barrier 取走并清掉本轮副本；没记到就退回共享对象（provider 没走基类投递入口）。 */
+  private _takeSettledCopy(messageId: string): MailMessage | undefined {
+    const copy = this.settledCopies.get(messageId);
+    this.settledCopies.delete(messageId);
+    return copy?.message;
   }
 
   /**

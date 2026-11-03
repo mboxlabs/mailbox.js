@@ -35,10 +35,16 @@ export interface OutgoingMail {
    * - `mbx-reply-to`: 邮箱系统标准的回复地址。指明响应消息应发往的 Mailbox 地址。
    * - `mbx-sent-at`: 发送时间戳 (ISO 8601)。由 Provider 在发送时自动注入。
    *   代表消息正式进入传输系统的时刻，是审计消息时效、监控传输延迟的权威标准。
-   * - `mbx-attempt`: 当前这次投递是第几趟（1 起算，字符串）。由基类在投递前注入，
-   *   所以重投中的回调、`_nack` 与死信记录都能看到「已经试了几次」。
-   *   （上限由谁定仍是 provider 的事：没开重试时它总是 '1'。）
+   * - `mbx-attempt`: **本轮投递链内**是第几趟（1 起算，字符串）。由基类在把消息交给订阅回调前
+   *   注入到投递**副本**上，所以重投中的回调、`_nack` 与死信记录都能看到「这一轮试了几次」。
+   *   它是链内计数，**不是重投计数**：消息回队、下一轮投递重新从 `'1'` 数（跨轮累积看
+   *   `mbx-round`）。没开重试策略时本轮恒为 `'1'`。
    * - `mbx-max-attempts`: 只在 provider 开了重试策略时注入（= `RetryPolicy.maxAttempts`）。
+   *   上限归 provider，内核不自行发明。
+   * - `mbx-round`: 这条消息是**第几轮**被交到消费者手里（1 起算，字符串，跨回队累积）。
+   *   规则是「谁把消息交给消费者，谁给它 +1」：基类在每次开始订阅投递时 +1，队列在把消息交给
+   *   `fetch()` 消费者时 +1；回队交回的始终是那份打戳副本，所以下一轮看得见累积值。
+   *   **要在队列侧做 SQS 式 `maxReceiveCount` 上限，数的就是它，不是 `mbx-attempt`。**
    */
   headers?: {
     'req-id'?: string;
@@ -83,7 +89,8 @@ export interface Ackable {
   /**
    * 拒绝消息。
    * @param requeue 如果为 true，请求消息队列将此消息重新放回，使其可以被再次消费
-   *                （回到哪个位置、已经重投几次，由 provider 决定，内核不管）。
+   *                （回到哪个位置、已经重投几次，由 provider 决定，内核不管——但内核会把带
+   *                `mbx-attempt` / `mbx-round` 的投递副本交给你，设上限就有得数）。
    *                如果为 false 就是**放弃**：消息被永久移出队列。丢弃还是落死信也由 provider
    *                定——`MemoryProvider` 默认丢弃（不留任何痕迹），开了
    *                `enableDeadLetterQueue()` 后才会在死信 topic 里留一份。
@@ -263,6 +270,8 @@ export interface IMailboxProvider {
    *      `_nack(message, false)` = 放弃，并在之后调 `_onDeliveryDeadLettered`。
    *
    * 内核**不**保证的事（均归 provider）：重投几次、回到队列的哪个位置、放弃之后留下什么。
+   * 但处置信号里的 `message` 是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`），
+   * 不是 `send()` 那个共享对象——所以回队的那份在队列里也带着次数，`fetch()` 兜底消费者看得见。
    * “移入死信队列”不是内核行为：基类只给钩子，默认实现不接（`MemoryProvider` 需要显式
    * `enableDeadLetterQueue()`）。需要 DLQ 就在钩子里自己写。
    */

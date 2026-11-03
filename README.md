@@ -314,9 +314,15 @@ up — those belong to the provider. Consequences worth knowing:
   handle is a no-op), and a disposition that did not land — the message was already requeued by the
   stale sweep, dropped by `clear()`, or belongs to another consumer — is not a give-up. One give-up
   therefore leaves exactly one dead-letter record, so a compensation script cannot compensate twice.
-- Each delivery carries its attempt count on `headers['mbx-attempt']` (plus
-  `mbx-max-attempts` when a retry policy is set), and `DeliveryResult` carries `attempts` and an
-  `error` summary — so a DLQ record can answer "why did it die, and how many times did we try".
+- Each delivery carries `headers['mbx-attempt']` — the attempt number **inside that delivery's
+  retry chain** — plus `mbx-max-attempts` when a retry policy is set, and `DeliveryResult`
+  carries `attempts` and an `error` summary, so a DLQ record can answer "why did it die, and how
+  many times did we try". `mbx-attempt` is **not** a redelivery counter: it restarts at `'1'`
+  once the message goes back to the queue. The counter that accumulates across requeues is
+  `headers['mbx-round']` ("which delivery round is this") — whoever hands the message to a
+  consumer bumps it, and the copy the kernel puts back into the queue carries it. That is the
+  number a provider reads to implement its own `maxReceiveCount` cap: the kernel deliberately
+  leaves the cap to providers, and `mbx-round` is the input it owes them.
 
 > The [Python](https://github.com/mboxlabs/mailbox.py) and [Rust](https://github.com/mboxlabs/mailbox.rust)
 > ports settle a broadcast per delivery in exactly this way. Each port's README
@@ -370,8 +376,9 @@ mailbox.registerProvider(provider)
 const dead = await mailbox.fetch(
   provider.deadLetterTopic('mem://sales@bus/inbox')!
 )
-// dead.headers['mbx-dead-letter-reason']  -> 'fatal' | 'retriable' | 'consumer-nack'
-// dead.headers['mbx-dead-letter-attempts'] -> '3'
+// dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-nack'
+// dead.headers['mbx-dead-letter-attempts'] -> '3'  // attempts in the chain that died
+// dead.headers['mbx-dead-letter-round']    -> '1'  // which delivery round this message was on
 // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
 // dead.headers['mbx-dead-letter-topic']    -> the queue it came from
 ```

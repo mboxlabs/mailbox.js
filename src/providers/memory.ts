@@ -6,7 +6,7 @@ import {
 } from '../interfaces';
 import { MailMessageQueue, MailMessageAckable, SettlingAckable } from '../lib/MessageQueue';
 import { RetryPolicy } from '../lib/retry';
-import { DeliveryResult, MBX_ATTEMPT_HEADER } from '../lib/delivery';
+import { DeliveryResult, MBX_ATTEMPT_HEADER, nextRoundCopy, readRound } from '../lib/delivery';
 import { getCanonicalMailboxAddressIdentifier, parseMailboxAddress } from '../lib/utils';
 import { InvalidDeadLetterSuffixError } from '../error';
 
@@ -162,17 +162,20 @@ export class MemoryEventBus {
 
   /**
    * Fetches and removes a message from the queue (for auto-acknowledgment).
+   * 交出去也算一轮：用 `handoff` 给 `mbx-round` +1（与基类在订阅侧的 +1 同一套语义）。
    * @param topic The topic to fetch a message from.
    * @returns The message, or undefined if the queue is empty.
    */
   public fetchAndForget(topic: string): MailMessage | undefined {
     this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
-    return this.messageQueue.dequeue(topic) || undefined;
+    return this.messageQueue.dequeue(topic, { handoff: nextRoundCopy }) || undefined;
   }
 
   /**
    * Fetches a message for manual acknowledgment, moving it to the in-flight state.
    * Also checks for and requeues any stale messages before fetching.
+   * 交给消费者时同样给 `mbx-round` +1；存进 in-flight 的是打戳副本，所以 `nack(true)` 放回
+   * 队列的那一份带着轮次（否则拉取侧数不出“已经被取了几次”，provider 就无法封顶）。
    * @param topic The topic to fetch a message from.
    * @param options Options for the fetch operation, including staleTimeout.
    * @returns The message, or undefined if the queue is empty.
@@ -183,7 +186,11 @@ export class MemoryEventBus {
   ): SettlingAckable<MailMessage> | undefined {
     this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
     // 不将缺省超时压成 0：那会关掉 MessageQueue 的 stale 扫描，未 ack 的消息永久卡在 in-flight。
-    return this.messageQueue.dequeue(topic, { manualAck: true, ackTimeout: options?.staleTimeout }) || undefined;
+    return this.messageQueue.dequeue(topic, {
+      manualAck: true,
+      ackTimeout: options?.staleTimeout,
+      handoff: nextRoundCopy,
+    }) || undefined;
   }
 
   /**
@@ -602,6 +609,8 @@ export class MemoryProvider extends MailboxProvider {
    *
    * 为什么带这些头：死信记录要能回答「为什么死的 / 试了几次 / 原来在哪」，
    * 否则 DLQ 只是另一堆看不出来历的消息。控制信息走 headers，不碰 `meta`（数据平面）。
+   * 两个计数别混：`mbx-dead-letter-attempts` 是**重试链内**试了几次，
+   * `mbx-dead-letter-round` 是这条消息在进行第几轮投递（只在 > 0 时写）。
    */
   private archiveDeadLetter(
     message: MailMessage,
@@ -614,6 +623,7 @@ export class MemoryProvider extends MailboxProvider {
     }
     // 拉取模式下传进来的可能是带 `ack` / `nack` 的 ackable 包装：归档副本不该带着旧消费者的句柄。
     const { ack: _ack, nack: _nack, ...envelope } = message as MailMessage & Partial<Ackable>;
+    const round = readRound(message);
     const record: MailMessage = {
       ...envelope,
       // 控台字段拷一份：不让归档副本与在途消息共享同一个 URL / headers 对象。
@@ -625,6 +635,7 @@ export class MemoryProvider extends MailboxProvider {
         'mbx-dead-letter-topic': originalTopic,
         'mbx-dead-letter-reason': detail.reason,
         'mbx-dead-letter-attempts': String(detail.attempts ?? message.headers?.[MBX_ATTEMPT_HEADER] ?? 1),
+        ...(round > 0 ? { 'mbx-dead-letter-round': String(round) } : {}),
         'mbx-dead-letter-error': detail.error ?? '',
         ...(detail.deliveryId ? { 'mbx-dead-letter-delivery': detail.deliveryId } : {}),
         'mbx-dead-letter-at': detail.at ?? new Date().toISOString(),
@@ -678,6 +689,8 @@ export class MemoryProvider extends MailboxProvider {
         try {
           provider.archiveDeadLetter(ackable, getCanonicalMailboxAddressIdentifier(ackable.to), {
             reason: 'consumer-nack',
+            // 消费者拿到的就是内核 / 队列打戳后的那份副本：头里的趟数是真的（订阅侧试过几次
+            // 就写几次），轮次则由 archiveDeadLetter 从 `mbx-round` 读。
             attempts: Number(ackable.headers?.[MBX_ATTEMPT_HEADER] ?? 1),
             error: 'the consumer nacked the message without requeue',
             at: new Date().toISOString(),
@@ -701,6 +714,9 @@ export class MemoryProvider extends MailboxProvider {
    * `unreadCount` 里可见；requeue=false（有订阅者成功，或失败不可重试）就是“放弃”：
    * 默认直接丢弃，开了 {@link enableDeadLetterQueue} 则在死信 topic 里留一份（留痕在
    * `_onDeliveryDeadLettered` 里做，不在这里）。
+   *
+   * 这里的 `message` 是本轮结算后的投递副本（带 `mbx-attempt` / `mbx-round`），所以回队的
+   * 那一份在队列里也看得到“本轮试了几次 / 这是第几轮”。
    */
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
     if (!requeue) {

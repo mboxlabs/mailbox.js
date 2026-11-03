@@ -295,9 +295,12 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
      一次处置（同一个 handle 上第二次 `ack` / `nack` 不再作数），处置没落定（消息已被 stale
      重投、已被 `clear()` 丢弃、或已归另一个消费者）就不算放弃。因此一次放弃只留一条死信，
      补偿脚本不会重复补偿。
-   - 每次投递都在 `headers['mbx-attempt']` 上带尝试次数（开了重试策略还带
+   - 每次投递都在 `headers['mbx-attempt']` 上带**本轮重试链内**的趟数（开了重试策略还带
      `mbx-max-attempts`），`DeliveryResult` 也带 `attempts` 与 `error` 摘要——死信记录因此能回答
-     “为什么死的、试了几次”。
+     “为什么死的、试了几次”。但 `mbx-attempt` **不是重投计数**：消息一回队，下一轮又从 `'1'` 数。
+     跨轮累积的计数是 `headers['mbx-round']`（“这是第几轮投递”）——谁把消息交给消费者谁 +1，
+     内核回队时交还给队列的那一份也带着它。上限归 provider，而 provider 自己定 `maxReceiveCount`
+     时要读的就是这个轮次头：内核把责任给 provider，就得给它这个输入。
 
    > [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
    > 移植版正是这样按投递结算广播的。各移植版的 README（“Subscriber Failures and Retry”）给出
@@ -346,7 +349,8 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
      provider.deadLetterTopic('mem://sales@bus/inbox')!
    )
    // dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-nack'
-   // dead.headers['mbx-dead-letter-attempts'] -> '3'
+   // dead.headers['mbx-dead-letter-attempts'] -> '3'  // 死掉那条链试了几次
+   // dead.headers['mbx-dead-letter-round']    -> '1'  // 这条消息在进行第几轮投递
    // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
    // dead.headers['mbx-dead-letter-topic']    -> 它原来所在的队列
    ```

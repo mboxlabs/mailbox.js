@@ -102,19 +102,22 @@ export class MailMessageQueue<T extends { id: string }> {
    *   unacknowledged message is considered stale and will be requeued on the next dequeue.
    *   Omitted (or negative) falls back to {@link DEFAULT_ACK_TIMEOUT}; `0` or `null` disables the
    *   stale check entirely (the message stays in-flight until it is ack'd or nack'd).
+   * @param options.handoff 交给消费者前的**改写**（可选）：比如给投递轮次 +1（`nextRoundCopy`）。
+   *   改写后的副本就是交出去的那一份，也是存进 in-flight 的那一份：所以 `nack(requeue=true)`
+   *   放回队列的也是它，否则轮次永远停在第一次取信时的值。只读快照（{@link peek}）不走这里。
    * @returns An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or `null` if the queue is empty.
    */
   public dequeue(
     topic: string,
-    options: { manualAck: true; ackTimeout?: number | null }
+    options: { manualAck: true; ackTimeout?: number | null; handoff?: (message: T) => T }
   ): SettlingAckable<T> | null;
   public dequeue(
     topic: string,
-    options?: { manualAck?: false }
+    options?: { manualAck?: false; handoff?: (message: T) => T }
   ): T | null;
   public dequeue(
     topic: string,
-    options?: { manualAck?: boolean; ackTimeout?: number | null }
+    options?: { manualAck?: boolean; ackTimeout?: number | null; handoff?: (message: T) => T }
   ): T | SettlingAckable<T> | null {
     // Requeue stale messages whenever manual-ack mode is used. A missing timeout must not
     // mean "never requeue": that leaked the message forever (invisible in status, unrecoverable).
@@ -134,17 +137,21 @@ export class MailMessageQueue<T extends { id: string }> {
     const message = messages.shift()!; // Consume a message from the queue in FIFO order.
 
     if (!options?.manualAck) {
-      return message; // Auto-ack: simply return the message.
+      // Auto-ack: simply return the message (交出去也算一轮，同样走 handoff)。
+      return options?.handoff ? options.handoff(message) : message;
     }
 
     // Manual-ack: move message to in-flight and wrap with ack/nack functions.
     // Store the topic along with the message in inFlight
+    // in-flight 里存的是 handoff 后的副本：迟到的 `nack(requeue=true)` 才会把带计数的
+    // 那一份放回队列，而不是计数停在旧值的原件。
+    const handedOff = options.handoff ? options.handoff(message) : message;
     const token = ++this.settlementToken;
-    this.inFlight.set(message.id, { message, timestamp: Date.now(), topic, token });
+    this.inFlight.set(handedOff.id, { message: handedOff, timestamp: Date.now(), topic, token });
 
     // 句柄自己带 `token`：只有取走它的那一次 fetch 能结算它。
     return {
-      ...message,
+      ...handedOff,
       ack: async () => this.ack(message.id, token),
       nack: async (requeue = false) => this.nack(message.id, topic, requeue, token),
     };
