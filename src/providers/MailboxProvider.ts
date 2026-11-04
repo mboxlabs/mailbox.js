@@ -25,6 +25,8 @@ import {
   deliveryKey,
   describeDeliveryError,
   readRound,
+  MBX_SEND_ID_HEADER,
+  stripSenderForgedSystemHeaders,
   shouldRequeueAfterBroadcast,
   subscriptionIdOfDelivery,
   toDeliveryResults,
@@ -220,10 +222,18 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * and then calls the concrete `_send` method for protocol-specific delivery.
    */
   public async send(message: MailMessage) {
+    // **发送边界就在这里**：`_send()` 只能从 `send()` 进，所以系统头在这里统一发统一剥，
+    // provider 作者没有“记得注入”的义务，也没有关掉它的办法。
+    // - 剥：发送方（或任何调 `send()` 的人）自带的 `mbx-send-id` / `mbx-round` / `mbx-attempt` /
+    //   `mbx-dead-letter*` 一概不采信——采信伪造的份号就等于让两份信共用一本账（F7）。
+    // - 发：`mbx-send-id` 是「这一份信」的编号，全生命周期只在这里发一次（队列 / 在飞表 / 回队
+    //   去重都按它记账）。队列不自己造号：号的寿命必须是“这份信在系统里的一生”。
+    // 回队与重投不经过 `send()`，所以同一份不会被重新发号。
     const messageToSend: MailMessage = {
       ...message,
       headers: {
-        ...message.headers,
+        ...stripSenderForgedSystemHeaders(message.headers),
+        [MBX_SEND_ID_HEADER]: this.generateId(),
         'mbx-sent-at': new Date().toISOString(), // Always inject mbx-sent-at for outgoing messages
       },
     };

@@ -331,15 +331,27 @@ up — those belong to the provider. Consequences worth knowing:
   leaves the cap to providers, and `mbx-round` is the input it owes them.
 - Queue bookkeeping keys on **which copy of a letter**, not on `messageId`. `id` is a name the
   sender chose and it may repeat (content-hash ids, a sender retrying its own send, a hostile
-  sender colliding on purpose). Every `post()` mints one `headers['mbx-send-id']`, and queueing,
-  the in-flight table, requeue dedup and `ack` / `nack` all account per copy. Keying those on `id`
+  sender colliding on purpose). Every letter gets one `headers['mbx-send-id']`, minted at the send
+  boundary — `MailboxProvider.send()`, the only way into `_send()` — and queueing, the in-flight
+  table, requeue dedup and `ack` / `nack` all account per copy. Keying those on `id`
   lets one letter overwrite another's slot: a requeue gets dismissed as a duplicate and the message
   ends up nowhere — not queued, not dead-lettered — and an id reused at one address can suppress a
   requeue at a different one. Headers the system owns (`mbx-send-id`, `mbx-round`, `mbx-attempt`,
-  `mbx-max-attempts`, `mbx-sent-at`, `mbx-dead-letter*`) are stripped from `post()` input: trusting
+  `mbx-max-attempts`, `mbx-sent-at`, `mbx-dead-letter*`) are stripped from anything handed to
+  `send()`: trusting
   them would let the sender pick its own redelivery cap or stamp live mail as a dead-letter record.
   Content-level idempotency is a separate, explicit, *loud* policy at the send edge — the kernel
   never drops a letter silently.
+
+**Search by their name, act by ours.** The pull-side settlement door takes our identity, not the
+sender's. `ack` / `nack` receive the copy key (plus the handout id, so a stale handle cannot close a
+newer lease): handing them a `messageId` returns `false` and touches nothing, because that name may
+legitimately exist in two mailboxes at once (a buyer's copy and a seller's copy of `order-42`). To
+find a letter, query first — `bus.locate('order-42')` is read-only and returns every matching copy
+with its `key`, `leaseId`, `topic` and state — then settle by the key you got back. The old shape
+(`nack(messageId, topic, requeue)`) is gone at compile time: it accepted a topic it never used while
+locating by a name that is not unique, so a repair script intending to touch one mailbox silently
+closed another one's case and re-queued a duplicate into it.
 
 > The [Python](https://github.com/mboxlabs/mailbox.py) and [Rust](https://github.com/mboxlabs/mailbox.rust)
 > ports settle a broadcast per delivery in exactly this way. Each port's README

@@ -1,7 +1,7 @@
 // src/lib/MessageQueue.ts
 
 import { copyForPeek, normalizePeekLimit } from './utils'
-import { readSendId } from './delivery'
+import { readSendId, MBX_SEND_ID_HEADER } from './delivery'
 
 /**
  * Represents a message that can be manually acknowledged or negatively acknowledged.
@@ -75,8 +75,32 @@ export type InFlightEntry<T> = {
   message: T;
   timestamp: number;
   topic: string;
-  token: number;
+  /** 这一份的第几次交出去（`<份号>#<次序>`）：同一份被收回重投后就是新的一个。 */
+  leaseId: string;
   expiresAt: number;
+};
+
+/**
+ * `locate(messageId)` 的一条候选：按发送方给的名字**查**到的那一份。
+ *
+ * 查可以按他们的名字（`order-42` 是人认得的），**动手必须按这里的 `key`**（我们发的份号）。
+ * 同名多份时调用方自己选，不靠队列猜。
+ */
+export type LocatedCopy = {
+  /** 份号（结算门的键）：`send:<系统发的 mbx-send-id>`，无号副本退化成 `obj:<对象份号>`。 */
+  key: string;
+  /** 发送方写在这封信上的名字（只读用途）。 */
+  messageId: string;
+  /** 系统发的份号；无号副本为 undefined。 */
+  sendId?: string;
+  /** 这一份现在挂在哪本账上。 */
+  topic: string;
+  /** 在排队还是在飞。 */
+  state: 'queued' | 'inFlight';
+  /** 在飞时：这一次交出去的编号（`<份号>#<次序>`）；拿它结算才能避开迟到的旧句柄。 */
+  leaseId?: string;
+  /** 在飞时：什么时候交出去的（ms epoch）；排队时为 undefined。 */
+  since?: number;
 };
 
 /** 一个 topic 的队列状态（{@link MailMessageQueue.getStatus}）。 */
@@ -112,19 +136,43 @@ export class MailMessageQueue<T extends { id: string }> {
    */
   private inFlight: Map<string, InFlightEntry<T>> = new Map();
 
-  /** 消息 id → 在飞键列表（按取走顺序）：只为「按 id 结算」那层旧 API（总线 / broker）保留。 */
+  /**
+   * 消息 id → 在飞键列表（按取走顺序）。
+   *
+   * **只为只读的 `locate()` / `has()` 服务**：按发送方的名字查账。结算门不走这里——
+   * 那个名字可以重复，拿它定位就会默默命中别人的那一份（F7）。
+   */
   private inFlightById: Map<string, string[]> = new Map();
 
-  /** in-flight 归属凭据的发号器（仅在本队列实例内比较，不需全局唯一）。 */
-  private settlementToken = 0;
+  /**
+   * in-flight 归属凭据？不。这里**没有**发号器：结算只认份号（`copyKeyOf`），
+   * 而份号在副本进入系统时由 `MailboxProvider.send()` 发一次，队列不自己造号。
+   */
 
   /**
-   * 对象身份 → 份号。只在消息不带 `mbx-send-id` 时用作兜底（队列单独使用）：
-   * WeakMap 不拖住消息对象，也不需要清理。
+   * 对象身份 → 份号。只在副本**不带** `mbx-send-id` 时用作兜底（有人不经 provider 直接往队列里
+   * 塞东西：非规范用法，后果由用的人承担）。兜底不造新号，而是按对象身份认份：
+   * 同一对象永远是同一份，所以去重守卫仍然成立（降级方向是“可能多投”，不是“丢信”）。
    */
   private readonly instanceTags = new WeakMap<object, number>();
 
   private instanceSeq = 0;
+
+  /**
+   * 在飞记录：`copyKey`（哪一份信）+ `leaseId`（这一份的第几次交出去）。
+   *
+   * 两个身份不能合成一个：
+   * - 只认份号 ⇒ 同一份信被过期收回后会被再交一次，旧消费者的迟到句柄拿着同一个份号
+   *   就能销掉新消费者的租约（回归测试：`stale 重投后的旧 handle 不能动新消费者的 in-flight`）。
+   * - 只认句柄 ⇒ 两份同 id 的信互相顶替（F7）。
+   *
+   * `leaseSeq` 只是发这个后缀的全局发号器（不回收、不比较大小），不是归属凭据：归属靠份号，
+   * 句柄只能来自取信那一次。
+   */
+  private leaseSeq = 0;
+
+  /** 无号副本只告警一次（说清降级，但不刷屏）。 */
+  private warnedMissingSendId = false;
 
   /**
    * Adds a message to the end of a specific topic's queue.
@@ -137,6 +185,18 @@ export class MailMessageQueue<T extends { id: string }> {
    * @param message The message to enqueue.
    */
   public enqueue(topic: string, message: T): void {
+    // 不带份号的副本：非规范用法（走 `Mailbox` / provider 的副本必然已发过号）。
+    // 不抛、也不在这里造号：抛会把调用方的越界变成运行时崩溃；造号会破坏“同一个对象就是
+    // 同一份”这个去重守卫依赖的不变量（每次 enqueue 一个新号 = 同一份信变成两本账）。
+    // 只说一次，让降级可见。
+    if (readSendId(message) === undefined && !this.warnedMissingSendId) {
+      this.warnedMissingSendId = true;
+      console.warn(
+        `[MailMessageQueue] a copy entered the queue without a system-owned \`${MBX_SEND_ID_HEADER}\`; ` +
+          'per-copy accounting degrades to object identity (same object = same copy; a rebuilt copy counts as a new one). ' +
+          'Mint the id once at your entry boundary (`MailboxProvider.generateId()`) if you bypass Mailbox#post().',
+      );
+    }
     if (!this.queues.has(topic)) {
       this.queues.set(topic, []);
     }
@@ -208,23 +268,24 @@ export class MailMessageQueue<T extends { id: string }> {
     // 那一份放回队列，而不是计数停在旧值的原件。
     const handedOff = options.handoff ? options.handoff(message) : message;
     this.inheritTag(handedOff, message);
-    const token = ++this.settlementToken;
-    const key = this.copyKeyOf(handedOff);
+    const key = this.copyKeyOf(handedOff); // 这一份是谁（不是发送方的名字）
+    const leaseId = `${key}#${++this.leaseSeq}`; // 这一份的第几次交出去
     const now = Date.now();
     const lease = MailMessageQueue.leaseDurationMs(options.ackTimeout);
     this.addFlight(key, handedOff.id, {
       message: handedOff,
       timestamp: now,
       topic,
-      token,
+      leaseId,
       expiresAt: Number.isFinite(lease) ? now + lease : Number.POSITIVE_INFINITY,
     });
 
-    // 句柄自己带 `token`：只有取走它的那一次 fetch 能结算它。
+    // 句柄捕获“这一份 + 这一次交出去”：只有取走它的那一次 fetch 能结算它；
+    // 这一份被收回重投后，旧句柄的 `leaseId` 对不上，就不能动新消费者的租约。
     return {
       ...handedOff,
-      ack: async () => this.ack(message.id, token),
-      nack: async (requeue = false) => this.nack(message.id, topic, requeue, token),
+      ack: async () => this.ack(key, leaseId),
+      nack: async (requeue = false) => this.nack(key, requeue, leaseId),
     };
   }
 
@@ -352,67 +413,92 @@ export class MailMessageQueue<T extends { id: string }> {
   }
 
   /**
-   * 按消息 id 找在飞的那一份（旧 API 口径）。
+   * 按发送方给的名字**查**账（只读）：这个名字可以重复，所以返回的是候选清单。
    *
-   * 带 `token` = 精确匹配那一次 fetch 拿走的份；不带则取**最早取走的那一份**
-   * （同 id 多份在飞时总得选一个，固定选最早比“看 Map 顺位”可预测）。
+   * 搜索按他们的名字，动手按我们发的 `key`：查到后拿 `key` 去 `ack` / `nack`。
+   * 不改动任何状态（不扫、不刷新活动时间、不动顺序）。
    */
-  private findFlightById(messageId: string, token?: number): { key: string; flight: InFlightEntry<T> } | undefined {
-    const keys = this.inFlightById.get(messageId);
-    if (!keys) {
-      return undefined;
-    }
-    for (const key of keys) {
+  public locate(messageId: string): LocatedCopy[] {
+    const found: LocatedCopy[] = [];
+    for (const key of this.inFlightById.get(messageId) ?? []) {
       const flight = this.inFlight.get(key);
-      if (flight && (token === undefined || flight.token === token)) {
-        return { key, flight };
+      if (!flight) {
+        continue;
+      }
+      found.push({
+        key,
+        messageId,
+        sendId: readSendId(flight.message),
+        topic: flight.topic,
+        state: 'inFlight',
+        since: flight.timestamp,
+        leaseId: flight.leaseId,
+      });
+    }
+    for (const [topic, queue] of this.queues) {
+      for (const queued of queue) {
+        if (queued.id === messageId) {
+          const key = this.copyKeyOf(queued);
+          if (!found.some((f) => f.key === key)) {
+            found.push({ key, messageId, sendId: readSendId(queued), topic, state: 'queued' });
+          }
+        }
       }
     }
-    return undefined;
+    return found;
   }
 
   /**
-   * Acknowledges a message, permanently removing it from the in-flight state.
+   * Acknowledges a **copy**, permanently removing it from the in-flight state.
    *
    * 一次处置：同一个 handle 重复 `ack`（或 `ack` 之后再 `nack`）不会第二次生效。
    *
-   * @param messageId The ID of the message to acknowledge.
-   * @param token 取信时发下的归属凭据（队列自带的 ackable 自己传）。带上它时，只结算
-   *   **这一次** fetch 拿走的那份；不带则保持按消息 id 的旧语义（总线级 API）。
+   * @param key **份号**（这一份是谁）：由取信的 handle 自己传，或从 {@link locate} 里拿。
+   *   传发送方写的消息 id **不会命中**（回 `false`）——那个名字可以重复，拿它定位就会
+   *   默默结算到别人手里那一份（F7）。
+   * @param leaseId 这一份的第几次交出去（handle 自己传，或 `locate()` 结果里的 `leaseId`）。
+   *   传了就只结算那一次租约：这一份被收回重投后，旧句柄对不上号，只能回 `false`。
+   *   不传 = 结算这一份当前的租约（运维 / broker 式 provider 的口径）。
    * @returns `true` = 真的结算了；`false` = 已经不在（重复处置 / 已被重投 / 已被丢弃）。
    */
-  public ack(messageId: string, token?: number): boolean {
-    const found = this.findFlightById(messageId, token);
-    if (!found) {
+  public ack(key: string, leaseId?: string): boolean {
+    const flight = this.inFlight.get(key);
+    if (!flight) {
       return false;
     }
-    this.dropFlight(found.key);
+    // 迟到的旧句柄：这一份已经被收回重投，现在那份租约不归它。
+    if (leaseId !== undefined && flight.leaseId !== leaseId) {
+      return false;
+    }
+    this.dropFlight(key);
     return true;
   }
 
   /**
-   * Negatively acknowledges a message, removing it from the in-flight state.
-   * If `requeue` is true, the message is added back to the front of its original queue.
+   * Negatively acknowledges a **copy**, removing it from the in-flight state.
+   * If `requeue` is true, the copy goes back to the front of **the queue it came from**
+   * （topic 取自己在飞记录里存的，不是调用方当场报的那个）。
    *
    * 一次处置：重复 `nack`、或在 `ack` 之后的 `nack` 都不再生效（也不会把已确认的消息
    * 退回队列）。上层要靠这个返回值区分“真的放弃了”与“这次根本没落定”，否则会重复
    * 写死信记录。
    *
-   * @param messageId The ID of the message to nack.
-   * @param topic The topic the message belongs to. This is used for requeueing.
-   * @param requeue If true, the message is re-added to the front of the queue.
-   * @param token 取信时的归属凭据；带上就只结算那一次 fetch 拿走的份（见 {@link ack}）。
+   * @param key 份号（见 {@link ack}）。
+   * @param requeue If true, the copy is re-added to the front of its own queue.
+   * @param leaseId 第几次交出去（见 {@link ack}）：迟到的旧句柄不能把别人手里的租约退回队列。
    * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
    */
-  public nack(messageId: string, topic: string, requeue: boolean, token?: number): boolean {
-    const found = this.findFlightById(messageId, token);
-    if (!found) {
+  public nack(key: string, requeue: boolean, leaseId?: string): boolean {
+    const flight = this.inFlight.get(key);
+    if (!flight) {
       return false;
     }
-    this.dropFlight(found.key);
+    if (leaseId !== undefined && flight.leaseId !== leaseId) {
+      return false; // 迟到的旧句柄：不能把别人手里的租约退回队列
+    }
+    this.dropFlight(key);
     if (requeue) {
-      // Use the topic stored in inFlight for reliability
-      this.requeue(found.flight.topic, found.flight.message);
+      this.requeue(flight.topic, flight.message);
     }
     return true;
   }

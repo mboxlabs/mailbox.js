@@ -4,7 +4,7 @@ import {
   MailMessage,
   MailboxStatus,
 } from '../interfaces';
-import { MailMessageQueue, MailMessageAckable, SettlingAckable } from '../lib/MessageQueue';
+import { MailMessageQueue, MailMessageAckable, SettlingAckable, type LocatedCopy } from '../lib/MessageQueue';
 import { RetryPolicy } from '../lib/retry';
 import { DeliveryResult, MBX_ATTEMPT_HEADER, nextRoundCopy, readRound } from '../lib/delivery';
 import { getCanonicalMailboxAddressIdentifier, parseMailboxAddress } from '../lib/utils';
@@ -234,25 +234,38 @@ export class MemoryEventBus {
   }
 
   /**
-   * Acknowledges a message, confirming it has been processed and removing it
-   * from the in-flight state.
-   * @param messageId The ID of the message to acknowledge.
+   * 结算**一份**在飞的副本（确认完成）。
+   *
+   * @param key 份号（系统发的 `mbx-send-id`），来自取信的 handle 或 {@link locate}。
+   * @param leaseId 这一份的第几次交出去（{@link locate} 的 `leaseId`）：传了就只结算那一次租约。
+   *   传发送方写在信上的消息 id **不会命中**（回 `false`）：那个名字可以重复，
+   *   拿它定位就会默默结算到别人手里那一份。
    * @returns `true` = 这次处置真的落定；`false` = 消息已不在 in-flight（重复处置 / 已被重投）。
    */
-  public ack(messageId: string): boolean {
-    return this.messageQueue.ack(messageId);
+  public ack(key: string, leaseId?: string): boolean {
+    return this.messageQueue.ack(key, leaseId);
   }
 
   /**
-   * Negatively acknowledges a message, removing it from the in-flight state
-   * and optionally requeueing it.
-   * @param messageId The ID of the message to nack.
-   * @param topic The topic the message belongs to.
-   * @param requeue If true, the message is added back to the front of the queue.
+   * 结算**一份**在飞的副本（否定处置），可选回队。
+   *
+   * @param key 份号（见 {@link ack}）。
+   * @param requeue If true, the copy goes back to the front of **the queue it came from**
+   *   （topic 取在飞记录里存的那一个，不是调用方当场报的）。
    * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
    */
-  public nack(messageId: string, topic: string, requeue: boolean): boolean {
-    return this.messageQueue.nack(messageId, topic, requeue);
+  public nack(key: string, requeue: boolean, leaseId?: string): boolean {
+    return this.messageQueue.nack(key, requeue, leaseId);
+  }
+
+  /**
+   * 按发送方给的名字**查**账（只读）：同名的几份全部列出来，各自带着份号与现在状态。
+   *
+   * 搜索可以按他们的名字（`order-42` 是人认得的），**动手必须按返回的 `key`**。
+   * 不改动任何状态：不扫过期、不刷新活动时间。
+   */
+  public locate(messageId: string): LocatedCopy[] {
+    return this.messageQueue.locate(messageId);
   }
 
   /**

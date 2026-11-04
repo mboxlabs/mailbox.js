@@ -552,17 +552,25 @@ describe('MessageQueue', () => {
       expect(queue.getStatus(topic1).inFlightCount).toBe(0);
     });
 
-    it('[事实] 不带 handle 的总线级 ack / nack 仍按消息 id 结算（向后兼容的旧语义）', async () => {
+    it('[语义] 不带 handle 的结算只认份号；拿发送方的消息 id 不再命中', async () => {
       queue.enqueue(topic1, msg1);
       queue.enqueue(topic2, msg2);
       inflightOf(topic1, msg1);
       inflightOf(topic2, msg2);
 
-      expect(queue.nack(msg1.id, topic1, false)).toBe(true);
-      expect(queue.nack(msg1.id, topic1, false)).toBe(false);
-      expect(queue.ack(msg2.id)).toBe(true);
+      // 发送方的名字只能用来查，不能用来动手
+      expect(queue.nack(msg1.id, false)).toBe(false);
       expect(queue.ack(msg2.id)).toBe(false);
-      expect(queue.nack('never-was', topic1, true)).toBe(false);
+      expect(queue.getStatus(topic1).inFlightCount).toBe(1);
+      expect(queue.getStatus(topic2).inFlightCount).toBe(1);
+
+      const key1 = queue.locate(msg1.id)[0]!.key
+      const key2 = queue.locate(msg2.id)[0]!.key
+      expect(queue.nack(key1, false)).toBe(true);
+      expect(queue.nack(key1, false)).toBe(false);
+      expect(queue.ack(key2)).toBe(true);
+      expect(queue.ack(key2)).toBe(false);
+      expect(queue.nack('never-was', false)).toBe(false);
 
       expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
       expect(queue.getStatus(topic2)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });

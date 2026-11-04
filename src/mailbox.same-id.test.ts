@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { Mailbox } from './mailbox'
 import { MemoryProvider, MemoryEventBus } from './providers/memory'
 import { MailMessage } from './interfaces'
-import { MBX_ATTEMPT_HEADER, MBX_ROUND_HEADER } from './lib/delivery'
+import { MBX_ATTEMPT_HEADER, MBX_ROUND_HEADER, MBX_SEND_ID_HEADER } from './lib/delivery'
 
 const tick = (ms = 50) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -221,6 +221,41 @@ describe('发送方伪造系统头', () => {
 
     expect(got?.headers?.['mbx-reply-to']).toBe('mem://s@bus/u/inbox')
     expect(got?.headers?.['req-id']).toBe('r1')
+
+    await mailbox.stop({ purge: true })
+  })
+
+  it('[回归] 伪造的 mbx-send-id 不得让两份信共用一本账', async () => {
+    const bus = new MemoryEventBus()
+    const mailbox = new Mailbox()
+    mailbox.registerProvider(new MemoryProvider(null, bus))
+    await mailbox.start()
+
+    const address = addrOf('forged-send-id')
+    // 发送方给两封不同的信贴了同一个份号（= 伪造身份）
+    for (const body of ['c-1', 'c-2']) {
+      await mailbox.post({
+        id: 'forged-1',
+        from: 'mem://s@bus/u',
+        to: address,
+        body,
+        headers: { [MBX_SEND_ID_HEADER]: 'same-copy' },
+      })
+    }
+
+    // 两封各自取走、各自回队：不会只留一份
+    const h1 = await mailbox.fetch(address, { manualAck: true })
+    const h2 = await mailbox.fetch(address, { manualAck: true })
+    expect([h1, h2].filter(Boolean)).toHaveLength(2)
+    await h1!.nack(true)
+    const s = await mailbox.status(address)
+    expect(s.inFlightCount).toBe(1) // h2 那封还在 h2 手里
+    expect(s.unreadCount).toBe(1) // h1 那封回了队
+
+    // 两份的份号都是系统发的，不是伪造的那个
+    const found = bus.locate('forged-1')
+    expect(found).toHaveLength(2)
+    expect(found.every((f) => f.sendId !== undefined && f.sendId !== 'same-copy')).toBe(true)
 
     await mailbox.stop({ purge: true })
   })

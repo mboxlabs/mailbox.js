@@ -192,27 +192,33 @@ class RedeliveryBroker extends MailboxProvider {
     return null;
   }
 
+  /** broker 式 provider 的结算口径：按份号（系统发的 `mbx-send-id`），不按发送方的名字。 */
+  protected flightKey(message: MailMessage): string {
+    return this.queue.locate(message.id).find((c) => c.state === 'inFlight')?.key ?? message.id
+  }
+
   protected async _ack(message: MailMessage): Promise<void> {
-    this.queue.ack(message.id);
+    this.queue.ack(this.flightKey(message));
   }
 
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
     const topic = this.topicOf(message.to);
     const { attempt, round } = countersOf(message);
+    const key = this.flightKey(message)
     this.nacks.push({ requeue, attempt, round });
 
     if (!requeue) {
-      this.queue.nack(message.id, topic, false);
+      this.queue.nack(key, false);
       return;
     }
     // 上限归 provider：内核只把带计数的副本交回来，要不要继续投由这里判。
     if (this.maxRounds !== null && readRound(message) >= this.maxRounds) {
-      this.queue.nack(message.id, topic, false);
+      this.queue.nack(key, false);
       this.givenUp.push(message.id);
       return;
     }
     // broker 重投时保留内核给的计数（真实 broker 写的是自己的 ApproximateReceiveCount）。
-    this.queue.nack(message.id, topic, false);
+    this.queue.nack(key, false);
     this.queue.enqueue(topic, message);
     this.pump(topic);
   }

@@ -108,8 +108,13 @@ class BrokerShapedProvider extends MailboxProvider {
     return (taken as MailMessage | AckableMailMessage | undefined) ?? null;
   }
 
+  /** broker 式 provider 的结算口径：按份号（系统发的 `mbx-send-id`），不按发送方的名字。 */
+  protected flightKey(message: MailMessage): string {
+    return this.queue.locate(message.id).find((c) => c.state === 'inFlight')?.key ?? message.id
+  }
+
   protected async _ack(message: MailMessage): Promise<void> {
-    this.queue.ack(message.id);
+    this.queue.ack(this.flightKey(message));
   }
 
   protected async _peek(address: URL, options?: { limit?: number }): Promise<MailMessage[]> {
@@ -131,7 +136,7 @@ class TransportProvider extends BrokerShapedProvider {
 
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
     this.nacks.push({ id: message.id, requeue });
-    this.queue.nack(message.id, this.topicOf(message.to), requeue);
+    this.queue.nack(this.flightKey(message), requeue);
   }
 
   protected _onDeliveryDeadLettered(message: MailMessage, failed: readonly DeliveryResult[]): void {

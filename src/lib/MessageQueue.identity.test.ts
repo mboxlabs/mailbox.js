@@ -12,7 +12,7 @@
  *   [语义] 地址之间不串扰：A 地址上的在飞记录不该影响 B 地址上的回队。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MailMessageQueue } from './MessageQueue'
 
 type TestMessage = { id: string; body: string; headers?: Record<string, any> }
@@ -115,31 +115,85 @@ describe('同一份信重复回队仍然只留一份', () => {
   })
 })
 
-describe('按 id 的结算（总线级旧 API）不得顶替别的份', () => {
-  it('[语义] 同 id 两份在飞时，按 id 的 nack 各结算一份，两次都生效', () => {
+describe('结算只认系统发的份号：发送方的名字只能用来查，不能用来动手', () => {
+  const twoInFlight = (name: string) => {
     const q = new MailMessageQueue<TestMessage>()
-    const t = topic('id-based-settle')
-    q.enqueue(t, { id: 'same', body: 'copy-1', headers: { [SEND_ID]: '1' } })
-    q.enqueue(t, { id: 'same', body: 'copy-2', headers: { [SEND_ID]: '2' } })
+    const t = topic(name)
+    q.enqueue(t, { id: 'same', body: 'copy-1', headers: { [SEND_ID]: 's-1' } })
+    q.enqueue(t, { id: 'same', body: 'copy-2', headers: { [SEND_ID]: 's-2' } })
     q.dequeue(t, { manualAck: true, ackTimeout: 60_000 })
     q.dequeue(t, { manualAck: true, ackTimeout: 60_000 })
+    return { q, t }
+  }
 
-    expect(q.nack('same', t, false)).toBe(true)
+  it('[回归] 拿发送方的 id 当键结算：谁都不动，报 false', () => {
+    const { q, t } = twoInFlight('sender-name-door')
+
+    // 旧写法（凭发送方的名字就地结算）：不能再默默命中其中某一份
+    expect(q.ack('same')).toBe(false)
+    expect(q.nack('same', false)).toBe(false)
+    expect(q.getStatus(t).inFlightCount).toBe(2)
+  })
+
+  it('[语义] locate(名字) 只读地给出候选；按 key 动手只动那一份', () => {
+    const { q, t } = twoInFlight('locate-then-settle')
+
+    const found = q.locate('same')
+    expect(found).toHaveLength(2)
+    expect(new Set(found.map((f) => f.key)).size).toBe(2)
+    expect(found.every((f) => f.state === 'inFlight' && f.topic === t)).toBe(true)
+    // 只读：查一下不改变任何状态
+    expect(q.getStatus(t).inFlightCount).toBe(2)
+    expect(q.getStatus(t).unreadCount).toBe(0)
+
+    const target = found.find((f) => f.sendId === 's-1')!
+    expect(q.nack(target.key, true)).toBe(true)
     expect(q.getStatus(t).inFlightCount).toBe(1)
-    expect(q.nack('same', t, false)).toBe(true)
+    expect(q.getStatus(t).unreadCount).toBe(1)
+    // 回队的就是那一份（号不变），不是另一份
+    expect(q.peek(t).map((m) => m.headers?.[SEND_ID])).toEqual(['s-1'])
+  })
+
+  it('[语义] 两个身份各自负责：份号分清“哪一份信”，leaseId 分清“第几次交出去”', async () => {
+    const q = new MailMessageQueue<TestMessage>()
+    const t = topic('two-identities')
+    q.enqueue(t, { id: 'same', body: 'copy-1', headers: { [SEND_ID]: 's-1' } })
+
+    q.dequeue(t, { manualAck: true, ackTimeout: 1 })
+    const handout1 = q.locate('same')[0]!
+    expect(handout1.leaseId).toBeTypeOf('string')
+
+    // 租约到期，这一份被收回重投（同一份信，新的一次交出去）
+    await new Promise<void>((r) => setTimeout(r, 20))
+    const second = q.dequeue(t, { manualAck: true, ackTimeout: 60_000 })!
+    const handout2 = q.locate('same')[0]!
+    expect(handout2.key).toBe(handout1.key) // 同一份信
+    expect(handout2.leaseId).not.toBe(handout1.leaseId) // 不同的一次交出去
+
+    // 迟到的旧句柄：不能销掉新消费者的租约
+    expect(q.ack(handout1.key, handout1.leaseId)).toBe(false)
+    expect(q.nack(handout1.key, false, handout1.leaseId)).toBe(false)
+    expect(q.getStatus(t).inFlightCount).toBe(1)
+
+    // 新句柄自己结算正常
+    await second.ack()
     expect(q.getStatus(t).inFlightCount).toBe(0)
   })
 
-  it('[语义] 同 id 两份在飞时，按 id 的 ack 也只结算一份', () => {
-    const q = new MailMessageQueue<TestMessage>()
-    const t = topic('id-based-ack')
-    q.enqueue(t, { id: 'same', body: 'copy-1', headers: { [SEND_ID]: '1' } })
-    q.enqueue(t, { id: 'same', body: 'copy-2', headers: { [SEND_ID]: '2' } })
-    q.dequeue(t, { manualAck: true, ackTimeout: 60_000 })
-    q.dequeue(t, { manualAck: true, ackTimeout: 60_000 })
-
-    expect(q.ack('same')).toBe(true)
-    expect(q.getStatus(t).inFlightCount).toBe(1)
+  it('[事实] 无 mbx-send-id 的副本进队列：告警一次（降级可见，不抛）', () => {
+    const warned: string[] = []
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warned.push(args.join(' '))
+    })
+    try {
+      const q = new MailMessageQueue<TestMessage>()
+      q.enqueue(topic('anon-a'), { id: 'anon', body: 'a' })
+      q.enqueue(topic('anon-b'), { id: 'anon', body: 'b' })
+    } finally {
+      spy.mockRestore()
+    }
+    // 每个队列实例只说一次：非规范用法要承担后果，但不该刷屏
+    expect(warned.filter((w) => w.includes(SEND_ID))).toHaveLength(1)
   })
 
   it('[语义] stale 扫描把每份在飞的信都各自收回重投', () => {

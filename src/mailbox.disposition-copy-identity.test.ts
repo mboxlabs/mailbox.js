@@ -84,14 +84,19 @@ class IdentityProvider extends MailboxProvider {
     return null;
   }
 
+  /** broker 式 provider 的结算口径：按份号（系统发的 `mbx-send-id`），不按发送方的名字。 */
+  private flightKey(message: MailMessage): string {
+    return this.queue.locate(message.id).find((c) => c.state === 'inFlight')?.key ?? message.id
+  }
+
   protected async _ack(message: MailMessage): Promise<void> {
     this.acked.push(message);
-    this.queue.ack(message.id);
+    this.queue.ack(this.flightKey(message));
   }
 
   protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
     this.nacked.push({ message, requeue });
-    this.queue.nack(message.id, canonicalOf(message.to), requeue);
+    this.queue.nack(this.flightKey(message), requeue);
   }
 }
 

@@ -360,11 +360,13 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
 
       const inflight = bus.fetchForAck(topic, { leaseTimeout: 1000 });
       expect(inflight?.id).toBe('late-1');
+      const key = bus.locate('late-1')[0]!.key; // 份号：在飞时查得
       expect(bus.clear(topic)).toBe(1);
 
       inflight!.ack();
       inflight!.nack(true); // 消费侧的迟到 nack
-      bus.nack('late-1', topic, true); // 发送侧的迟到 nack
+      // 发送侧的迟到 nack：拿份号动手（发送方的名字已经不能用来结算）
+      expect(bus.nack(key, true)).toBe(false);
 
       expect(bus.getStatus(topic)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
       expect(bus.fetchAndForget(topic)).toBeUndefined();
