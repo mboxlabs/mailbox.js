@@ -22,6 +22,7 @@ import {
 import {
   DeliveryResult,
   DEFAULT_DELIVERY_SETTLE_TIMEOUT,
+  copyIdentity,
   deliveryKey,
   describeDeliveryError,
   readRound,
@@ -126,6 +127,10 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * {@link MAX_SETTLED_COPIES} 按插入序淘汰。
    */
   private readonly settledCopies: Map<string, { message: MailMessage; attempts: number }> = new Map();
+
+  /** 无 `mbx-send-id` 的副本（非标准路径）退到对象身份时用：同一个对象 = 同一份。 */
+  private readonly copyTags: WeakMap<object, number> = new WeakMap();
+  private nextCopyTag = 0;
 
   /**
    * 单次投递尝试的结算超时（毫秒）。`0` / 负数关闭（调用方自己负责长任务）。
@@ -477,7 +482,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * 对应的 barrier 永不落定，消息静默消失。
    */
   private _startDelivery(subscriptionId: string, message: MailMessage): Promise<DeliveryResult> {
-    const key = this._reserveDeliveryKey(subscriptionId, message.id);
+    const key = this._reserveDeliveryKey(deliveryKey(subscriptionId, this.copyKeyOf(message)));
     let settle!: (result: DeliveryResult) => void;
     const promise = new Promise<DeliveryResult>((resolve) => {
       settle = resolve;
@@ -487,7 +492,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
     // 带回来的）+1。重试链里不再 +1（见 _runDelivery 用的是 pending.round）。
     this.pendingDeliveries.set(key, {
       message,
-      deliveryId: deliveryKey(subscriptionId, message.id),
+      deliveryId: key,
       subscriptionId,
       settle,
       promise,
@@ -499,9 +504,12 @@ export abstract class MailboxProvider implements IMailboxProvider {
     return promise;
   }
 
-  /** 内部记账键：同 `(subscriptionId, messageId)` 的并发投递各自独立。 */
-  private _reserveDeliveryKey(subscriptionId: string, messageId: string): string {
-    const base = deliveryKey(subscriptionId, messageId);
+  /**
+   * 兜底：同一份信万一被并发投两次（重复入队 / provider 自己重发同一份），两条投递不能共用
+   * 一个结算入口——后者会覆盖前者的 promise，barrier 永不落定，消息静默消失。
+   * 份号进键之后这条基本不会触发，留着是因为它一行成本，而后果是一条消息没了。
+   */
+  private _reserveDeliveryKey(base: string): string {
     if (!this.pendingDeliveries.has(base)) {
       return base;
     }
@@ -564,7 +572,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
         try {
           // On successful execution, implicitly acknowledge the message.
           await this.ack(stamped);
-          this.attempts.reset(subscriptionId, message.id);
+          this.attempts.reset(key);
           this._settleAndFallback(key, 'ok');
         } catch (error) {
           this._handleDeliveryError(subscriptionId, stamped, key, error);
@@ -604,7 +612,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
     const isRetriable = this._isRetriable(error);
 
     if (isRetriable && this.retry) {
-      const attempt = this.attempts.record(subscriptionId, message.id);
+      const attempt = this.attempts.record(key);
 
       if (attempt < this.retry.maxAttempts && this.subscriptions.has(subscriptionId)) {
         const delay = nextRetryDelay(this.retry, attempt);
@@ -637,7 +645,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
       }
 
       if (attempt >= this.retry.maxAttempts) {
-        this.attempts.reset(subscriptionId, message.id);
+        this.attempts.reset(key);
         this._invokeRetryExhaustedHook(settledMessage, attempt);
       }
     }
@@ -771,7 +779,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
   ): void {
     // 登记 barrier：基类靠它区分「有人在判定」和「provider 漏接了 barrier」。
     // 必须在 `_send` 里同步登记（`await` 之前），否则同步失败的投递会先看到“无 barrier”。
-    this._registerBroadcastBarrier(message.id);
+    this._registerBroadcastBarrier(this.copyKeyOf(message));
 
     void Promise.allSettled(deliveries.map((delivery) => Promise.resolve(delivery)))
       .then(async (settled) => {
@@ -781,7 +789,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
         // 处置与钩子都用**本轮结算后的投递副本**：`_send` 那份共享对象上没有 `mbx-attempt` /
         // `mbx-round`，把它退回队列就等于把计数抹了——兜底消费者看不出已经投过几轮，
         // 想自己封顶的 provider 也没东西可数。
-        const disposition = this._takeSettledCopy(message.id) ?? message;
+        const disposition = this._takeSettledCopy(message) ?? message;
 
         // 先发处置信号，再落死信：钩子写 DLQ 时，队列侧的处置必须已经落定，
         // 否则同一消息会同时出现在队列和 DLQ 里（与传输型的 `nack(false)` → 钩子同一顺序）。
@@ -795,7 +803,7 @@ export abstract class MailboxProvider implements IMailboxProvider {
         console.error(`[${this.protocol}] CRITICAL: Failed to settle a broadcast.`, error);
       })
       .finally(() => {
-        this._releaseBroadcastBarrier(message.id);
+        this._releaseBroadcastBarrier(this.copyKeyOf(message));
       });
   }
 
@@ -825,11 +833,11 @@ export abstract class MailboxProvider implements IMailboxProvider {
    * 推迟一个微任务再判定：`publish` 里同步抛错的投递跑在 `_send` 登记 barrier 之前。
    */
   private _fallbackForMissingBarrier(message: MailMessage, result: DeliveryResult): void {
-    if (result.ok || this._barrierDepth(message.id) > 0) {
+    if (result.ok || this._barrierDepth(this.copyKeyOf(message)) > 0) {
       return;
     }
     queueMicrotask(() => {
-      if (this._barrierDepth(message.id) > 0) {
+      if (this._barrierDepth(this.copyKeyOf(message)) > 0) {
         return; // barrier 已登记（同一任务内），判定交给它
       }
       this._warnMissingBarrier(message.id);
@@ -987,9 +995,15 @@ export abstract class MailboxProvider implements IMailboxProvider {
     return result;
   }
 
-  /** 记下已结算投递的副本，保留趟数最大的那一份（本轮“跑得最远”的那条投递）。 */
+  /**
+   * 记下已结算投递的副本（按**份**存），保留趟数最大的那一份（这一份“跑得最远”的那条投递）。
+   *
+   * 按份而不是按 id：广播给 N 个订阅者的就是这一份，N 条投递都往同一个槽里写、留下最远的；
+   * 按 id 存就会让同名的另一封信的副本挤掉这一份的（barrier 随后把别人的计数回进队列）。
+   */
   private _recordSettledCopy(message: MailMessage, attempts: number): void {
-    const existing = this.settledCopies.get(message.id);
+    const key = this.copyKeyOf(message)
+    const existing = this.settledCopies.get(key);
     if (existing && existing.attempts >= attempts) {
       return;
     }
@@ -999,14 +1013,30 @@ export abstract class MailboxProvider implements IMailboxProvider {
         this.settledCopies.delete(oldest.value);
       }
     }
-    this.settledCopies.set(message.id, { message, attempts });
+    this.settledCopies.set(key, { message, attempts });
   }
 
-  /** barrier 取走并清掉本轮副本；没记到就退回共享对象（provider 没走基类投递入口）。 */
-  private _takeSettledCopy(messageId: string): MailMessage | undefined {
-    const copy = this.settledCopies.get(messageId);
-    this.settledCopies.delete(messageId);
+  /** barrier 取走并清掉本轮那份副本；没记到就退回共享对象（provider 没走基类投递入口）。 */
+  private _takeSettledCopy(message: MailMessage): MailMessage | undefined {
+    const key = this.copyKeyOf(message)
+    const copy = this.settledCopies.get(key);
+    this.settledCopies.delete(key);
     return copy?.message;
+  }
+
+  /**
+   * 「哪一份」的记账身份：系统发的 `mbx-send-id` 优先；没发号（非标准路径直接调
+   * `_deliverToLocalSubscription` 等）退到对象身份。与队列侧同一口径，见 `copyIdentity`。
+   */
+  private copyKeyOf(message: unknown): string {
+    return copyIdentity(message, (o) => {
+      let tag = this.copyTags.get(o);
+      if (tag === undefined) {
+        tag = ++this.nextCopyTag;
+        this.copyTags.set(o, tag);
+      }
+      return String(tag);
+    });
   }
 
   /**

@@ -79,9 +79,13 @@ export function nextRetryDelay(policy: RetryPolicy, attempt: number): number {
 }
 
 /**
- * 按「订阅者 + 消息」维度记录已经尝试过几次。
+ * 按**投递身份**记录已经尝试过几次：一个订阅者 × 一份信（`deliveryKey`）。
  *
- * 键必须包含订阅者：订阅是广播，某个订阅者失败不代表其他订阅者也失败，重试次数不能混在一起算。
+ * 两个维度都必须在键里：
+ * - 订阅者：订阅是广播，某个订阅者失败不代表其他订阅者也失败，次数不能混算。
+ * - 哪一份信：`id` 是发送方的名字，可以重复。只按 id 记，两封同名信就共用一本预算——
+ *   后到那封第一趟就被判「重试耗尽」，先到那封反倒多拿到一趟。
+ *
  * 条目带 TTL，避免长期运行的进程里台账无限增长。
  */
 export class AttemptLedger {
@@ -89,14 +93,9 @@ export class AttemptLedger {
 
   constructor(private readonly ttlMs: number = 300_000) {}
 
-  private static key(subscriptionId: string, messageId: string): string {
-    return `${subscriptionId}\u0000${messageId}`;
-  }
-
   /** 记录一次尝试，返回这是第几次。 */
-  record(subscriptionId: string, messageId: string): number {
+  record(key: string): number {
     this.gc();
-    const key = AttemptLedger.key(subscriptionId, messageId);
     const previous = this.entries.get(key)?.attempts ?? 0;
     const attempts = previous + 1;
     this.entries.set(key, { attempts, updatedAt: Date.now() });
@@ -104,13 +103,13 @@ export class AttemptLedger {
   }
 
   /** 当前已尝试次数（未记录过则为 0）。 */
-  count(subscriptionId: string, messageId: string): number {
-    return this.entries.get(AttemptLedger.key(subscriptionId, messageId))?.attempts ?? 0;
+  count(key: string): number {
+    return this.entries.get(key)?.attempts ?? 0;
   }
 
-  /** 处理成功后清零，让同 id 的消息日后还能重试。 */
-  reset(subscriptionId: string, messageId: string): void {
-    this.entries.delete(AttemptLedger.key(subscriptionId, messageId));
+  /** 处理成功后清零，让这一份日后还能重试。 */
+  reset(key: string): void {
+    this.entries.delete(key);
   }
 
   clear(): void {

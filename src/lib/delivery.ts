@@ -25,7 +25,11 @@ export const DEFAULT_DELIVERY_SETTLE_TIMEOUT = 30_000;
  * 广播的发送侧据此判断「有没有订阅者成功」。
  */
 export interface DeliveryResult {
-  /** 投递身份：`subscriptionId + messageId`，与 `AttemptLedger` 同一粒度。 */
+  /**
+   * 投递身份：`订阅者 × 一份信`（`deliveryKey(subscriptionId, copyIdentity(message))`）。
+   * 第三段是系统发的份号（无号副本退到对象身份），不是发送方写的 `id`——重试预算按这个粒度记，
+   * 按 id 记会让两封同名信共用一本预算。
+   */
   readonly deliveryId: string;
   readonly subscriptionId: string;
   readonly messageId: string;
@@ -324,19 +328,48 @@ export function withAttemptHeaders<T extends { headers?: Record<string, any> }>(
   return { ...message, headers };
 }
 
-/** 投递身份。分隔符用 `\u0000`，避免 id 拼接歧义。 */
-export function deliveryKey(subscriptionId: string, messageId: string): string {
-  return `${subscriptionId}\u0000${messageId}`;
+/** 投递身份里的分隔符（不是合法标识符里会出现的字符，避免拼接歧义）。 */
+export const DELIVERY_KEY_SEP = '\u0000'
+
+/**
+ * 投递身份。**投递 = 一个订阅者 × 一份信**（`copyId` = 系统发的 `mbx-send-id`）。
+ *
+ * 第三段不是可选装饰：`id` 是发送方的名字，可以重复（内容 hash、发送方重发、两个发送方撞名）。
+ * 只拿 `(subscriptionId, messageId)` 记尝试次数，两封同名信就共用一本预算：后到那封
+ * 第一趟就被判“重试耗尽”（它应有的重试被吞），先到那封反倒多拿到一趟，消息上的
+ * `mbx-attempt` 章越过自己声明的 `mbx-max-attempts`。没发号的副本（非标准路径）由
+ * {@link copyIdentity} 退到对象身份，仍然分得开。
+ */
+export function deliveryKey(subscriptionId: string, copyId: string): string {
+  return `${subscriptionId}${DELIVERY_KEY_SEP}${copyId}`;
+}
+
+/**
+ * 记账用的“哪一份”：系统发的份号优先，没发号退到对象身份（同一对象 = 同一份）。
+ * 与队列侧 `MailMessageQueue.copyKeyOf` 同一口径；降级到对象身份时只在内存里成立，
+ * 跳端序列化后活不下来（所以标准路径必须发号）。
+ */
+export function copyIdentity(message: unknown, tagOf?: (o: object) => string): string {
+  const sendId = readSendId(message)
+  if (sendId !== undefined) {
+    return `send:${sendId}`
+  }
+  return typeof message === 'object' && message !== null ? `obj:${tagOf?.(message) ?? 'untagged'}` : 'unknown'
+}
+
+/** 投递身份里“哪一份信”那一段（第一分隔符之后到末尾）。 */
+export function copyIdOfDelivery(deliveryId: string): string {
+  return deliveryId.slice(deliveryId.indexOf(DELIVERY_KEY_SEP) + 1);
 }
 
 /** 从投递身份里取出 subscriptionId。 */
 export function subscriptionIdOfDelivery(deliveryId: string): string {
-  return deliveryId.slice(0, deliveryId.indexOf('\u0000'));
+  return deliveryId.slice(0, deliveryId.indexOf(DELIVERY_KEY_SEP));
 }
 
-/** 从投递身份里取出 messageId。 */
+/** 从投递身份里取出那份信的身份（旧名，语义已不是发送方的 messageId）。 */
 export function messageIdOfDelivery(deliveryId: string): string {
-  return deliveryId.slice(deliveryId.indexOf('\u0000') + 1);
+  return copyIdOfDelivery(deliveryId);
 }
 
 export function isDeliveryResult(value: unknown): value is DeliveryResult {

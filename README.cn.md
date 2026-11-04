@@ -308,10 +308,12 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
      时要读的就是这个轮次头：内核把责任给 provider，就得给它这个输入。
    - 队列记账按「**哪一份信**」，不按 `messageId`。`id` 是发送方起的名字，可以重复（内容 hash、
      发送方自己重发、恶意发送方故意撞名）。每份信的 `headers['mbx-send-id']` 在发送边界发——
-     `MailboxProvider.send()`（`_send()` 的唯一入口），排队、在飞表、回队去重都按份记账。
+     `MailboxProvider.send()`（`_send()` 的唯一入口），排队、在飞表、回队去重、重试预算都按份记账。
      按 id 记账就会让一份信顶掉另一份的位置：
      回队被当成重复吞掉，消息哪都没去（既不在队列也不在死信），而且一个地址上重复的 id 还能
-     抑制另一个地址的回队。系统持有的头（`mbx-send-id`、`mbx-round`、`mbx-attempt`、
+     抑制另一个地址的回队；两封同名信还会共用一本重试预算：后到那封第一趟就被判「重试耗尽」（它
+     应有的重试被吞），先到那封反倒越过自己声明的上限（消费者看到 `mbx-attempt: 3` 而
+     `mbx-max-attempts: 2`，见 conformance `retry-08`）。系统持有的头（`mbx-send-id`、`mbx-round`、`mbx-attempt`、
      `mbx-max-attempts`、`mbx-sent-at`、`mbx-dead-letter*`）交给 `send()` 的东西里一律剥掉：采信就等于让
      发送方自己定重投上限、或把活消息标成死信记录。内容级幂等是发送边界上一个显式、且必须
      出声的策略——内核绝不静默丢信。

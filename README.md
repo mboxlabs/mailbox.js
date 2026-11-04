@@ -333,10 +333,13 @@ up — those belong to the provider. Consequences worth knowing:
   sender chose and it may repeat (content-hash ids, a sender retrying its own send, a hostile
   sender colliding on purpose). Every letter gets one `headers['mbx-send-id']`, minted at the send
   boundary — `MailboxProvider.send()`, the only way into `_send()` — and queueing, the in-flight
-  table, requeue dedup and `ack` / `nack` all account per copy. Keying those on `id`
+  table, requeue dedup, the retry budget, and `ack` / `nack` all account per copy. Keying those on `id`
   lets one letter overwrite another's slot: a requeue gets dismissed as a duplicate and the message
-  ends up nowhere — not queued, not dead-lettered — and an id reused at one address can suppress a
-  requeue at a different one. Headers the system owns (`mbx-send-id`, `mbx-round`, `mbx-attempt`,
+  ends up nowhere — not queued, not dead-lettered — an id reused at one address can suppress a
+  requeue at a different one, and two same-named letters share one retry budget: the second is judged
+  "retries exhausted" on its very first failure (its own retries get swallowed) while the first keeps
+  going past the cap it declared, so the consumer sees `mbx-attempt: 3` on a `mbx-max-attempts: 2`
+  letter (conformance `retry-08`). Headers the system owns (`mbx-send-id`, `mbx-round`, `mbx-attempt`,
   `mbx-max-attempts`, `mbx-sent-at`, `mbx-dead-letter*`) are stripped from anything handed to
   `send()`: trusting
   them would let the sender pick its own redelivery cap or stamp live mail as a dead-letter record.

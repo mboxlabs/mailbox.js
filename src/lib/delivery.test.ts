@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  copyIdentity,
+  copyIdOfDelivery,
   describeDeliveryError,
   deliveryKey,
   isDeliveryResult,
@@ -20,7 +22,7 @@ const delivery = (overrides: Partial<DeliveryResult> = {}): DeliveryResult => ({
   ...overrides,
 });
 
-describe('deliveryKey：投递身份 = 订阅者 + 消息', () => {
+describe('投递身份 = 订阅者 × 一份信', () => {
   it('可以拆回两部分', () => {
     const key = deliveryKey('sub1', 'msg1');
     expect(subscriptionIdOfDelivery(key)).toBe('sub1');
@@ -29,6 +31,32 @@ describe('deliveryKey：投递身份 = 订阅者 + 消息', () => {
 
   it('不同订阅者对同一条消息是两个身份', () => {
     expect(deliveryKey('a', 'm')).not.toBe(deliveryKey('b', 'm'));
+  });
+
+  it('[语义] 同 id 的两封信是两个投递身份（尝试预算不共账）', () => {
+    const a = deliveryKey('sub1', copyIdentity({ id: 'same', headers: { 'mbx-send-id': 'c-1' } }));
+    const b = deliveryKey('sub1', copyIdentity({ id: 'same', headers: { 'mbx-send-id': 'c-2' } }));
+    expect(a).not.toBe(b);
+    expect(subscriptionIdOfDelivery(a)).toBe('sub1');
+    expect(copyIdOfDelivery(a)).toBe('send:c-1');
+  });
+
+  it('[语义] copyIdentity：份号优先；没发号退到对象身份（同一对象 = 同一份）', () => {
+    const tags = new WeakMap<object, string>();
+    let next = 0;
+    const tag = (o: object) => {
+      let t = tags.get(o);
+      if (t === undefined) {
+        t = String(++next);
+        tags.set(o, t);
+      }
+      return t;
+    };
+
+    expect(copyIdentity({ headers: { 'mbx-send-id': 'abc' } }, tag)).toBe('send:abc');
+    const one = { id: 'same' };
+    expect(copyIdentity(one, tag)).toBe(copyIdentity(one, tag)); // 同一个对象
+    expect(copyIdentity(one, tag)).not.toBe(copyIdentity({ id: 'same' }, tag)); // 同名不同份
   });
 });
 
