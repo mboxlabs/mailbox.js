@@ -166,6 +166,7 @@ flowchart LR
    console.log(`in-flight: ${status.inFlightCount}`) // 已取出、尚未 ack/nack
    console.log(`已过期的: ${status.overdueInFlightCount}`) // 在飞、租约已到期、还没被收回
    console.log(`最老化过期: ${status.oldestOverdueMs}ms`)
+   console.log(`停放: ${status.parkedCount}`) // 已判死：不会再交给任何人，但也没有被静默丢弃
    console.log(`订阅数: ${status.subscriberCount}`)
    console.log(`最后活动: ${status.lastActivityTime}`) // ISO 8601，没有记录时是 null
    ```
@@ -175,6 +176,11 @@ flowchart LR
    定时器，只有下一次 `manualAck` 取信才把已过期的租约扫回队头），所以一个僵死的消费者能把
    过期租约永远挂在 in-flight 里。这就是为什么要单独报 `overdueInFlightCount`：健康的系统
    `inFlightCount` 本来就非零，**告警只能盯 `overdueInFlightCount`**。
+
+   `parkedCount` 是第三个状态的份数：**已判死**的副本（死信链到顶就是这种），按定义不能再被交付。
+   它既不在 `unreadCount` 也不在 `inFlightCount` 里，`fetch` 取不出来，只能 `peekParked()` 查、
+   `purgeParked()` 排走——§2 讲三个处置动作，§4 讲会把它们停放的死信链。没有这个数，「未读 0」
+   和「有一条毒记录停在这儿」就完全分不开。
 
    `state` 描述的是 provider 对**这个地址**的看法。从未被碰过的地址（没投过、没订阅过、没有
    活动记录）会报 `state: 'unknown'` + `exists: false`——统一报 `online` + 0 会让诊断页分不出

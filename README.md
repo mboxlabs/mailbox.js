@@ -169,6 +169,7 @@ console.log(`Unread count: ${status.unreadCount}`) // still waiting in the queue
 console.log(`In flight: ${status.inFlightCount}`) // handed out, awaiting ack/nack
 console.log(`Overdue: ${status.overdueInFlightCount}`) // in flight, lease already expired, not yet reclaimed
 console.log(`Oldest overdue: ${status.oldestOverdueMs}ms`)
+console.log(`Parked: ${status.parkedCount}`) // written off: never delivered again, never silently dropped
 console.log(`Subscribers: ${status.subscriberCount}`)
 console.log(`Last activity: ${status.lastActivityTime}`) // ISO 8601, or null
 ```
@@ -180,6 +181,13 @@ console.log(`Last activity: ${status.lastActivityTime}`) // ISO 8601, or null
 leases back), so a wedged consumer can park expired leases in-flight indefinitely. That is why
 `overdueInFlightCount` is reported separately: `inFlightCount` is legitimately non-zero on a
 healthy system, so **alert on `overdueInFlightCount`**, not on it.
+
+`parkedCount` counts the third state: copies that were **written off** (a dead-letter chain that hit
+its nesting cap) and therefore must never be delivered again. They are in neither `unreadCount` nor
+`inFlightCount`, `fetch` will not hand them to anybody, and `peekParked()` / `purgeParked()` are the
+only ways to read them or get rid of them — §2 lists the three dispositions, §4 covers the dead-letter
+chain that parks them. Without that count, "0 unread" is indistinguishable from "a poison record is
+parked here".
 
 `state` describes the provider's view **of that address**. An address the provider has never
 seen (never posted to, never subscribed, no recorded activity) reports `state: 'unknown'` and
@@ -197,7 +205,7 @@ arguments (or `snapshot()`, same view) to get every topic of every registered pr
 const snap = await mailbox.status()
 console.log(snap.state) // 'online' | 'degraded' | 'unknown'
 console.log(snap.addressCount) // topics known across the registered providers
-console.log(snap.unreadCount, snap.inFlightCount)
+console.log(snap.unreadCount, snap.inFlightCount, snap.parkedCount)
 for (const entry of snap.addresses) {
   console.log(entry.canonicalId, entry.state, entry.unreadCount)
 }
