@@ -301,6 +301,14 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
      跨轮累积的计数是 `headers['mbx-round']`（“这是第几轮投递”）——谁把消息交给消费者谁 +1，
      内核回队时交还给队列的那一份也带着它。上限归 provider，而 provider 自己定 `maxReceiveCount`
      时要读的就是这个轮次头：内核把责任给 provider，就得给它这个输入。
+   - 队列记账按「**哪一份信**」，不按 `messageId`。`id` 是发送方起的名字，可以重复（内容 hash、
+     发送方自己重发、恶意发送方故意撞名）。每次 `post()` 发一个 `headers['mbx-send-id']`，排队、
+     在飞表、回队去重、`ack` / `nack` 都按份记账。按 id 记账就会让一份信顶掉另一份的位置：
+     回队被当成重复吞掉，消息哪都没去（既不在队列也不在死信），而且一个地址上重复的 id 还能
+     抑制另一个地址的回队。系统持有的头（`mbx-send-id`、`mbx-round`、`mbx-attempt`、
+     `mbx-max-attempts`、`mbx-sent-at`、`mbx-dead-letter*`）在 `post()` 处一律剥掉：采信就等于让
+     发送方自己定重投上限、或把活消息标成死信记录。内容级幂等是发送边界上一个显式、且必须
+     出声的策略——内核绝不静默丢信。
 
    > [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
    > 移植版正是这样按投递结算广播的。各移植版的 README（“Subscriber Failures and Retry”）给出

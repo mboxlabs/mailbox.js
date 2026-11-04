@@ -254,8 +254,20 @@ describe('计数头：链内趟数与跨轮轮次各管各的', () => {
     await mailbox.stop({ purge: true });
   });
 
-  it('[语义] 内核不会抹掉 broker 带回来的轮次：只 +1，不改小', async () => {
-    const provider = new RedeliveryBroker(null);
+  it('[语义] 内核不会抹掉系统带回来的轮次：只 +1，不改小', async () => {
+    // 轮次是**系统记账**：broker 自己已经投过 5 轮，内核接手后只能往上加。
+    // 注意入口：这个 5 不是发送方在 `post()` 里塞的（那种不采信，见
+    // `mailbox.same-id.test.ts`），而是 broker 自己给在飞消息打的戳。
+    class BrokerWithHistory extends RedeliveryBroker {
+      protected async _send(message: MailMessage): Promise<void> {
+        await super._send({
+          ...message,
+          headers: { ...(message.headers ?? {}), [MBX_ROUND_HEADER]: '5' },
+        })
+      }
+    }
+
+    const provider = new BrokerWithHistory(null);
     const mailbox = new Mailbox();
     mailbox.registerProvider(provider);
     const address = 'q://t-preserve@broker/inbox';
@@ -269,7 +281,6 @@ describe('计数头：链内趟数与跨轮轮次各管各的', () => {
       from: 'q://s@broker/u',
       to: address,
       body: { n: 1 },
-      headers: { [MBX_ROUND_HEADER]: '5' }, // broker 自己已经投过 5 轮
     });
     await tick(120);
 

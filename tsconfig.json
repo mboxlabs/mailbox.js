@@ -33,7 +33,7 @@
   },
   // 开发/编辑器视角：src 下的 *.test.ts 也要在 program 里，否则 VS Code 会把它们
   // 当成 invisible file 放进 inferred project，types 配置对它们无效。
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*", "test/**/*", "conformance/**/*"],
   // python/ rust/ wiki/ 是本地实验目录，不在 TS program 里
   "exclude": ["node_modules", "dist", "web", "docs", "python", "rust", "wiki"]
 }

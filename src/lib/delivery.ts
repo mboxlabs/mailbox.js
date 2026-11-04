@@ -207,6 +207,75 @@ export const MBX_MAX_ATTEMPTS_HEADER = 'mbx-max-attempts';
  */
 export const MBX_ROUND_HEADER = 'mbx-round';
 
+/**
+ * 「这一份信」的编号（控制平面）：每次 `post()` 一个，由系统发，随副本一路带着走。
+ *
+ * 为什么要它：`id` 是**发送方**给的名字（`OutgoingMail.id` 还建议用内容 hash），名字可以重复——
+ * 同一封信发两次、两个发送方撞名、恶意发送方故意撞名，都合法。队列要是拿 `id` 当记账的键，
+ * 就会把两份不同的信当成一份：回队被当成重复吞掉、在飞槽位被顶替、按 id 的结算落到别人手里那份上。
+ * 所以记账必须按「哪一份」，不能按「叫什么」。
+ *
+ * 它必须放在 headers 里而不是只在内存里记：投递副本是被一路 `{...message}` 拷出来的，
+ * 只有头能穿过每一次拷贝活下来（对象身份活不下来）。
+ *
+ * **发送方塞的值一律不采信**（见 {@link stripSenderForgedSystemHeaders}）：否则一个伪造的编号
+ * 就能让两份信在队列里被当成一份。
+ */
+export const MBX_SEND_ID_HEADER = 'mbx-send-id';
+
+/**
+ * 发送方**不许**自带的系统头（控制平面里由内核 / provider 发的那些）。
+ *
+ * 采信它们会带来两类事故：
+ * - 伪造计数：`mbx-round: 9999` 会被内核当真实累积值继续 +1，任何按轮次封顶的 provider
+ *   （SQS 式 `maxReceiveCount`）都会把这条当场判死 —— 发送方自己选了「立刻被丢弃」。
+ * - 伪造痕迹：`mbx-dead-letter*` 贴在活消息上，会污染死信排空 worker 的过滤条件。
+ *
+ * 不在名单里的 `mbx-reply-to` 是发送方自己的字段（回信地址），必须保留。
+ */
+const SENDER_FORGED_SYSTEM_HEADERS = new Set<string>([
+  MBX_ATTEMPT_HEADER,
+  MBX_MAX_ATTEMPTS_HEADER,
+  MBX_ROUND_HEADER,
+  MBX_SEND_ID_HEADER,
+  'mbx-sent-at', // `MailboxProvider.send()` 每次都会重新注入，采信只会让审计时间可被伪造
+])
+
+/** 死信链的痕迹头：`mbx-dead-letter` / `mbx-dead-letter-depth` / `mbx-dead-letter-reason` … */
+const DEAD_LETTER_HEADER_PREFIX = 'mbx-dead-letter'
+
+/** 这个头是不是系统发的、发送方不该自带的。 */
+export function isSystemOwnedHeader(name: string): boolean {
+  return SENDER_FORGED_SYSTEM_HEADERS.has(name) || name.startsWith(DEAD_LETTER_HEADER_PREFIX)
+}
+
+/**
+ * 剥掉发送方自带的系统头（返回新对象，不改调用方那份）。
+ *
+ * 只在**发送边界**用一次（`Mailbox.post()`）：内核自己后面注入的那些不受影响。
+ */
+export function stripSenderForgedSystemHeaders(
+  headers: Record<string, any> | undefined,
+): Record<string, any> {
+  if (!headers) {
+    return {}
+  }
+  const kept: Record<string, any> = {}
+  for (const [name, value] of Object.entries(headers)) {
+    if (!isSystemOwnedHeader(name)) {
+      kept[name] = value
+    }
+  }
+  return kept
+}
+
+/** 读「这一份信」的编号；没有就是 undefined（队列会退回按对象身份认这份）。 */
+export function readSendId(message?: unknown): string | undefined {
+  const headers = (message as { headers?: Record<string, any> } | null | undefined)?.headers
+  const raw = headers?.[MBX_SEND_ID_HEADER]
+  return typeof raw === 'string' && raw !== '' ? raw : undefined
+}
+
 /** 读消息上的投递轮次；没有（或不是正数）就是 0 = 还没被交到消费者手里过。 */
 export function readRound(message?: { headers?: Record<string, any> } | null): number {
   const parsed = Number(message?.headers?.[MBX_ROUND_HEADER]);

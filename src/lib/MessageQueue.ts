@@ -1,6 +1,7 @@
 // src/lib/MessageQueue.ts
 
 import { copyForPeek, normalizePeekLimit } from './utils'
+import { readSendId } from './delivery'
 
 /**
  * Represents a message that can be manually acknowledged or negatively acknowledged.
@@ -68,15 +69,33 @@ export const DEFAULT_ACK_TIMEOUT = 30_000;
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
   // Stores in-flight messages with their original topic for reliable requeueing.
-  // `token` 认出“哪一次 fetch 拿走的”：同一条消息被 stale 扫描重投后，旧 handle 不能再把
-  // 新消费者手里的那份结算掉（按 id 处理会误伤）。
+  //
+  // **键是「哪一份信」（{@link MailMessageQueue.copyKeyOf}），不是消息 id。**
+  // id 是发送方给的名字，可以重复；拿它当键，同 id 的两份信就会互相顶替：
+  // 后取走的那份把先取走的挤掉（先那份从此不在任何状态里）、回队被当成重复吞掉。
   private inFlight: Map<string, { message: T; timestamp: number; topic: string; token: number }> = new Map();
+
+  /** 消息 id → 在飞键列表（按取走顺序）：只为「按 id 结算」那层旧 API（总线 / broker）保留。 */
+  private inFlightById: Map<string, string[]> = new Map();
 
   /** in-flight 归属凭据的发号器（仅在本队列实例内比较，不需全局唯一）。 */
   private settlementToken = 0;
 
   /**
+   * 对象身份 → 份号。只在消息不带 `mbx-send-id` 时用作兜底（队列单独使用）：
+   * WeakMap 不拖住消息对象，也不需要清理。
+   */
+  private readonly instanceTags = new WeakMap<object, number>();
+
+  private instanceSeq = 0;
+
+  /**
    * Adds a message to the end of a specific topic's queue.
+   *
+   * 这里**不**按 id 去重：每次 `post()` 交进来的都是一份新的信，同 id 只是发送方说
+   * 「我认为这是同一封」。要不要把重复的丢掉是发送边界的事（需要发送方显式声明、
+   * 并且当场告知），不是队列自己默默判定的事。
+   *
    * @param topic The topic to which the message will be added.
    * @param message The message to enqueue.
    */
@@ -138,7 +157,12 @@ export class MailMessageQueue<T extends { id: string }> {
 
     if (!options?.manualAck) {
       // Auto-ack: simply return the message (交出去也算一轮，同样走 handoff)。
-      return options?.handoff ? options.handoff(message) : message;
+      if (!options?.handoff) {
+        return message;
+      }
+      const handedPlain = options.handoff(message);
+      this.inheritTag(handedPlain, message);
+      return handedPlain;
     }
 
     // Manual-ack: move message to in-flight and wrap with ack/nack functions.
@@ -146,8 +170,10 @@ export class MailMessageQueue<T extends { id: string }> {
     // in-flight 里存的是 handoff 后的副本：迟到的 `nack(requeue=true)` 才会把带计数的
     // 那一份放回队列，而不是计数停在旧值的原件。
     const handedOff = options.handoff ? options.handoff(message) : message;
+    this.inheritTag(handedOff, message);
     const token = ++this.settlementToken;
-    this.inFlight.set(handedOff.id, { message: handedOff, timestamp: Date.now(), topic, token });
+    const key = this.copyKeyOf(handedOff);
+    this.addFlight(key, handedOff.id, { message: handedOff, timestamp: Date.now(), topic, token });
 
     // 句柄自己带 `token`：只有取走它的那一次 fetch 能结算它。
     return {
@@ -221,6 +247,86 @@ export class MailMessageQueue<T extends { id: string }> {
   }
 
   /**
+   * 这份消息在队列里的「份号」（按对象身份）。
+   */
+  private tagOf(message: object): number {
+    let tag = this.instanceTags.get(message);
+    if (tag === undefined) {
+      tag = ++this.instanceSeq;
+      this.instanceTags.set(message, tag);
+    }
+    return tag;
+  }
+
+  /**
+   * 记账的键：这份信是谁。
+   *
+   * 优先用发送边界发的 `mbx-send-id`（见 `delivery.ts`）：投递副本是被一路 `{...message}`
+   * 拷出来的，只有 headers 能穿过每一次拷贝活下来，对象身份活不下来。
+   * 没这个头（队列单独使用、消息不带控制平面）时才退回按对象身份认。
+   */
+  private copyKeyOf(message: T): string {
+    const sendId = readSendId(message);
+    return sendId === undefined ? `obj:${this.tagOf(message)}` : `send:${sendId}`;
+  }
+
+  /** handoff 改写出来的副本继承原件的份号（只有走对象身份那条路时才用得上）。 */
+  private inheritTag(copy: T, from: T): void {
+    if (readSendId(copy) === undefined) {
+      this.instanceTags.set(copy, this.tagOf(from));
+    }
+  }
+
+  private addFlight(key: string, messageId: string, flight: { message: T; timestamp: number; topic: string; token: number }): void {
+    this.inFlight.set(key, flight);
+    const keys = this.inFlightById.get(messageId);
+    if (keys) {
+      keys.push(key);
+    } else {
+      this.inFlightById.set(messageId, [key]);
+    }
+  }
+
+  private dropFlight(key: string): void {
+    const flight = this.inFlight.get(key);
+    this.inFlight.delete(key);
+    if (!flight) {
+      return;
+    }
+    const keys = this.inFlightById.get(flight.message.id);
+    if (!keys) {
+      return;
+    }
+    const at = keys.indexOf(key);
+    if (at >= 0) {
+      keys.splice(at, 1);
+    }
+    if (keys.length === 0) {
+      this.inFlightById.delete(flight.message.id);
+    }
+  }
+
+  /**
+   * 按消息 id 找在飞的那一份（旧 API 口径）。
+   *
+   * 带 `token` = 精确匹配那一次 fetch 拿走的份；不带则取**最早取走的那一份**
+   * （同 id 多份在飞时总得选一个，固定选最早比“看 Map 顺位”可预测）。
+   */
+  private findFlightById(messageId: string, token?: number): { key: string; flight: { message: T; timestamp: number; topic: string; token: number } } | undefined {
+    const keys = this.inFlightById.get(messageId);
+    if (!keys) {
+      return undefined;
+    }
+    for (const key of keys) {
+      const flight = this.inFlight.get(key);
+      if (flight && (token === undefined || flight.token === token)) {
+        return { key, flight };
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Acknowledges a message, permanently removing it from the in-flight state.
    *
    * 一次处置：同一个 handle 重复 `ack`（或 `ack` 之后再 `nack`）不会第二次生效。
@@ -231,11 +337,11 @@ export class MailMessageQueue<T extends { id: string }> {
    * @returns `true` = 真的结算了；`false` = 已经不在（重复处置 / 已被重投 / 已被丢弃）。
    */
   public ack(messageId: string, token?: number): boolean {
-    const flight = this.inFlight.get(messageId);
-    if (!flight || (token !== undefined && flight.token !== token)) {
+    const found = this.findFlightById(messageId, token);
+    if (!found) {
       return false;
     }
-    this.inFlight.delete(messageId);
+    this.dropFlight(found.key);
     return true;
   }
 
@@ -254,14 +360,14 @@ export class MailMessageQueue<T extends { id: string }> {
    * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
    */
   public nack(messageId: string, topic: string, requeue: boolean, token?: number): boolean {
-    const flight = this.inFlight.get(messageId);
-    if (!flight || (token !== undefined && flight.token !== token)) {
+    const found = this.findFlightById(messageId, token);
+    if (!found) {
       return false;
     }
-    this.inFlight.delete(messageId);
+    this.dropFlight(found.key);
     if (requeue) {
       // Use the topic stored in inFlight for reliability
-      this.requeue(flight.topic, flight.message);
+      this.requeue(found.flight.topic, found.flight.message);
     }
     return true;
   }
@@ -290,21 +396,25 @@ export class MailMessageQueue<T extends { id: string }> {
   /**
    * Adds a message back to the front of its queue. Used for requeueing.
    *
-   * 去重：同一个 `id` 已经在该 topic 队列里、或已被某个消费者取走（in-flight）时，
-   * 不再插入副本。一个地址有多个订阅者时，每个失败的订阅者都会触发一次 nack(requeue)；
-   * 不去重就会在队列里留下 N 份同一消息（实测：2 个订阅者失败 → `unreadCount` 为 2）。
+   * 去重是按**哪一份**判的，不是按 id：同一份信已经在该 topic 队列里、或已经被某个消费者取走
+   * （in-flight）时，不再插入副本。一个地址有多个订阅者时，每个失败的订阅者都会触发一次
+   * nack(requeue)；不去重就会在队列里留下 N 份同一封信（实测：2 个订阅者失败 → `unreadCount` 为 2）。
+   *
+   * 但**同 id 的另一份信完全不干扰这里**：那是另一封信，它有自己的账。按 id 抑制会把它的回队
+   * 当成重复而吞掉 —— 消息既不在队列、也不在死信，零痕迹（F7）。
    *
    * @param topic The topic of the queue.
    * @param message The message to requeue.
-   * @returns true 如果消息确实回到队列；false 如果因为重复而跳过。
+   * @returns true 如果消息确实回到队列；false 如果因为**这一份已在队列 / 已在飞**而跳过。
    */
   public requeue(topic: string, message: T): boolean {
-    if (this.inFlight.has(message.id)) {
-      return false; // 已有消费者在处理，再插一份就是重复投递
+    const key = this.copyKeyOf(message);
+    if (this.inFlight.has(key)) {
+      return false; // 就是这一份正在被处理，再插一份就是重复投递
     }
     const queue = this.queues.get(topic);
-    if (queue && queue.some((queued) => queued.id === message.id)) {
-      return false; // 已在队列里等待，不需要第二份
+    if (queue && queue.some((queued) => this.copyKeyOf(queued) === key)) {
+      return false; // 就是这一份已在队列里等待，不需要第二份
     }
     if (!queue) {
       this.queues.set(topic, []);
@@ -314,10 +424,10 @@ export class MailMessageQueue<T extends { id: string }> {
   }
 
   /**
-   * 判断某个消息是否已在队列中等待或已被取走（in-flight）。
+   * 判断某个消息是否已在队列中等待或已被取走（in-flight）。按 id 问：同 id 有几份都算存在。
    */
   public has(messageId: string): boolean {
-    if (this.inFlight.has(messageId)) {
+    if ((this.inFlightById.get(messageId)?.length ?? 0) > 0) {
       return true;
     }
     for (const queue of this.queues.values()) {
@@ -346,6 +456,7 @@ export class MailMessageQueue<T extends { id: string }> {
       }
       this.queues.clear();
       this.inFlight.clear();
+      this.inFlightById.clear();
       return dropped;
     }
 
@@ -355,9 +466,9 @@ export class MailMessageQueue<T extends { id: string }> {
       dropped += queue.length;
       this.queues.delete(topic); // 连空数组一起删掉，不留尾巴
     }
-    for (const [messageId, flight] of Array.from(this.inFlight.entries())) {
+    for (const [key, flight] of Array.from(this.inFlight.entries())) {
       if (flight.topic === topic) {
-        this.inFlight.delete(messageId);
+        this.dropFlight(key);
         dropped++;
       }
     }
@@ -373,10 +484,10 @@ export class MailMessageQueue<T extends { id: string }> {
   private requeueStale(topic: string, timeout: number): void {
     const now = Date.now();
     // Use Array.from to safely iterate while potentially modifying the map
-    for (const [messageId, { message, timestamp, topic: messageTopic }] of Array.from(this.inFlight.entries())) {
+    for (const [key, { message, timestamp, topic: messageTopic }] of Array.from(this.inFlight.entries())) {
       // Check if the message belongs to the topic we are checking and is stale
       if (messageTopic === topic && now - timestamp > timeout) {
-        this.inFlight.delete(messageId);
+        this.dropFlight(key);
         this.requeue(messageTopic, message);
       }
     }

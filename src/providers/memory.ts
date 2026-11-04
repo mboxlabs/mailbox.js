@@ -256,12 +256,15 @@ export class MemoryEventBus {
   /**
    * Puts a message back at the front of a topic's queue without going through the
    * in-flight state. Used when a subscriber callback fails with a retriable error.
+   *
    * @param topic The topic the message belongs to.
    * @param message The message to requeue.
+   * @returns `true` = 确实回了队；`false` = **就是这一份**已经在队列里或已在别人手里（重复回队）。
+   *   注意不是“id 重复”：同 id 的另一份信一定会回队。
    */
-  public requeue(topic: string, message: MailMessage): void {
+  public requeue(topic: string, message: MailMessage): boolean {
     this.lastActivity.set(topic, new Date().toISOString());
-    this.messageQueue.requeue(topic, message);
+    return this.messageQueue.requeue(topic, message);
   }
 
   /**

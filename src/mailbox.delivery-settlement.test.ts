@@ -287,7 +287,7 @@ describe('隐患3 [语义]：同 id 并发投递各自独立结算', () => {
     await mailbox.stop()
   })
 
-  it('[语义] 同 id 并发投递全部可重试失败时，队列仍只留一份', async () => {
+  it('[语义] 同 id 并发投递全部可重试失败时，两份都回队（去重按份不按 id）', async () => {
     const provider = new ProbeProvider()
     const mailbox = new Mailbox()
     mailbox.registerProvider(provider)
@@ -308,10 +308,18 @@ describe('隐患3 [语义]：同 id 并发投递各自独立结算', () => {
     expect(calls).toBe(2)
     expect(provider.outstanding).toBe(0)
 
+    // 两封信、两份账：`id` 是发送方给的名字，重复不代表它们是同一份东西。
+    // 早先这里期望 1（按 id 去重），等于把 {n:2} 那份静默弄丢了（F7），也与
+    // 上面那条“同 id 两条投递各自死信”的期望矛盾：同一输入在 fatal / retriable 两侧不能一个算两件事、一个算一件事。
     const status = await mailbox.status(address)
-    expect(status.unreadCount).toBe(1) // never queued twice
-    expect(await mailbox.fetch(address)).not.toBeNull()
-    expect(await mailbox.fetch(address)).toBeNull()
+    expect(status.unreadCount).toBe(2)
+    const bodies: unknown[] = []
+    let got = await mailbox.fetch(address)
+    while (got) {
+      bodies.push(got.body.n)
+      got = await mailbox.fetch(address)
+    }
+    expect(bodies.sort()).toEqual([1, 2])
 
     await mailbox.stop()
   })

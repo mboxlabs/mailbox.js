@@ -52,7 +52,7 @@ describe('MessageQueue', () => {
     });
 
     it('should not enqueue a duplicate copy of a message already in the queue', () => {
-      // 同一 id 重复回队只保留一份：否则 N 个订阅者各自失败会在队列里留下 N 份副本。
+      // 同一份信重复回队只保留一份：否则 N 个订阅者各自失败会在队列里留下 N 份副本。
       queue.enqueue(topic1, msg1);
       queue.requeue(topic1, msg1);
       queue.requeue(topic1, msg1);
@@ -61,7 +61,8 @@ describe('MessageQueue', () => {
     });
 
     it('should not enqueue a copy of a message that is currently in-flight', () => {
-      // 回队给一个正在被 fetch 处理的消息会同时投递两份。
+      // 就是这一份正在被 fetch 处理，再插一份就是重复投递。（同 id 的**另一份**信不受影响，
+      // 那本账分开记，见 `MessageQueue.identity.test.ts`。）
       queue.enqueue(topic1, msg1);
       queue.dequeue(topic1, { manualAck: true });
 

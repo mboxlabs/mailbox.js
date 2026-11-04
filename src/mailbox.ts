@@ -13,6 +13,7 @@ import {
   FetchOptions,
 } from './interfaces';
 import { parseMailboxAddress } from './lib/utils';
+import { MBX_SEND_ID_HEADER, stripSenderForgedSystemHeaders } from './lib/delivery';
 import { NoProviderError } from './error';
 
 /** `fetch()` 的全量选项（保留历史名字，实体见 {@link FetchOptions}）。 */
@@ -124,7 +125,17 @@ export class Mailbox {
       from: fromUrl,
       to: toUrl,
       body: mail.body,
-      headers: mail.headers || {},
+      // 发送方自带的系统头先剥掉，再发一个「这一份信」的编号：
+      // - 剥：`mbx-round` / `mbx-attempt` / `mbx-send-id` / `mbx-dead-letter*` 这些都是系统说了算的，
+      //   采信就等于让发送方能伪造自己的重试轮次、或让一份信顶替另一份；
+      // - 发：`id` 是发送方给的名字，可以重复；队列记账要靠这个编号分清「哪一份」。
+      //   用 `provider.generateId()`（全局唯一）而不是本地计数器：同一个总线上可能挂着
+      //   多个 `Mailbox` 实例，计数器会撞号，撞了就是又回到「两份信一本账」。
+      // 同时这里拷一份 headers：不把调用方那个对象挂在消息上（同一个字面量 post 两次会共享 headers）。
+      headers: {
+        ...stripSenderForgedSystemHeaders(mail.headers),
+        [MBX_SEND_ID_HEADER]: provider.generateId(),
+      },
       meta: mail.meta || {},
     };
 

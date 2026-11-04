@@ -323,6 +323,17 @@ up — those belong to the provider. Consequences worth knowing:
   consumer bumps it, and the copy the kernel puts back into the queue carries it. That is the
   number a provider reads to implement its own `maxReceiveCount` cap: the kernel deliberately
   leaves the cap to providers, and `mbx-round` is the input it owes them.
+- Queue bookkeeping keys on **which copy of a letter**, not on `messageId`. `id` is a name the
+  sender chose and it may repeat (content-hash ids, a sender retrying its own send, a hostile
+  sender colliding on purpose). Every `post()` mints one `headers['mbx-send-id']`, and queueing,
+  the in-flight table, requeue dedup and `ack` / `nack` all account per copy. Keying those on `id`
+  lets one letter overwrite another's slot: a requeue gets dismissed as a duplicate and the message
+  ends up nowhere — not queued, not dead-lettered — and an id reused at one address can suppress a
+  requeue at a different one. Headers the system owns (`mbx-send-id`, `mbx-round`, `mbx-attempt`,
+  `mbx-max-attempts`, `mbx-sent-at`, `mbx-dead-letter*`) are stripped from `post()` input: trusting
+  them would let the sender pick its own redelivery cap or stamp live mail as a dead-letter record.
+  Content-level idempotency is a separate, explicit, *loud* policy at the send edge — the kernel
+  never drops a letter silently.
 
 > The [Python](https://github.com/mboxlabs/mailbox.py) and [Rust](https://github.com/mboxlabs/mailbox.rust)
 > ports settle a broadcast per delivery in exactly this way. Each port's README
