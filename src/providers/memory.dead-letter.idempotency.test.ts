@@ -115,10 +115,10 @@ describe('[语义] 拉取侧的一次处置：重复 nack 不得重复归档死�
     const address = addrOf('stale-handle-drop');
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
 
-    const stale = await mailbox.fetch(address, { manualAck: true });
-    await tick();
-    // 第二次 fetch 用极小的 ackTimeout 触发 stale 扫描：消息先回队，再被新消费者取走
-    const fresh = await mailbox.fetch(address, { manualAck: true, ackTimeout: 1 });
+    const stale = await mailbox.fetch(address, { manualAck: true, ackTimeout: 5 }) // 它自己的租约只有 5ms
+    await tick(30) // 到期（按这份租约自己的到期时刻判，不是下一个取信者传的值）
+    // 第二次 fetch 顺手做清扫：消息先回队，再被新消费者取走
+    const fresh = await mailbox.fetch(address, { manualAck: true, ackTimeout: 60_000 })
     expect(fresh).not.toBeNull();
 
     await stale!.nack(false); // 迟到的放弃：手里那条已经不归它了
@@ -147,9 +147,9 @@ describe('[语义] 拉取侧的一次处置：重复 nack 不得重复归档死�
     const address = addrOf('redelivered-drop');
     const sent = await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
 
-    const stale = await mailbox.fetch(address, { manualAck: true });
-    await tick();
-    const fresh = await mailbox.fetch(address, { manualAck: true, ackTimeout: 1 });
+    const stale = await mailbox.fetch(address, { manualAck: true, ackTimeout: 5 }) // 它自己的租约只有 5ms
+    await tick(30) // 到期：下一次取信会把它收回重投
+    const fresh = await mailbox.fetch(address, { manualAck: true, ackTimeout: 60_000 });
     await fresh!.nack(false);
 
     const entries = await dlqOf(address);

@@ -130,8 +130,15 @@ export interface PeekFetchOptions {
 export interface ManualAckFetchOptions {
   manualAck: true;
   /**
-   * in-flight 超时（毫秒）。省略用 {@link DEFAULT_ACK_TIMEOUT}；`0` / `null` 关闭超时扇描
-   *（消息常驻 in-flight 直到 ack / nack）。
+   * **这份租约**的时长（ms）：取走那一刻就定下并记在租约上，之后不由别人改。
+   *
+   * 省略（或负数 / 非法值）用 {@link DEFAULT_ACK_TIMEOUT}；`0` / `null` = 这份租约永不过期，
+   * 只能由它自己的句柄 ack / nack（别的消费者再怎么清扫都不能把它抖回队列）。
+   *
+   * 注意它**不是**“清扫阈值”：到期回收扫的是每条租约自己的到期时刻。所以一个消费者拿 1ms
+   * 来取信，不会提前接管别人未到期的租约；拿 60s 来取信，也不会拖后一条早已到期的租约。
+   * 回收是惰性的（无后台定时器，只有下一次 manualAck 取信才扫）：过期未收回的份数在
+   * {@link MailboxStatus.overdueInFlightCount} 里可见。
    */
   ackTimeout?: number | null;
   [name: string]: any;
@@ -184,9 +191,20 @@ export interface MailboxStatus {
    * 已交给消费者、尚未 ack/nack 的消息数量。
    *
    * 不计入 `unreadCount`，否则卡在 in-flight 的消息在状态里完全隐形。
-   * 这些消息超过 ack 超时后会被重新入队。
+   * 这些消息在自己那份租约到期后会被重新入队——但**回收是惰性的**（只有下一次 manualAck
+   * 取信才扫），所以必须跟 {@link overdueInFlightCount} 一起看。
    */
   inFlightCount?: number;
+  /**
+   * `inFlightCount` 里**租约已到期、还没被收回**的份数。
+   *
+   * 在飞消息的回收是惰性的（没有后台定时器，只有下一次 manualAck 取信才扫），所以一个僵死的
+   * 消费者能把已过期的租约永远挂在 in-flight 里。这个数就是让那笔积压不再隐形：告警该盯它，
+   * 而不是 `inFlightCount`（健康的在飞也是非零的）。
+   */
+  overdueInFlightCount?: number;
+  /** 最老那条过期租约已经过期多久（ms）；没有过期租约时为 0。 */
+  oldestOverdueMs?: number;
   /**
    * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)；没有活动记录时为 `null`。
    *
@@ -235,6 +253,10 @@ export interface MailboxSnapshot {
   unreadCount: number;
   /** 所有地址的 `inFlightCount` 之和。 */
   inFlightCount: number;
+  /** 所有地址的 `overdueInFlightCount` 之和（僵死消费者的信号）。 */
+  overdueInFlightCount: number;
+  /** 所有地址里最老化的一条过期租约过期了多久（ms）；没有则 0。 */
+  oldestOverdueMs: number;
   /** 按 `canonicalId` 排序的地址状态，保证快照可重复、断言可写死。 */
   addresses: MailboxAddressSnapshot[];
   /** 不支持枚举自身地址的 provider（它们的队列不在本次快照里）。 */

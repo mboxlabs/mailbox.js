@@ -211,22 +211,24 @@ export class MemoryEventBus {
 
   /**
    * Fetches a message for manual acknowledgment, moving it to the in-flight state.
-   * Also checks for and requeues any stale messages before fetching.
+   * 顺手把这个 topic 上**已到期**的租约收回队头（扫的是每条租约自己的到期时刻，不是本次传的时长）。
    * 交给消费者时同样给 `mbx-round` +1；存进 in-flight 的是打戳副本，所以 `nack(true)` 放回
    * 队列的那一份带着轮次（否则拉取侧数不出“已经被取了几次”，provider 就无法封顶）。
    * @param topic The topic to fetch a message from.
-   * @param options Options for the fetch operation, including staleTimeout.
+   * @param options.leaseTimeout **这份租约**的时长（ms）；`0`/`null` = 永不过期，缺省 = 默认租约。
+   *   旧名 `staleTimeout` 已改：它不是“清扫用的阈值”（那条不归调用者管），而是这次取信的租期。
    * @returns The message, or undefined if the queue is empty.
    */
   public fetchForAck(
     topic: string,
-    options?: { staleTimeout?: number | null },
+    options?: { leaseTimeout?: number | null },
   ): SettlingAckable<MailMessage> | undefined {
     this.lastActivity.set(topic, new Date().toISOString()); // Keep last activity update
-    // 不将缺省超时压成 0：那会关掉 MessageQueue 的 stale 扫描，未 ack 的消息永久卡在 in-flight。
+    // 不把缺省值压成 0：0 现在是“这份租约永不过期”的显式退出，缺省必须走默认租约，
+    // 否则未 ack 的消息会永久卡在 in-flight。
     return this.messageQueue.dequeue(topic, {
       manualAck: true,
-      ackTimeout: options?.staleTimeout,
+      ackTimeout: options?.leaseTimeout,
       handoff: nextRoundCopy,
     }) || undefined;
   }
@@ -344,16 +346,22 @@ export class MemoryEventBus {
     exists: boolean;
     unreadCount: number;
     inFlightCount: number;
+    overdueInFlightCount: number;
+    oldestOverdueMs: number;
     lastActivityTime: string | null;
     subscriberCount: number;
   } {
-    const { unreadCount, inFlightCount } = this.messageQueue.getStatus(topic);
+    const { unreadCount, inFlightCount, overdueInFlightCount, oldestOverdueMs } =
+      this.messageQueue.getStatus(topic);
     const listeners = this.topics.get(topic) || [];
     const lastActivityTime = this.lastActivity.get(topic);
     return {
       exists: this.knows(topic),
       unreadCount,
       inFlightCount,
+      // 回收是惰性的：过期但还没被扫回的在飞份数必须单独报，否则僵死消费者的积压完全隐形。
+      overdueInFlightCount,
+      oldestOverdueMs,
       lastActivityTime: lastActivityTime ?? null,
       subscriberCount: listeners.length,
     };
@@ -471,7 +479,7 @@ export class MemoryProvider extends MailboxProvider {
     }
 
     const ackableMessage = this.bus.fetchForAck(topic, {
-      staleTimeout: options?.ackTimeout,
+      leaseTimeout: options?.ackTimeout,
     });
     // 套一层：拉取侧的 `ack` / `nack` 不经过内核记账，一次 fetch = 一次处置；
     // `nack(false)` 在开著死信队列时要先处置、后留痕（基类钩子看不到消费者自己确实 ack）。
@@ -500,7 +508,7 @@ export class MemoryProvider extends MailboxProvider {
 
   protected async _status(address: URL): Promise<MailboxStatus> {
     const topic = getCanonicalMailboxAddressIdentifier(address);
-    const { exists, unreadCount, inFlightCount, lastActivityTime, subscriberCount } =
+    const { exists, unreadCount, inFlightCount, overdueInFlightCount, oldestOverdueMs, lastActivityTime, subscriberCount } =
       this.bus.getStatus(topic);
 
     if (!exists) {
@@ -511,6 +519,8 @@ export class MemoryProvider extends MailboxProvider {
         message: `No queue, subscription or activity is known for '${topic}'.`,
         unreadCount,
         inFlightCount,
+        overdueInFlightCount,
+        oldestOverdueMs,
         lastActivityTime,
         subscriberCount,
       };
@@ -522,6 +532,9 @@ export class MemoryProvider extends MailboxProvider {
       unreadCount,
       // in-flight 消息已离开队列但尚未确认，单独报出来，否则 status 会把它们当作已处理完。
       inFlightCount,
+      // 其中已经过期、还没被回收的那部分（回收是惰性的，靠下一次取信才扫）。
+      overdueInFlightCount,
+      oldestOverdueMs,
       lastActivityTime,
       subscriberCount,
     };

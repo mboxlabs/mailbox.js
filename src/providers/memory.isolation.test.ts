@@ -109,7 +109,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
 
       // in-flight 也是各自一份
       y.publish(topic, busMsg('y-2', topic));
-      expect(y.fetchForAck(topic, { staleTimeout: 1000 })?.id).toBe('y-2');
+      expect(y.fetchForAck(topic, { leaseTimeout: 1000 })?.id).toBe('y-2');
       expect(y.getStatus(topic).inFlightCount).toBe(1);
       expect(x.getStatus(topic).inFlightCount).toBe(0);
 
@@ -358,7 +358,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       const topic = 'mem://late-settlement/inbox';
       bus.publish(topic, busMsg('late-1', topic));
 
-      const inflight = bus.fetchForAck(topic, { staleTimeout: 1000 });
+      const inflight = bus.fetchForAck(topic, { leaseTimeout: 1000 });
       expect(inflight?.id).toBe('late-1');
       expect(bus.clear(topic)).toBe(1);
 
@@ -378,7 +378,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       bus.publish(a, busMsg('a-1', a));
       bus.publish(b, busMsg('b-1', b));
       bus.publish(b, busMsg('b-2', b));
-      bus.fetchForAck(b, { staleTimeout: 1000 });
+      bus.fetchForAck(b, { leaseTimeout: 1000 });
 
       expect(bus.clear()).toBe(3); // 2 条等待 + 1 条 in-flight
       expect(bus.getStatus(a)).toMatchObject({ exists: false, unreadCount: 0, inFlightCount: 0, lastActivityTime: null });

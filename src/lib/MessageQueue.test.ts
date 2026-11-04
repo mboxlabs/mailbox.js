@@ -211,19 +211,19 @@ describe('MessageQueue', () => {
     it('should report in-flight messages separately from the queue', async () => {
       queue.enqueue(topic1, msg1);
       queue.enqueue(topic1, msg2);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 2, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 2, inFlightCount: 0 });
 
       const ackableMsg1 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 1 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 1, inFlightCount: 1 });
 
       const ackableMsg2 = queue.dequeue(topic1, { manualAck: true, ackTimeout: ACK_TIMEOUT }) as SettlingAckable<TestMessage>;
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 2 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 2 });
 
       // ack 与 nack(false) 都会把消息从 in-flight 中除名
       await ackableMsg1.ack();
       expect(queue.getStatus(topic1).inFlightCount).toBe(1);
       await ackableMsg2.nack(false);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('should count in-flight per topic', () => {
@@ -302,7 +302,7 @@ describe('MessageQueue', () => {
 
       expect(queue.clear(topic1)).toBe(2);
 
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
       expect(queue.getStatus(topic2).unreadCount).toBe(1);
       expect(queue.dequeue(topic2)!.id).toBe(msg2.id);
     });
@@ -311,16 +311,16 @@ describe('MessageQueue', () => {
       // in-flight 也是队列状态的一部分：只清「等待中」的那半，测试跑完还是会看到残留消息。
       queue.enqueue(topic1, msg1);
       const inflight = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 1 });
 
       expect(queue.clear(topic1)).toBe(1);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
       expect(queue.has(msg1.id)).toBe(false);
 
       // 迟到的 ack / nack 不能再把已清理的消息放回队列（否则会“复活”成幽灵消息）。
       await inflight.ack();
       await inflight.nack(true);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('should drop every topic when called without arguments', () => {
@@ -329,8 +329,8 @@ describe('MessageQueue', () => {
       queue.dequeue(topic2, { manualAck: true });
 
       expect(queue.clear()).toBe(2); // topic1 的 1 条 + topic2 的 1 条 in-flight
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
-      expect(queue.getStatus(topic2)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic2)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('should be idempotent and safe on an unknown topic', () => {
@@ -357,7 +357,7 @@ describe('MessageQueue', () => {
 
       expect(snapshot.map((m) => m.id)).toEqual([msg1.id, msg2.id]);
       // 关键：快照完全不留痕迹
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 2, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 2, inFlightCount: 0 });
       expect(queue.has(msg1.id)).toBe(true);
     });
 
@@ -405,7 +405,7 @@ describe('MessageQueue', () => {
       const inflight = queue.dequeue(topic1, { manualAck: true }) as SettlingAckable<TestMessage>;
 
       expect(queue.peek(topic1).map((m) => m.id)).toEqual([msg2.id]);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 1 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 1, inFlightCount: 1 });
 
       await inflight.nack(true);
       expect(queue.peek(topic1).map((m) => m.id)).toEqual([msg1.id, msg2.id]);
@@ -417,10 +417,10 @@ describe('MessageQueue', () => {
 
       await vi.advanceTimersByTimeAsync(500); // 已超过 ackTimeout
       expect(queue.peek(topic1)).toEqual([]); // 只读操作不能触发 stale 重投
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 1 });
 
       await inflight.ack();
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
   });
 
@@ -482,7 +482,7 @@ describe('MessageQueue', () => {
       expect(await inflight.nack(false)).toBe(false);
       expect(await inflight.nack(true)).toBe(false); // 已放弃：之后再喊回队也不作数
 
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('[语义] nack(true) 之后再 nack(false) 不作数：回队的消息不会被判死刑', async () => {
@@ -490,10 +490,10 @@ describe('MessageQueue', () => {
       const inflight = inflightOf(topic1, msg1);
 
       expect(await inflight.nack(true)).toBe(true);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 1, inFlightCount: 0 });
 
       expect(await inflight.nack(false)).toBe(false);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 1, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 1, inFlightCount: 0 });
     });
 
     it('[语义] ack 之后的 nack 不作数：已确认的消息不会被退回队列，也不会被丢弃', async () => {
@@ -505,7 +505,7 @@ describe('MessageQueue', () => {
       expect(await inflight.nack(false)).toBe(false);
       expect(await inflight.ack()).toBe(false);
 
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('[语义] 处置只认自己那一次 fetch：stale 重投后的旧 handle 不能动新消费者的 in-flight', async () => {
@@ -516,17 +516,17 @@ describe('MessageQueue', () => {
       // 下一次 dequeue 触发 stale 扫描：同一条消息交给新的消费者
       const fresh = inflightOf(topic1, msg1);
       expect(fresh.id).toBe(msg1.id);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 1 });
 
       // 旧 handle 现在手里没有东西可结算：既不能把新消费者的 in-flight 抹掉，也不能再回队
       expect(await stale.nack(false)).toBe(false);
       expect(await stale.nack(true)).toBe(false);
       expect(await stale.ack()).toBe(false);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 1 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 1 });
 
       // 新消费者的处置照旧有效
       expect(await fresh.ack()).toBe(true);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('[语义] 被 clear() 丢弃的 in-flight：之后的 ack / nack 报告 false，不复活消息', async () => {
@@ -538,7 +538,7 @@ describe('MessageQueue', () => {
       expect(await inflight.nack(false)).toBe(false);
       expect(await inflight.nack(true)).toBe(false);
       expect(await inflight.ack()).toBe(false);
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('[事实] 队列的 ackable 仍是普通信封 + 两个处置方法（忽略返回值的用法不变）', async () => {
@@ -564,8 +564,8 @@ describe('MessageQueue', () => {
       expect(queue.ack(msg2.id)).toBe(false);
       expect(queue.nack('never-was', topic1, true)).toBe(false);
 
-      expect(queue.getStatus(topic1)).toEqual({ unreadCount: 0, inFlightCount: 0 });
-      expect(queue.getStatus(topic2)).toEqual({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic1)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
+      expect(queue.getStatus(topic2)).toMatchObject({ unreadCount: 0, inFlightCount: 0 });
     });
 
     it('[事实] 队列自带的 ackable 句柄也走同一套归属判定（重复 ack 不会误伤后来者）', async () => {

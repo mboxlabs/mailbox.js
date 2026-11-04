@@ -164,12 +164,17 @@ flowchart LR
    console.log(`存在性: ${status.exists}`) // provider 到底认不认这个地址
    console.log(`未读数量: ${status.unreadCount}`) // 仍在队列里等待
    console.log(`in-flight: ${status.inFlightCount}`) // 已取出、尚未 ack/nack
+   console.log(`已过期的: ${status.overdueInFlightCount}`) // 在飞、租约已到期、还没被收回
+   console.log(`最老化过期: ${status.oldestOverdueMs}ms`)
    console.log(`订阅数: ${status.subscriberCount}`)
    console.log(`最后活动: ${status.lastActivityTime}`) // ISO 8601，没有记录时是 null
    ```
 
    `unreadCount` 只统计队列里等待的消息。用 `manualAck: true` 取出的消息已经离开队列但尚未
-   处理完，它单独计入 `inFlightCount`；如果一直不 ack，会回到队列。
+   处理完，它单独计入 `inFlightCount`；租约到期后会回到队列。但**回收是惰性的**（没有后台
+   定时器，只有下一次 `manualAck` 取信才把已过期的租约扫回队头），所以一个僵死的消费者能把
+   过期租约永远挂在 in-flight 里。这就是为什么要单独报 `overdueInFlightCount`：健康的系统
+   `inFlightCount` 本来就非零，**告警只能盯 `overdueInFlightCount`**。
 
    `state` 描述的是 provider 对**这个地址**的看法。从未被碰过的地址（没投过、没订阅过、没有
    活动记录）会报 `state: 'unknown'` + `exists: false`——统一报 `online` + 0 会让诊断页分不出
@@ -400,13 +405,19 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    ```ts
    import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
 
-   await mailbox.fetch(addr, { manualAck: true }) // 默认 30 秒
-   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // 自定义
-   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // 永不重投
+   await mailbox.fetch(addr, { manualAck: true }) // 这份取信的租约：30 秒
+   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // 自定义这份的租期
+   await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // 这份租约永不过期
    ```
 
+   `ackTimeout` 是**这次取信**借出去的租约时长，取走那一刻定下、记在租约上——它不是“清扫阈值”。
+   别人的 `ackTimeout` 既不能缩短一条未到期的租约（拿 1ms 来取信也抢不走别人手里的 in-flight），
+   也不能拖后一条已过期的（不管下一个取信者传多长都会被收回），更不能作废一条 `0` / `null` 的
+   常驻租约。“过没过期”由租约自己、在取走那一刻决定；否则任意消费者的一次取信就能作废别人的
+   租约。过期未收回的代价是可见性，`overdueInFlightCount`（§2）负责把它补回来。
+
    [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
-   移植版保持同样的三态：缺省超时、自定义超时、永不重投。
+   移植版保持同样的三态：缺省超时、自定义超时、永不过期。
 
    ### 6. 结算兜底与 provider 契约（超时、竞态）
 

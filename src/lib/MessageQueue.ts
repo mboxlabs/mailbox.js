@@ -61,10 +61,40 @@ export type SettlingAckable<T> = T & {
  * 手动 ACK 模式下未显式指定 `ackTimeout` 时使用的默认超时（毫秒）。
  *
  * in-flight 消息必须有界：否则消费者崩溃后既取不回来、也不会在状态里可见，
- * 等于静默丢失。传 0（或 null）可以显式关闭超时，消息常驻 in-flight 直到 ack/nack。
+ * 等于静默丢失。传 0（或 null）是显式退出：那份租约永不过期，只能由它自己的句柄 ack/nack。
  * 该缺省值与 `ackTimeout` 的三态语义在 TS / Python / Rust 三端保持一致。
  */
 export const DEFAULT_ACK_TIMEOUT = 30_000;
+
+/**
+ * 一条租约（in-flight 记录）：一次 manualAck 取信 = 一份信借出去一段时间。
+ *
+ * `expiresAt` 是**这条租约自己的**到期时刻（取走那一刻算好），`Infinity` = 永不过期。
+ */
+export type InFlightEntry<T> = {
+  message: T;
+  timestamp: number;
+  topic: string;
+  token: number;
+  expiresAt: number;
+};
+
+/** 一个 topic 的队列状态（{@link MailMessageQueue.getStatus}）。 */
+export type TopicQueueStatus = {
+  /** 还在队列里的份数——唯一能当“还没投出去”的数字。 */
+  unreadCount: number;
+  /** 已交给消费者、尚未 ack/nack 的份数。 */
+  inFlightCount: number;
+  /**
+   * 在飞但**租约已到期**、还没被收回的份数。
+   *
+   * 回收是惰性的（无后台定时器，只有下一次 manualAck 取信才扫），所以一个僵死的消费者能把
+   * 过期租约永远挂在这里——这个数就是为了让它不再隐形。
+   */
+  overdueInFlightCount: number;
+  /** 最老那条过期租约已经过期多久（ms）；没有过期租约时为 0。 */
+  oldestOverdueMs: number;
+};
 
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
@@ -73,7 +103,14 @@ export class MailMessageQueue<T extends { id: string }> {
   // **键是「哪一份信」（{@link MailMessageQueue.copyKeyOf}），不是消息 id。**
   // id 是发送方给的名字，可以重复；拿它当键，同 id 的两份信就会互相顶替：
   // 后取走的那份把先取走的挤掉（先那份从此不在任何状态里）、回队被当成重复吞掉。
-  private inFlight: Map<string, { message: T; timestamp: number; topic: string; token: number }> = new Map();
+  /**
+   * 一条租约：一次 manualAck 取信 = 一份信借出去一段时间。
+   *
+   * `expiresAt` 是**这条租约自己的到期时刻**（取走那一刻就算好了，`Infinity` = 永不过期）。
+   * 不能拿“清扫时调用者传的 timeout”当到期判据：那个数只描述调用者自己想要多长的租，
+   * 与别人手里那条租约无关——否则一个消费者的一次取信就能提前接管（或推迟接管）别人的租约。
+   */
+  private inFlight: Map<string, InFlightEntry<T>> = new Map();
 
   /** 消息 id → 在飞键列表（按取走顺序）：只为「按 id 结算」那层旧 API（总线 / broker）保留。 */
   private inFlightById: Map<string, string[]> = new Map();
@@ -112,15 +149,18 @@ export class MailMessageQueue<T extends { id: string }> {
    * In auto-ack mode (`manualAck: false`), it removes and returns the message.
    * In manual-ack mode (`manualAck: true`), it moves the message to an "in-flight" state
    * and returns an `Ackable` message with `ack` and `nack` methods.
-   * The method also triggers a check for stale messages if a timeout is provided.
+   * Every manual-ack dequeue also sweeps this topic's *expired* leases back into the queue
+   * (there is no background timer; see {@link getStatus}'s `overdueInFlightCount`).
    *
    * @param topic The topic from which to dequeue a message.
    * @param options Options for the dequeue operation.
    * @param options.manualAck If true, enables manual acknowledgement mode. Defaults to false.
-   * @param options.ackTimeout In manual-ack mode, the time in milliseconds after which an
-   *   unacknowledged message is considered stale and will be requeued on the next dequeue.
-   *   Omitted (or negative) falls back to {@link DEFAULT_ACK_TIMEOUT}; `0` or `null` disables the
-   *   stale check entirely (the message stays in-flight until it is ack'd or nack'd).
+   * @param options.ackTimeout In manual-ack mode, how long **this** lease stays valid, in ms.
+   *   It is fixed at handoff time and recorded on the lease: another consumer's `ackTimeout`
+   *   can neither shorten it (an unexpired lease is never swept back) nor stretch it (an expired
+   *   lease is swept back no matter how long the next caller asks for). Omitted (or negative /
+   *   non-finite) falls back to {@link DEFAULT_ACK_TIMEOUT}; `0` or `null` means *this lease never
+   *   expires* — it stays in-flight until its own handle acks or nacks it.
    * @param options.handoff 交给消费者前的**改写**（可选）：比如给投递轮次 +1（`nextRoundCopy`）。
    *   改写后的副本就是交出去的那一份，也是存进 in-flight 的那一份：所以 `nack(requeue=true)`
    *   放回队列的也是它，否则轮次永远停在第一次取信时的值。只读快照（{@link peek}）不走这里。
@@ -138,14 +178,11 @@ export class MailMessageQueue<T extends { id: string }> {
     topic: string,
     options?: { manualAck?: boolean; ackTimeout?: number | null; handoff?: (message: T) => T }
   ): T | SettlingAckable<T> | null {
-    // Requeue stale messages whenever manual-ack mode is used. A missing timeout must not
-    // mean "never requeue": that leaked the message forever (invisible in status, unrecoverable).
+    // 租约回收是惰性的：只有 manualAck 取信时顺手扫（无后台定时器）。扫的是**每条租约自己的
+    // 到期时刻**（`InFlightEntry.expiresAt`）。缺省的租约不能当成“永不回队”：那会把信永久
+    // 泄漏在在飞里（状态里取不到、也不会自愈）——所以缺省走 DEFAULT_ACK_TIMEOUT。
     if (options?.manualAck) {
-      const timeout = options.ackTimeout;
-      // 0 / null 是显式关闭 stale 扫描的出口；缺省则用 DEFAULT_ACK_TIMEOUT，不再当作“永不超时”。
-      if (timeout !== null && timeout !== 0) {
-        this.requeueStale(topic, timeout && timeout > 0 ? timeout : DEFAULT_ACK_TIMEOUT);
-      }
+      this.requeueStale(topic);
     }
 
     const messages = this.queues.get(topic);
@@ -173,7 +210,15 @@ export class MailMessageQueue<T extends { id: string }> {
     this.inheritTag(handedOff, message);
     const token = ++this.settlementToken;
     const key = this.copyKeyOf(handedOff);
-    this.addFlight(key, handedOff.id, { message: handedOff, timestamp: Date.now(), topic, token });
+    const now = Date.now();
+    const lease = MailMessageQueue.leaseDurationMs(options.ackTimeout);
+    this.addFlight(key, handedOff.id, {
+      message: handedOff,
+      timestamp: now,
+      topic,
+      token,
+      expiresAt: Number.isFinite(lease) ? now + lease : Number.POSITIVE_INFINITY,
+    });
 
     // 句柄自己带 `token`：只有取走它的那一次 fetch 能结算它。
     return {
@@ -277,7 +322,7 @@ export class MailMessageQueue<T extends { id: string }> {
     }
   }
 
-  private addFlight(key: string, messageId: string, flight: { message: T; timestamp: number; topic: string; token: number }): void {
+  private addFlight(key: string, messageId: string, flight: InFlightEntry<T>): void {
     this.inFlight.set(key, flight);
     const keys = this.inFlightById.get(messageId);
     if (keys) {
@@ -312,7 +357,7 @@ export class MailMessageQueue<T extends { id: string }> {
    * 带 `token` = 精确匹配那一次 fetch 拿走的份；不带则取**最早取走的那一份**
    * （同 id 多份在飞时总得选一个，固定选最早比“看 Map 顺位”可预测）。
    */
-  private findFlightById(messageId: string, token?: number): { key: string; flight: { message: T; timestamp: number; topic: string; token: number } } | undefined {
+  private findFlightById(messageId: string, token?: number): { key: string; flight: InFlightEntry<T> } | undefined {
     const keys = this.inFlightById.get(messageId);
     if (!keys) {
       return undefined;
@@ -375,21 +420,36 @@ export class MailMessageQueue<T extends { id: string }> {
   /**
    * Gets the current status of a topic's queue.
    * @param topic The topic to query.
-   * @returns An object containing status information: `unreadCount` (waiting in the queue)
-   *   and `inFlightCount` (handed to consumers, awaiting ack/nack). Only `unreadCount` is
-   *   safe to treat as "delivered"; in-flight messages will come back if they are never ack'd.
+   * @returns `unreadCount`（还在队列里）、`inFlightCount`（已交给消费者、还没 ack/nack）、
+   *   `overdueInFlightCount`（在飞但**租约已到期**、还没被收回的份数）与
+   *   `oldestOverdueMs`（最那条已经过期多久）。
+   *
+   * 只有 `unreadCount` 能当「还没投出去」；in-flight 的会在租约到期后回来，但**回收是惰性的**
+   * （只有下一次 manualAck 取信才扫）。所以一个僵死的消费者可以把过期租约永远挂在在飞里 ——
+   * `overdueInFlightCount` 就是为了让这种积压不再隐形（运维 / 健康检查该盯它）。
+   * 本方法是只读的：不会顺手回收、不刷新时间戳（与 {@link peek} 同理）。
    */
-  public getStatus(topic: string): { unreadCount: number; inFlightCount: number } {
+  public getStatus(topic: string): TopicQueueStatus {
     const queue = this.queues.get(topic) || [];
+    const now = Date.now();
     let inFlightCount = 0;
-    for (const { topic: messageTopic } of this.inFlight.values()) {
-      if (messageTopic === topic) {
-        inFlightCount++;
+    let overdueInFlightCount = 0;
+    let oldestOverdueMs = 0;
+    for (const { topic: messageTopic, expiresAt } of this.inFlight.values()) {
+      if (messageTopic !== topic) {
+        continue;
+      }
+      inFlightCount++;
+      if (expiresAt <= now) {
+        overdueInFlightCount++;
+        oldestOverdueMs = Math.max(oldestOverdueMs, now - expiresAt);
       }
     }
     return {
       unreadCount: queue.length,
       inFlightCount,
+      overdueInFlightCount,
+      oldestOverdueMs,
     };
   }
 
@@ -476,17 +536,33 @@ export class MailMessageQueue<T extends { id: string }> {
   }
 
   /**
-   * Scans for and requeues in-flight messages for a specific topic that have exceeded their timeout.
-   * This is a recovery mechanism to prevent message loss if a consumer fails.
-   * @param topic The topic to check for stale messages.
-   * @param timeout The timeout in milliseconds.
+   * 这份租约的时长（ms）：`0` / `null` = 永不过期（发送方/消费者显式退出）；
+   * 缺省、负数、非法值 = {@link DEFAULT_ACK_TIMEOUT}（缺省不等于“永不回队”）。
    */
-  private requeueStale(topic: string, timeout: number): void {
+  private static leaseDurationMs(ackTimeout?: number | null): number {
+    if (ackTimeout === 0 || ackTimeout === null) {
+      return Number.POSITIVE_INFINITY;
+    }
+    if (ackTimeout === undefined || !Number.isFinite(ackTimeout) || ackTimeout < 0) {
+      return DEFAULT_ACK_TIMEOUT;
+    }
+    return ackTimeout;
+  }
+
+  /**
+   * Scans for and requeues in-flight messages for a specific topic whose **own lease** has
+   * expired. This is a recovery mechanism to prevent message loss if a consumer fails.
+   *
+   * 到期与否只看每条租约自己的 `expiresAt`（取走那一刻定下的）。清扫者自己的 timeout 不参与：
+   * 它既不提前接管未到期的租约，也不拖后已过期的租约。
+   * @param topic The topic to check for stale messages.
+   */
+  private requeueStale(topic: string): void {
     const now = Date.now();
     // Use Array.from to safely iterate while potentially modifying the map
-    for (const [key, { message, timestamp, topic: messageTopic }] of Array.from(this.inFlight.entries())) {
+    for (const [key, { message, expiresAt, topic: messageTopic }] of Array.from(this.inFlight.entries())) {
       // Check if the message belongs to the topic we are checking and is stale
-      if (messageTopic === topic && now - timestamp > timeout) {
+      if (messageTopic === topic && expiresAt <= now) {
         this.dropFlight(key);
         this.requeue(messageTopic, message);
       }

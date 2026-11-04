@@ -167,13 +167,19 @@ console.log(`State: ${status.state}`) // 'online' | 'unknown' | 'degraded' | 'of
 console.log(`Exists: ${status.exists}`) // does the provider know this address at all?
 console.log(`Unread count: ${status.unreadCount}`) // still waiting in the queue
 console.log(`In flight: ${status.inFlightCount}`) // handed out, awaiting ack/nack
+console.log(`Overdue: ${status.overdueInFlightCount}`) // in flight, lease already expired, not yet reclaimed
+console.log(`Oldest overdue: ${status.oldestOverdueMs}ms`)
 console.log(`Subscribers: ${status.subscriberCount}`)
 console.log(`Last activity: ${status.lastActivityTime}`) // ISO 8601, or null
 ```
 
 `unreadCount` only counts messages still waiting in the queue. A message taken with
 `manualAck: true` has left the queue but is not yet processed — it is reported separately as
-`inFlightCount`, and it returns to the queue if it is never acknowledged.
+`inFlightCount`, and it returns to the queue once its lease expires. Reclaiming that lease is
+**lazy** (there is no background timer; the next `manualAck` fetch of that topic sweeps expired
+leases back), so a wedged consumer can park expired leases in-flight indefinitely. That is why
+`overdueInFlightCount` is reported separately: `inFlightCount` is legitimately non-zero on a
+healthy system, so **alert on `overdueInFlightCount`**, not on it.
 
 `state` describes the provider's view **of that address**. An address the provider has never
 seen (never posted to, never subscribed, no recorded activity) reports `state: 'unknown'` and
@@ -440,14 +446,23 @@ requeued after `DEFAULT_ACK_TIMEOUT` (30s) by default:
 ```ts
 import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
 
-await mailbox.fetch(addr, { manualAck: true }) // 30s default
-await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // custom
-await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // never requeue
+await mailbox.fetch(addr, { manualAck: true }) // 30s lease for *this* fetch
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // custom lease
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // this lease never expires
 ```
+
+`ackTimeout` is the length of **the lease this fetch takes out**, fixed at handoff time and
+recorded on the lease — it is not the sweep threshold. Another consumer's `ackTimeout` can neither
+shorten a lease that has not expired (a 1ms fetch cannot steal someone else's in-flight message)
+nor stretch one that has (an expired lease is reclaimed no matter how long the next caller asks
+for), and it cannot void a `0` / `null` lease. Whether a lease has expired is decided by the lease
+itself, at the moment it was handed out — otherwise any consumer's single fetch could cancel
+another consumer's lease. What an expired-but-unreclaimed lease costs you is visibility, which is
+what `overdueInFlightCount` (§2) exists to remove.
 
 The [Python](https://github.com/mboxlabs/mailbox.py) and
 [Rust](https://github.com/mboxlabs/mailbox.rust) ports keep the same three states: default timeout,
-custom timeout, never requeue.
+custom timeout, never expires.
 
 ### 6. Settlement Safety Nets (timeouts, races, provider contracts)
 

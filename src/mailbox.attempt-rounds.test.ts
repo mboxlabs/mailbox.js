@@ -218,7 +218,9 @@ class RedeliveryBroker extends MailboxProvider {
   }
 
   public queueState(address: string | URL): { unreadCount: number; inFlightCount: number } {
-    return this.queue.getStatus(this.topicOf(address));
+    // 只取这两个计数器：测试里比的是“还在不在队列 / 有没有卡在在飞”。
+    const { unreadCount, inFlightCount } = this.queue.getStatus(this.topicOf(address));
+    return { unreadCount, inFlightCount };
   }
 }
 
