@@ -260,6 +260,35 @@ see. `peek` never lists messages another consumer is holding; those only show up
 provider that cannot do read-only snapshots throws `UnsupportedCapabilityError` rather than
 silently falling back to a consuming fetch.
 
+**Settling a fetched message.** `fetch(addr, { manualAck: true })` hands you a handle with two
+verbs. They are not "success / failure" — that reading costs people real downtime, because it
+suggests a message you decided to discard does not deserve `ack`, so drain scripts get written with
+`nack(false)` and then spin. The honest table is two questions: *will this be handed to me again*,
+and *should the provider do something on its way out*:
+
+| What you do | this copy | handed to anyone again | provider tidies up afterwards |
+| ----------- | --------- | ---------------------- | ----------------------------- |
+| `ack()`             | removed | no | no |
+| `nack(false)`       | removed | no | **yes** |
+| `nack(true)`        | back in the queue | yes | no |
+
+`ack()` means "I am done with this copy, stop tracking it" — whatever you did with it, including
+deciding the letter is malformed and dropping it on the floor. That is the normal way to discard.
+
+`nack(false)` adds exactly one thing: the provider gets to tidy up *by its own protocol's rules*.
+For `MemoryProvider` that means a copy into the dead-letter topic (and with
+`enableDeadLetterQueue()` off, it degrades to a plain silent drop — identical to `ack()`). For SMTP
+it would be reject/bounce, for IMAP a `\Deleted` flag plus expunge, for MQTT there is no such thing.
+Never assume `nack(false)` implies a DLQ.
+
+What every provider must guarantee: after `nack(false)`, that message is never handed to anyone
+again — including when the dead-letter chain hits `maxNesting`. There it is **parked**: not in
+`unreadCount`, invisible to `fetch`, readable via `peekParked()` / `status().parkedCount`, removable
+only through `purgeParked()`. Push consumers get the same three choices without a handle: returning
+normally is `ack`, throwing a plain error is `nack(false)`, throwing `{ isRetriable: true }` is
+`nack(true)`.
+
+
 ### 3. When a subscriber fails
 
 The callback's error decides what happens to the message:
@@ -420,8 +449,10 @@ A dead-letter topic can itself be given up on — a compensation worker that cra
 case. The chain is capped: `enableDeadLetterQueue({ maxNesting })` defaults to **one** level, so a
 record fetched out of `X_dlq` and given up again is **parked** in `X_dlq` (marked
 `mbx-dead-letter-terminal: 'true'`, logged CRITICAL) instead of opening `X_dlq_dlq`, then
-`X_dlq_dlq_dlq`, forever. Parking is not losing: the record stays in the queue, visible to
-`peek` / `status`, and a worker that `fetch`es it and `ack`s it drains it. Pass a bigger
+`X_dlq_dlq_dlq`, forever. Parking is not losing, and it is **not re-queueing**: a parked record is
+not in `unreadCount`, no `fetch` will hand it to anyone (that is exactly the trap that made drain
+scripts spin forever, re-reading the same poison record), and it can only be read with
+`peekParked()` or dropped with `purgeParked()`; `status().parkedCount` counts them. Pass a bigger
 `maxNesting` to get a real chain; `Number.POSITIVE_INFINITY` is the explicit "no limit" exit.
 `deadLetterTopic()` tells you where the give-up actually lands — at the cap it returns the topic
 itself rather than a deeper address that would never be written.

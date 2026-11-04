@@ -369,11 +369,19 @@ export class MemoryEventBus {
     inFlightCount: number;
     overdueInFlightCount: number;
     oldestOverdueMs: number;
+    parkedCount: number;
+    oldestParkedMs: number;
     lastActivityTime: string | null;
     subscriberCount: number;
   } {
-    const { unreadCount, inFlightCount, overdueInFlightCount, oldestOverdueMs } =
-      this.messageQueue.getStatus(topic);
+    const {
+      unreadCount,
+      inFlightCount,
+      overdueInFlightCount,
+      oldestOverdueMs,
+      parkedCount,
+      oldestParkedMs,
+    } = this.messageQueue.getStatus(topic);
     const listeners = this.topics.get(topic) || [];
     const lastActivityTime = this.lastActivity.get(topic);
     return {
@@ -383,9 +391,27 @@ export class MemoryEventBus {
       // 回收是惰性的：过期但还没被扫回的在飞份数必须单独报，否则僵死消费者的积压完全隐形。
       overdueInFlightCount,
       oldestOverdueMs,
+      // 判死但先不丢的那些（死信链封顶就是这种）：不在未读里、不会被交付，只在这里数得出来。
+      parkedCount,
+      oldestParkedMs,
       lastActivityTime: lastActivityTime ?? null,
       subscriberCount: listeners.length,
     };
+  }
+
+  /** 停放一份判死记录（不进交付流）。见 `MailMessageQueue.park`。 */
+  public park(topic: string, message: MailMessage, reason: string): void {
+    this.messageQueue.park(topic, message, reason);
+  }
+
+  /** 只读：某条队列上停放着的记录。 */
+  public listParked(topic: string, limit?: number): MailMessage[] {
+    return this.messageQueue.listParked(topic, limit);
+  }
+
+  /** 排空停放区（永久丢弃）。返回丢掉的份数。 */
+  public clearParked(topic: string, predicate?: (message: MailMessage) => boolean): number {
+    return this.messageQueue.clearParked(topic, predicate);
   }
 }
 
@@ -590,6 +616,31 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
+   * 只读：这条地址上**停放**着的记录（判死、不再交付、但也没丢）。
+   *
+   * 停放记录不在 `fetch` / `peek` 的交付流里——否则排空脚本又会取到它。要看只能走这里，
+   * 或者看 `status().parkedCount`。
+   */
+  public peekParked(address: string | URL, limit?: number): MailMessage[] {
+    const topic = getCanonicalMailboxAddressIdentifier(parseMailboxAddress(address, 'peekParked()'));
+    return this.bus.listParked(topic, limit);
+  }
+
+  /**
+   * 排空停放区：把判死的记录**永久丢掉**，返回丢掉的份数。
+   *
+   * 停放记录不进交付流（那是 F8 的坑），所以没有 ack 可用来排走它们——唯一的出口就是这里。
+   * 先 `peekParked()` 看清要丢什么，再调它。
+   */
+  public purgeParked(
+    address: string | URL,
+    predicate?: (message: MailMessage) => boolean,
+  ): number {
+    const topic = getCanonicalMailboxAddressIdentifier(parseMailboxAddress(address, 'purgeParked()'));
+    return this.bus.clearParked(topic, predicate);
+  }
+
+  /**
    * 本总线认得的地址（canonical id）—— `mem:` 的消息就在本地，所以能枚举。
    */
   public async listAddresses(): Promise<string[]> {
@@ -598,8 +649,17 @@ export class MemoryProvider extends MailboxProvider {
 
   protected async _status(address: URL): Promise<MailboxStatus> {
     const topic = getCanonicalMailboxAddressIdentifier(address);
-    const { exists, unreadCount, inFlightCount, overdueInFlightCount, oldestOverdueMs, lastActivityTime, subscriberCount } =
-      this.bus.getStatus(topic);
+    const {
+      exists,
+      unreadCount,
+      inFlightCount,
+      overdueInFlightCount,
+      oldestOverdueMs,
+      parkedCount,
+      oldestParkedMs,
+      lastActivityTime,
+      subscriberCount,
+    } = this.bus.getStatus(topic);
 
     if (!exists) {
       // 对“这个地址从不存在”回 `online` + 0，诊断页就分不出「不存在」和「空闲」（issue#4）。
@@ -611,6 +671,8 @@ export class MemoryProvider extends MailboxProvider {
         inFlightCount,
         overdueInFlightCount,
         oldestOverdueMs,
+        parkedCount,
+        oldestParkedMs,
         lastActivityTime,
         subscriberCount,
       };
@@ -625,6 +687,9 @@ export class MemoryProvider extends MailboxProvider {
       // 其中已经过期、还没被回收的那部分（回收是惰性的，靠下一次取信才扫）。
       overdueInFlightCount,
       oldestOverdueMs,
+      // 判死但先不丢的份数（死信链封顶那类）：不在 unreadCount 里，也不会再被交付。
+      parkedCount,
+      oldestParkedMs,
       lastActivityTime,
       subscriberCount,
     };
@@ -849,9 +914,12 @@ export class MemoryProvider extends MailboxProvider {
    * 归档副本的 `to` 故意保持业务地址（重放契约），所以它早已不是「它现在在哪」的凭据；
    * 链要靠这个头追溯（上一跳的头会被副本继承）。
    *
-   * 到顶时（{@link DEFAULT_MAX_DEAD_LETTER_NESTING}）不再往下拼后缀：记录就地停放、
-   * 打 {@link MBX_DEAD_LETTER_TERMINAL_HEADER}，并大声记一条 CRITICAL。既不静默丢，也不把
-   * topic 数量变成无界增长。
+   * 到顶时（{@link DEFAULT_MAX_DEAD_LETTER_NESTING}）不再往下拼后缀：记录**停放**
+   * （{@link MailMessageQueue.park}）、打 {@link MBX_DEAD_LETTER_TERMINAL_HEADER}，并大声记一条
+   * CRITICAL。停放不是重新入队：它不进交付流、不在 `unreadCount` 里，只能查
+   * （{@link peekParked}）或显式丢弃（{@link purgeParked}）——把判死的记录塞回队列等于违反
+   * `nack(false)` 那句「不会再交给你」（F8：排空脚本永远取到同一条）。既不静默丢，也不让
+   * topic 数量无界增长。
    */
   private archiveDeadLetter(
     message: MailMessage,
@@ -889,16 +957,19 @@ export class MemoryProvider extends MailboxProvider {
         ...(parked ? { [MBX_DEAD_LETTER_TERMINAL_HEADER]: 'true' } : {}),
       },
     };
-    this.bus.enqueue(deadLetterTopicKey, record);
-
     if (parked) {
+      // 封顶 ⇒ **停放**，不是原地重新入队。`nack(false)` 对外只有一句承诺：「不会再交给你」。
+      // 把副本 `enqueue` 回同一条队列就是反悔：排空脚本永远取到同一条，`unreadCount` 永不下降（F8）。
+      this.bus.park(sourceTopic, record, `dead-letter nesting limit (${this.deadLetter?.maxNesting})`);
       console.error(
         `[${this.protocol}] CRITICAL: Message ${record.id} reached the dead-letter nesting limit ` +
-        `(${this.deadLetter?.maxNesting}) in '${sourceTopic}'. It is parked here marked ` +
-        `${MBX_DEAD_LETTER_TERMINAL_HEADER}=true instead of opening one more dead-letter level. ` +
-        `Drain it with fetch()/ack(), or raise maxNesting if this chain is intentional.`,
+        `(${this.deadLetter?.maxNesting}) in '${sourceTopic}'. It is parked there (no longer deliverable), marked ` +
+        `${MBX_DEAD_LETTER_TERMINAL_HEADER}=true, instead of opening one more dead-letter level. ` +
+        `Read it with peekParked() / status().parkedCount, or raise maxNesting if this chain is intentional.`,
       );
+      return;
     }
+    this.bus.enqueue(deadLetterTopicKey, record);
   }
 
   /**

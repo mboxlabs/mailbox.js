@@ -200,6 +200,8 @@ describe('MemoryEventBus.peek：总线层的只读快照', () => {
       inFlightCount: 0,
       overdueInFlightCount: 0,
       oldestOverdueMs: 0,
+      parkedCount: 0,
+      oldestParkedMs: 0,
       lastActivityTime: activityBefore,
       subscriberCount: 0,
     });

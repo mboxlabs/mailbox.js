@@ -285,6 +285,7 @@ export class Mailbox {
     const inFlightCount = addresses.reduce((total, entry) => total + (entry.inFlightCount ?? 0), 0);
     const overdueInFlightCount = addresses.reduce((total, entry) => total + (entry.overdueInFlightCount ?? 0), 0);
     const oldestOverdueMs = addresses.reduce((oldest, entry) => Math.max(oldest, entry.oldestOverdueMs ?? 0), 0);
+    const parkedCount = addresses.reduce((total, entry) => total + (entry.parkedCount ?? 0), 0);
     const enumerated = protocols.length - unsupportedProviders.length;
 
     let state: MailboxSnapshot['state'];
@@ -303,6 +304,7 @@ export class Mailbox {
       unreadCount,
       inFlightCount,
       overdueInFlightCount,
+      parkedCount,
       oldestOverdueMs,
       addresses,
       unsupportedProviders: unsupportedProviders.sort(),

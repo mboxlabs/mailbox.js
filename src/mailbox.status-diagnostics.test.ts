@@ -153,6 +153,8 @@ describe('bus.getStatus 的 exists / lastActivityTime（总线层同一套语义
       inFlightCount: 0,
       overdueInFlightCount: 0,
       oldestOverdueMs: 0,
+      parkedCount: 0,
+      oldestParkedMs: 0,
       lastActivityTime: null,
       subscriberCount: 0,
     });

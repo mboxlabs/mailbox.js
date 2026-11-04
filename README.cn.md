@@ -248,6 +248,31 @@ flowchart LR
    （`InvalidFetchOptionsError`）；不支持只读快照的 provider 会报 `UnsupportedCapabilityError`，
    不会静默退化成会取信的 `fetch`。
 
+   **取到的信怎么结算。** `fetch(addr, { manualAck: true })` 给你的句柄有两个动作。它们的区别
+   **不是“成功 / 失败”**——这个读法坑过真人在生产上：它暗示“判定不合格想扔掉的信不配 `ack`”，
+   于是排空脚本全写成 `nack(false)`，然后空转。真实的差别只有两个问题：**还会不会再交给我**、
+   **要不要 provider 顺手做点什么**。
+
+   | 你做什么 | 这一份 | 还会交给我吗 | provider 按协议善后 |
+   | --- | --- | --- | --- |
+   | `ack()`       | 删 | 不 | 不 |
+   | `nack(false)` | 删 | 不 | **做** |
+   | `nack(true)`  | 回队 | 会 | 不 |
+
+   `ack()` 的意思是“这一份我处理完了，别再管它”——你怎么处理的、还是干脆判定这封信不合格直接
+   扔了，都一样。**想静默丢弃，就用它。**
+
+   `nack(false)` 只多一件事：provider 按**它自己协议的规矩**善后。对 `MemoryProvider` 就是往死信
+   topic 存一份副本（没开 `enableDeadLetterQueue()` 时它退化成纯丢弃，跟 `ack()` 一模一样）；
+   SMTP 是 reject / bounce，IMAP 是打 `\Deleted` 再 expunge，MQTT 一类根本没这个概念。
+   别把 DLQ 当成 `nack(false)` 的自带行为。
+
+   所有 provider 都必须兑现同一条：`nack(false)` 之后这条消息**不会再交给任何人**——死信链到
+   `maxNesting` 时也一样。那种记录是**停放**：不在 `unreadCount` 里、`fetch` 取不出来，只能
+   `peekParked()` 查 / `status().parkedCount` 数，只有 `purgeParked()` 能排走。
+   push 侧没有句柄，同样三个选择：正常 `return` = `ack`；抛普通错误 = `nack(false)`；
+   抛 `{ isRetriable: true }` = `nack(true)`。
+
    ### 3. 订阅失败时
 
    回调抛出的错误决定消息的去向：
@@ -382,9 +407,10 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
 
    死信队列本身也可能被放弃——最常见的就是补偿脚本自己崩了。链是有上限的：
    `enableDeadLetterQueue({ maxNesting })` 默认只给**一层**，所以从 `X_dlq` 里取出来、再次被判放弃
-   的记录会**就地停放**在 `X_dlq`（打 `mbx-dead-letter-terminal: 'true'`，并记一条 CRITICAL），
-   而不是开出一条 `X_dlq_dlq`、再 `X_dlq_dlq_dlq`……无穷无尽。停放不是丢弃：记录仍在队列里，
-   `peek` / `status` 都看得见，worker `fetch` 之后 `ack` 就能把它排走。要真想要一条链就传更大的
+   的记录会**停放**在 `X_dlq`（打 `mbx-dead-letter-terminal: 'true'`，并记一条 CRITICAL），
+   而不是开出一条 `X_dlq_dlq`、再 `X_dlq_dlq_dlq`……无穷无尽。停放不是丢弃，也**不是重新入队**：
+   它不在 `unreadCount` 里、`fetch` 也取不出来（否则排空脚本会永远拿到同一条），只能
+   `peekParked()` 查、`purgeParked()` 排走，`status().parkedCount` 数得出来。要真想要一条链就传更大的
    `maxNesting`；`Number.POSITIVE_INFINITY` 是显式的“我不要上限”。封顶时 `deadLetterTopic()` 返回
    的是这条队列**自己**（消息真正会落的地方），而不是一个永远不会被写入的更深地址。
 

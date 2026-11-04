@@ -95,8 +95,10 @@ export interface MailMessage extends Omit<OutgoingMail, 'from' | 'to'> {
  */
 export interface Ackable {
   /**
-   * 确认消息已被成功处理。
-   * Provider 将会通知消息队列彻底删除此消息。
+   * **结束这次交付：这一份到此为止，系统不留任何东西。**
+   *
+   * `ack` 不是“处理成功了”的意思，而是“我看完了，别再管这一份”——你怎么处理的、处理成
+   * 什么样、还是干脆判定这封信不合格直接扔掉，provider 不知道也不问。想静默丢弃，就用它。
    *
    * 结算绑在这一次 `fetch` 上（句柄内部拿着份号 + 第几次交出去），所以迟到的旧句柄不能销掉
    * 新消费者的租约：它只会安静地 no-op（本方法回 `void`，要看到“没落定”得用队列层的
@@ -105,14 +107,31 @@ export interface Ackable {
   ack(): Promise<void>;
 
   /**
-   * 拒绝消息。
-   * @param requeue 如果为 true，请求消息队列将此消息重新放回，使其可以被再次消费
-   *                （回到哪个位置、已经重投几次，由 provider 决定，内核不管——但内核会把带
-   *                `mbx-attempt` / `mbx-round` 的投递副本交给你，设上限就有得数）。
-   *                如果为 false 就是**放弃**：消息被永久移出队列。丢弃还是落死信也由 provider
-   *                定——`MemoryProvider` 默认丢弃（不留任何痕迹），开了
-   *                `enableDeadLetterQueue()` 后才会在死信 topic 里留一份。
-   *                不要指望 `nack(false)` 自带 DLQ。
+   * **结束这次交付，并且请 provider 按它自己协议的规矩善后。**
+   *
+   * @param requeue `true` = 放回队列，还会再交给我一次；`false`（默认）= 结束它，
+   *   **不会再交给我**，由 provider 决定怎么善后。
+   *
+   * 三个动作的真实差别（不是“成功 / 失败”）：
+   *
+   * | 动作 | 这一份 | 还会交给我吗 | provider 按协议善后 |
+   * | --- | --- | --- | --- |
+   * | `ack()`             | 删 | 不 | 不 |
+   * | `nack(false)`       | 删 | 不 | **做** |
+   * | `nack(true)`        | 回队 | 会 | 不 |
+   *
+   * “善后”是 provider 按自己协议做的事，内核不规定它是什么：
+   * `MemoryProvider` 是往死信 topic 存一份副本（没开 `enableDeadLetterQueue()` 就等同于
+   * `ack()`——纯丢弃，零痕迹）；SMTP 是 reject / bounce；IMAP 是打 `\Deleted` 再 expunge；
+   * MQTT 一类压根没有这个概念。**不要指望 `nack(false)` 自带 DLQ。**
+   *
+   * 不管各协议怎么善后，有一条对所有实现都成立：`nack(false)` 之后**这条消息不能再被交回给
+   * 任何消费者**。死信链到顶（`maxNesting`）时也不例外——那种记录**停放**在那里：不在
+   * `unreadCount` 里、`fetch` 取不到，只能查（`MemoryProvider#peekParked`），排走要显式
+   * `purgeParked`。把它塞回队列等于反悔这句承诺（排空脚本会永远取到同一条）。
+   *
+   * 回队位置、已重投几趟由 provider 决定，内核不管——但内核会把带 `mbx-attempt` /
+   * `mbx-round` 的投递副本交给你，设上限就有得数。
    */
   nack(requeue?: boolean): Promise<void>;
 }
@@ -212,6 +231,16 @@ export interface MailboxStatus {
   /** 最老那条过期租约已经过期多久（ms）；没有过期租约时为 0。 */
   oldestOverdueMs?: number;
   /**
+   * **停放**的份数：已判死、不会再交给任何消费者，但也还没被真正丢弃的记录。
+   *
+   * 它们**不在** `unreadCount` 里，也不会被 `fetch` 交出来（否则排空脚本会永远取到同一条），
+   * 只能查：`MemoryProvider#peekParked(address)`。死信链到顶（`maxNesting`）就是典型来源。
+   * 没有这个数，运维就只看到「没未读」，看不出「有一条判死的停在这儿」。
+   */
+  parkedCount?: number;
+  /** 最老那条停放记录停了多久（ms）；没有停放时为 0。 */
+  oldestParkedMs?: number;
+  /**
    * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)；没有活动记录时为 `null`。
    *
    * 必须是 `null` 而不是 `undefined`：`undefined` 会在 `JSON.stringify` 后整个字段消失，
@@ -278,6 +307,8 @@ export interface MailboxSnapshot {
   overdueInFlightCount: number;
   /** 所有地址里最老化的一条过期租约过期了多久（ms）；没有则 0。 */
   oldestOverdueMs: number;
+  /** 所有地址的 `parkedCount` 之和（判死停放的信号，不在 `unreadCount` 里）。 */
+  parkedCount: number;
   /** 按 `canonicalId` 排序的地址状态，保证快照可重复、断言可写死。 */
   addresses: MailboxAddressSnapshot[];
   /** 不支持枚举自身地址的 provider（它们的队列不在本次快照里）。 */

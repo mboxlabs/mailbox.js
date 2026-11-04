@@ -71,6 +71,14 @@ export const DEFAULT_ACK_TIMEOUT = 30_000;
  *
  * `expiresAt` 是**这条租约自己的**到期时刻（取走那一刻算好），`Infinity` = 永不过期。
  */
+/** 一条停放记录：判死但先不丢的那一份，加上「什么时候停的、为什么」。 */
+export type ParkedEntry<T> = {
+  message: T;
+  parkedAt: number;
+  reason: string;
+};
+
+/** 一条租约（manualAck 取信）：见 {@link MailMessageQueue} 的 `inFlight`。 */
 export type InFlightEntry<T> = {
   message: T;
   timestamp: number;
@@ -118,7 +126,19 @@ export type TopicQueueStatus = {
   overdueInFlightCount: number;
   /** 最老那条过期租约已经过期多久（ms）；没有过期租约时为 0。 */
   oldestOverdueMs: number;
+  /**
+   * **停放**的份数：已经判死（不再交给任何人）、但还没被真正丢弃的记录。
+   *
+   * 它们不在 `unreadCount` 里，也永远不会被 `dequeue` 交出来——只看得到、拿得出来。
+   * 没有这个数，运维就只能看到「没未读」，看不出「有一条判死的停在这儿」。
+   */
+  parkedCount: number;
+  /** 最老那条停放记录停了多久（ms）；没有停放时为 0。 */
+  oldestParkedMs: number;
 };
+
+/** 每个 topic 最多留多少条停放记录；超了淘汰最老的并**出声**（不静默丢）。 */
+export const MAX_PARKED_PER_TOPIC = 100;
 
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
@@ -173,6 +193,15 @@ export class MailMessageQueue<T extends { id: string }> {
 
   /** 无号副本只告警一次（说清降级，但不刷屏）。 */
   private warnedMissingSendId = false;
+
+  /**
+   * 停放区：`topic → 判死但先不丢的记录`。
+   *
+   * 为什么要有第三个状态：交付流只有「未读 / 在飞」两态，而「到此为止」的东西（死信链封顶
+   * 就是典型）如果继续留在未读里，排空脚本就会永远取到同一条——`nack(false)` 那句
+   * 「不会再交给你」就成了谎话。停放 = 不出队、不交付、但可查、可清。
+   */
+  private readonly parked: Map<string, ParkedEntry<T>[]> = new Map();
 
   /**
    * Adds a message to the end of a specific topic's queue.
@@ -531,12 +560,69 @@ export class MailMessageQueue<T extends { id: string }> {
         oldestOverdueMs = Math.max(oldestOverdueMs, now - expiresAt);
       }
     }
+    const parkedList = this.parked.get(topic) ?? [];
     return {
       unreadCount: queue.length,
       inFlightCount,
       overdueInFlightCount,
       oldestOverdueMs,
+      parkedCount: parkedList.length,
+      oldestParkedMs:
+        parkedList.length === 0 ? 0 : Math.max(...parkedList.map((entry) => now - entry.parkedAt)),
     };
+  }
+
+  /**
+   * 停放一份**判死**的记录：不进队列、不会被 `dequeue` 交出来，只在 `getStatus` 里数得出来、
+   * 在 {@link listParked} 里读得出来。
+   *
+   * 上限 {@link MAX_PARKED_PER_TOPIC}：超了就淘汰最老的，并 `console.warn` 一条——
+   * 停放区自己也不能变成静默丢弃的洞。
+   */
+  public park(topic: string, message: T, reason: string): void {
+    const list = this.parked.get(topic) ?? []
+    list.push({ message, parkedAt: Date.now(), reason })
+    if (list.length > MAX_PARKED_PER_TOPIC) {
+      const dropped = list.splice(0, list.length - MAX_PARKED_PER_TOPIC)
+      console.warn(
+        `[MailMessageQueue] parked records for '${topic}' exceeded ${MAX_PARKED_PER_TOPIC}; ` +
+          `dropped the ${dropped.length} oldest (a parking area that silently drops is just another lost letter). ` +
+          `Oldest dropped id: ${dropped[0]?.message?.id}.`,
+      )
+    }
+    this.parked.set(topic, list)
+  }
+
+  /**
+   * 排空停放区：把判死的记录真正丢掉。返回丢掉的份数。
+   *
+   * 这是停放唯一的出口（它们不进交付流，所以没有 ack 可用）。省略谓词 = 整条队列的停放记录
+   * 全清；给谓词 = 只清挑中的那几条。丢弃是**永久**的，所以调用方要么已经读过
+   * （{@link listParked}），要么就是在明确接受丢数据。
+   */
+  public clearParked(topic: string, predicate?: (message: T) => boolean): number {
+    const list = this.parked.get(topic)
+    if (!list) {
+      return 0
+    }
+    if (predicate === undefined) {
+      this.parked.delete(topic)
+      return list.length
+    }
+    const keep = list.filter((entry) => !predicate(entry.message))
+    const dropped = list.length - keep.length
+    if (keep.length === 0) {
+      this.parked.delete(topic)
+    } else {
+      this.parked.set(topic, keep)
+    }
+    return dropped
+  }
+
+  /** 只读：停放的那些记录（最新的在末尾）。读它不改任何状态。 */
+  public listParked(topic: string, limit?: number): T[] {
+    const list = this.parked.get(topic) ?? []
+    return (limit === undefined ? list : list.slice(-limit)).map((entry) => entry.message)
   }
 
   /**
@@ -600,9 +686,13 @@ export class MailMessageQueue<T extends { id: string }> {
       for (const queue of this.queues.values()) {
         dropped += queue.length;
       }
+      for (const list of this.parked.values()) {
+        dropped += list.length;
+      }
       this.queues.clear();
       this.inFlight.clear();
       this.inFlightById.clear();
+      this.parked.clear();
       return dropped;
     }
 
@@ -611,6 +701,11 @@ export class MailMessageQueue<T extends { id: string }> {
     if (queue) {
       dropped += queue.length;
       this.queues.delete(topic); // 连空数组一起删掉，不留尾巴
+    }
+    const parkedList = this.parked.get(topic)
+    if (parkedList) {
+      dropped += parkedList.length
+      this.parked.delete(topic)
     }
     for (const [key, flight] of Array.from(this.inFlight.entries())) {
       if (flight.topic === topic) {
