@@ -182,7 +182,7 @@ export class MailMessageQueue<T extends { id: string }> {
     // 到期时刻**（`InFlightEntry.expiresAt`）。缺省的租约不能当成“永不回队”：那会把信永久
     // 泄漏在在飞里（状态里取不到、也不会自愈）——所以缺省走 DEFAULT_ACK_TIMEOUT。
     if (options?.manualAck) {
-      this.requeueStale(topic);
+      this.sweepExpired(topic);
     }
 
     const messages = this.queues.get(topic);
@@ -550,22 +550,29 @@ export class MailMessageQueue<T extends { id: string }> {
   }
 
   /**
-   * Scans for and requeues in-flight messages for a specific topic whose **own lease** has
-   * expired. This is a recovery mechanism to prevent message loss if a consumer fails.
+   * 把该 topic 上**租约已到期**的在飞收回队列。这是回收机制，用来在消费者崩掉时不丢消息。
    *
-   * 到期与否只看每条租约自己的 `expiresAt`（取走那一刻定下的）。清扫者自己的 timeout 不参与：
+   * 到期与否只看每条租约自己的 `expiresAt`（取走那一刻定下的）。调用方的 timeout 不参与：
    * 它既不提前接管未到期的租约，也不拖后已过期的租约。
-   * @param topic The topic to check for stale messages.
+   *
+   * 两个调用入口：① manualAck 取信时顺手扫（惰性）；② **显式**调用（`Mailbox.recover()` 或
+   * provider 的 opt-in 定时器）——后者就是为了“再没人来取信”那种topic（最后一个消费者崩了）。
+   *
+   * @param topic 要扫的 topic。
+   * @returns 实际收回了几份（幂等：再扫一次就是 0）。
    */
-  private requeueStale(topic: string): void {
+  public sweepExpired(topic: string): number {
     const now = Date.now();
+    let reclaimed = 0;
     // Use Array.from to safely iterate while potentially modifying the map
     for (const [key, { message, expiresAt, topic: messageTopic }] of Array.from(this.inFlight.entries())) {
       // Check if the message belongs to the topic we are checking and is stale
       if (messageTopic === topic && expiresAt <= now) {
         this.dropFlight(key);
         this.requeue(messageTopic, message);
+        reclaimed++;
       }
     }
+    return reclaimed;
   }
 }

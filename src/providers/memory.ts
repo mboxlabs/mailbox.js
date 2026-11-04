@@ -337,6 +337,14 @@ export class MemoryEventBus {
   }
 
   /**
+   * 显式回收这个 topic 上已到期的租约（`Mailbox#recover()` 往下走的那条路）。
+   * @returns 收回了几份（幂等）。
+   */
+  public reclaimExpired(topic: string): number {
+    return this.messageQueue.sweepExpired(topic);
+  }
+
+  /**
    * Gets the current status of a topic.
    * @param topic The topic to get the status for.
    * @returns An object containing status information. `exists` 区分「不存在」与「空闲」，
@@ -370,6 +378,22 @@ export class MemoryEventBus {
 
 
 
+/**
+ * `MemoryProvider` 的可选行为。
+ */
+export interface MemoryProviderOptions {
+  /**
+   * **opt-in** 的租约清扫周期（ms）。不传 / `<= 0` / 非法 = 关（默认就是关）。
+   *
+   * 默认关是因为回收本来挂在“有人来 manualAck 取信”上，往默认路径里塞定时器会改变无轮询
+   * 场景的时序。开它的理由只有一个：那个 topic 再没人来取信（最后一个消费者崩了）——过期
+   * 租约就永远挂在 in-flight 里，那种时候应当直接调 `Mailbox#recover()`，或者开这个。
+   *
+   * 定时器 `unref()`（不拖住进程退出），`close()` / `Mailbox#stop()` 时拆掉。
+   */
+  leaseSweepIntervalMs?: number;
+}
+
 export class MemoryProvider extends MailboxProvider {
   /**
    * 这个 provider 用的总线。默认是进程级共享单例（“模拟服务端”语义），
@@ -391,13 +415,66 @@ export class MemoryProvider extends MailboxProvider {
   protected readonly broadcastDeliveries = true;
 
   /**
+   * opt-in 的租约清扫定时器（{@link MemoryProviderOptions.leaseSweepIntervalMs}）。
+   * `undefined` = 没启动。字段名是契约的一部分（测试就查它有没有 unref）。
+   */
+  private leaseSweeper?: ReturnType<typeof setInterval>;
+  private readonly leaseSweepIntervalMs?: number;
+
+  /**
    * @param retry 可选的订阅重试策略。不传则保持默认：订阅失败只把消息退回队列，不自动重投。
    * @param bus 可选的总线。不传则用进程级共享单例（向后兼容）；
    *   传 `new MemoryEventBus()` 得到实例级隔离，传 `MemoryEventBus.getInstance('scope')` 得到命名空间级隔离。
+   * @param options 可选行为（目前只有 opt-in 的租约清扫周期）。
    */
-  constructor(retry?: RetryPolicy | null, bus?: MemoryEventBus) {
+  constructor(retry?: RetryPolicy | null, bus?: MemoryEventBus, options?: MemoryProviderOptions) {
     super('mem', retry);
     this.bus = bus ?? MemoryEventBus.getInstance();
+    this.leaseSweepIntervalMs = options?.leaseSweepIntervalMs;
+  }
+
+  /**
+   * 启动（opt-in 的）租约清扫定时器。
+   *
+   * 扫的是整个总线上已知的所有 topic：回收只按**每条租约自己的到期时刻**判，所以定时扫是
+   * 安全的——不会动别人未到期的租约，也不会动 `ackTimeout: 0` 的常驻租约。
+   * 扫失败不能搞死定时器（否则一个 topic 的异常就把回收关掉了）。
+   */
+  public async init(): Promise<void> {
+    const interval = this.leaseSweepIntervalMs
+    if (interval === undefined || !Number.isFinite(interval) || interval <= 0) {
+      return // 默认关：默认路径不持有任何定时器
+    }
+    if (this.leaseSweeper) {
+      return // 幂等：重复 init 不叠定时器
+    }
+    this.leaseSweeper = setInterval(() => {
+      try {
+        for (const topic of this.bus.listTopics()) {
+          this.bus.reclaimExpired(topic)
+        }
+      } catch (error) {
+        console.error(`[${this.protocol}] Lease sweep failed; the timer stays armed:`, error)
+      }
+    }, interval)
+    // 定时器不能拖住进程退出（测试、CLI 都会受影响）
+    ;(this.leaseSweeper as unknown as { unref?: () => void }).unref?.()
+  }
+
+  /** `close()` / `Mailbox#stop()` 必须拆掉定时器：收尾之后不该再改队列。 */
+  protected async _close(): Promise<void> {
+    if (this.leaseSweeper) {
+      clearInterval(this.leaseSweeper)
+      this.leaseSweeper = undefined
+    }
+  }
+
+  /**
+   * 把该地址上**租约已到期**的信收回队列（`Mailbox#recover()` 的实现入口）。
+   * 幂等，返回收回了几份。
+   */
+  public async recoverLeases(address: URL): Promise<number> {
+    return this.bus.reclaimExpired(getCanonicalMailboxAddressIdentifier(address))
   }
 
   /**

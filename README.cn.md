@@ -416,6 +416,23 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    常驻租约。“过没过期”由租约自己、在取走那一刻决定；否则任意消费者的一次取信就能作废别人的
    租约。过期未收回的代价是可见性，`overdueInFlightCount`（§2）负责把它补回来。
 
+   回收由「下一次 manualAck 取信」触发。对正常轮询的消费者够用，但最后一个消费者崩了——这个地址
+   再没人来取信——已过期的租约就永远挂在 in-flight 里。这种场景有显式、幂等的入口：
+
+   ```ts
+   const r = await mailbox.recover(addr)  // { reclaimed: 1, supported: true }
+   const all = await mailbox.recover()    // 全部可枚举地址：{ reclaimed, byAddress, unreachableProviders }
+   ```
+
+   `recover()` 只动**已到期**的租约：别人手里未到期的那份、以及 `ackTimeout: 0` / `null` 的常驻租约
+   都不会被碰；连调两次无害。没有租约概念的 provider（推送型，或可见性超时在 broker 侧的
+   AMQP / SQS）会回 `supported: false`——别把 `reclaimed: 0` 读成「一切正常」。想让它按钟点跑，
+   清扫器是 opt-in（默认**关**、`unref()` 不拖住进程、`stop()` 拆掉）：
+
+   ```ts
+   new MemoryProvider(null, new MemoryEventBus(), { leaseSweepIntervalMs: 1000 })
+   ```
+
    [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
    移植版保持同样的三态：缺省超时、自定义超时、永不过期。
 

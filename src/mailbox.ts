@@ -4,6 +4,7 @@ import {
   MailboxAddressSnapshot,
   MailboxSnapshot,
   MailboxStatus,
+  LeaseRecoveryReport,
   OutgoingMail,
   Subscription,
   AckableMailMessage,
@@ -205,6 +206,59 @@ export class Mailbox {
   }
 
   /**
+   * 显式回收：把该地址上**租约已到期**的信收回队列。
+   *
+   * 为什么需要它：在飞租约的回收本来是惰性的（无后台定时器，只有下一次 manualAck 取信才扫）。
+   * 对正常轮询的消费者够用；但“最后一个消费者崩了”、“这个地址再没人 fetch”时，那封信就永远挂在
+   * in-flight：`unreadCount` 0、`inFlightCount` 1、`overdueInFlightCount` 1，不会自愈。
+   * `recover()` 就是留给运维脚本 / 定时任务 / 健康检查的那个入口（不靠往默认路径里塞定时器）。
+   *
+   * 只动**已到期**的租约：别人手里未到期的、以及 `ackTimeout: 0` / `null` 的常驻租约都不会被碰。
+   * 幂等：紧接着再调一次通常 `reclaimed: 0`。provider 报错直接抛出，不静默吐掉。
+   *
+   * 没有租约概念的 provider 会回 `supported: false`——**别把 `reclaimed: 0` 读成“一切正常”**。
+   *
+   * @param address 要回收的地址；不带 = 遍历所有能枚举自身地址的 provider 的全部地址。
+   */
+  public async recover(address: string | URL): Promise<LeaseRecoveryReport>;
+  public async recover(): Promise<LeaseRecoveryReport>;
+  public async recover(address?: string | URL): Promise<LeaseRecoveryReport> {
+    if (address !== undefined) {
+      const addrUrl = parseMailboxAddress(address, 'recover()');
+      const provider = this.getProvider(addrUrl.protocol, true);
+      return {
+        reclaimed: await recoverLeasesOf(provider, addrUrl),
+        supported: typeof provider.recoverLeases === 'function',
+      };
+    }
+
+    const byAddress: Record<string, number> = {};
+    const unreachableProviders: string[] = [];
+    let reclaimed = 0;
+
+    for (const [protocol, provider] of this._providers) {
+      // 没实现 `recoverLeases`（没有租约概念），或消息不在本地、枚举不到地址：这笔没做，
+      // 也不能算成“没事”——列出来。
+      if (typeof provider.recoverLeases !== 'function' || typeof provider.listAddresses !== 'function') {
+        unreachableProviders.push(protocol);
+        continue;
+      }
+      for (const canonicalId of await provider.listAddresses()) {
+        const each = await recoverLeasesOf(provider, new URL(canonicalId));
+        byAddress[canonicalId] = each;
+        reclaimed += each;
+      }
+    }
+
+    return {
+      reclaimed,
+      supported: unreachableProviders.length === 0,
+      byAddress,
+      unreachableProviders: unreachableProviders.sort(),
+    };
+  }
+
+  /**
    * 全量快照：把所有能枚举自身地址的 provider 的 topic 状态汇成一个可断言的结构。
    *
    * 等价于无参的 `status()`，只是名字更直白（诊断页里 `mailbox.snapshot()` 比 `mailbox.status()`
@@ -268,6 +322,11 @@ export class Mailbox {
  * `protocol://user@host/path` 形式）。解析不了是 provider 的 bug，宁可报 unknown
  * 也不能让整个快照崩掉。
  */
+/** provider 没有租约概念时，回收就是“没做”（调用方靠 `supported` 区分“没做”与“做了但 0 份”）。 */
+async function recoverLeasesOf(provider: IMailboxProvider, address: URL): Promise<number> {
+  return typeof provider.recoverLeases === 'function' ? provider.recoverLeases(address) : 0;
+}
+
 async function statusOfCanonicalAddress(provider: IMailboxProvider, canonicalId: string): Promise<MailboxStatus> {
   if (!provider.status) {
     // 能枚举但不能报状态：至少把“这个地址存在”说出来。

@@ -460,6 +460,26 @@ itself, at the moment it was handed out — otherwise any consumer's single fetc
 another consumer's lease. What an expired-but-unreclaimed lease costs you is visibility, which is
 what `overdueInFlightCount` (§2) exists to remove.
 
+Reclaiming is triggered by the next `manualAck` fetch. That is fine for a polling consumer, but if
+the last consumer crashes — nobody fetches that address again — the expired lease sits in-flight
+forever. For that case there is an explicit, idempotent entry point:
+
+```ts
+const r = await mailbox.recover(addr)  // { reclaimed: 1, supported: true }
+const all = await mailbox.recover()    // every enumerable address: { reclaimed, byAddress, unreachableProviders }
+```
+
+`recover()` only touches **expired** leases: letters still inside their lease, and `ackTimeout: 0`
+/ `null` leases, are left alone. Calling it twice is harmless. A provider with no lease concept
+(push-style, or a broker that owns visibility timeouts itself, like AMQP / SQS) answers
+`supported: false` — do not read `reclaimed: 0` as "all clear". If you would rather have it happen
+on a clock, the sweeper is opt-in (default **off**, `unref()`ed so it cannot keep the process alive,
+cleared by `stop()`):
+
+```ts
+new MemoryProvider(null, new MemoryEventBus(), { leaseSweepIntervalMs: 1000 })
+```
+
 The [Python](https://github.com/mboxlabs/mailbox.py) and
 [Rust](https://github.com/mboxlabs/mailbox.rust) ports keep the same three states: default timeout,
 custom timeout, never expires.

@@ -231,6 +231,21 @@ export interface MailboxAddressSnapshot extends MailboxStatus {
 }
 
 /**
+ * `Mailbox#recover()` 的报告。
+ */
+export interface LeaseRecoveryReport {
+  /** 实际收回了几份（幂等：紧接着再调一次通常是 0）。
+   *  注意：`reclaimed === 0` 本身不等于“没事”——要看 `supported`。 */
+  reclaimed: number;
+  /** 被调到的 provider 到底有没有“租约可回收”这个概念。 */
+  supported: boolean;
+  /** 不带地址调用时：每个地址收回了几份（key = canonicalId）。 */
+  byAddress?: Record<string, number>;
+  /** 不带地址调用时：本次碰不到的 provider（没有 `recoverLeases`，或不能枚举自身地址）。 */
+  unreachableProviders?: string[];
+}
+
+/**
  * 全量快照：一时刻整个 `Mailbox`（所有 provider、所有 topic）的诊断视图。
  *
  * 给诊断页、测试断言用（issue#4）。只能由能枚举自身 topic 的 provider（实现
@@ -348,6 +363,15 @@ export interface IMailboxProvider {
    * 没实现就不实现——{@link MailboxSnapshot} 会把这类 provider 归入
    * {@link MailboxSnapshot.unsupportedProviders}，不会把「枚举不了」当成「队列为空」。
    */
+  /**
+   * [Optional] 把该地址上**租约已到期**的在飞消息收回队列，返回收回了几份（幂等）。
+   *
+   * 有“租约”这个概念的 provider（队列型 / 拉取型）实现它，`Mailbox#recover()` 就能把僵死消费者
+   * 手里的过期租约收回来。没实现（推送型，或可见性超时在 broker 侧的 AMQP / SQS）会被
+   * `recover()` 报成 `supported: false` —— **不能当作“一切正常”**。
+   */
+  recoverLeases?(address: URL): Promise<number>;
+
   listAddresses?(): Promise<string[]>;
 
   /**

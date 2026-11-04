@@ -136,3 +136,37 @@ describe('过期未收回的在飞必须可见', () => {
     expect(q.getStatus(topic).unreadCount).toBe(0) // 没被"顺手"放回队列
   })
 })
+
+describe('显式回收（不靠有人取信触发）', () => {
+  it('[语义] sweepExpired(topic) 把已过期的租约收回队列，并返回收回了几份', async () => {
+    const q = new MailMessageQueue<M>()
+    const topic = 'explicit-sweep'
+    q.enqueue(topic, msg('short-1'))
+    q.enqueue(topic, msg('short-2'))
+    grab(q, topic, 20)
+    grab(q, topic, 20)
+    await sleep(60)
+
+    expect(q.getStatus(topic).overdueInFlightCount).toBe(2)
+    expect(q.sweepExpired(topic)).toBe(2) // ← 运维脚本 / 定时器要的就是这个动作
+    expect(q.getStatus(topic)).toMatchObject({ unreadCount: 2, inFlightCount: 0, overdueInFlightCount: 0 })
+  })
+
+  it('[语义] 显式扫描不动未到期的租约，也不动常驻租约', async () => {
+    const q = new MailMessageQueue<M>()
+    const topic = 'explicit-sweep-scoped'
+    q.enqueue(topic, msg('never'))
+    q.enqueue(topic, msg('long'))
+    q.enqueue(topic, msg('short'))
+    grab(q, topic, 0) // 常驻
+    grab(q, topic, 60_000) // 未到期
+    grab(q, topic, 10) // 会到期
+    await sleep(40)
+
+    expect(q.sweepExpired(topic)).toBe(1)
+    expect(q.dequeue(topic)?.id).toBe('short') // 只有那一条回来了
+    expect(q.dequeue(topic)).toBeNull() // 队里没有第二条
+    expect(q.getStatus(topic).inFlightCount).toBe(2) // 常驻 + 未到期都还在各自租约里
+    expect(q.getStatus(topic).overdueInFlightCount).toBe(0)
+  })
+})
