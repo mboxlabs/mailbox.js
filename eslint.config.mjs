@@ -16,8 +16,12 @@ const config = await antfu({
     'docs/**',
     'dist/**',
     '.cache/**',
+    // 各端口与 wiki 是**独立的 git 仓库**，只是放在同一个工作目录里；内核的 lint 不管它们的代码。
     'python/**',
     'rust/**',
+    'wiki/**',
+    // 本地探针 / 演示：不属于源码，也不入库。
+    'scratch/**',
   ],
 
   // 风格类规则全部交给 prettier

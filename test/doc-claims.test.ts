@@ -17,7 +17,8 @@ import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-const ROOTS = ['src', 'wiki', 'conformance', 'README.md', 'README.cn.md']
+const ROOTS = ['src', 'wiki', 'README.md', 'README.cn.md']
+// 用例与报告已随 paper 迁到 `wiki/paper/conformance/`，被 SKIP_DIRS 里的 'paper' 跳过
 const SKIP_DIRS = ['paper'] // 论文笔记里这些词是作为“不许这样主张”的反面例子出现的
 
 const BANNED: Array<[string, string]> = [
