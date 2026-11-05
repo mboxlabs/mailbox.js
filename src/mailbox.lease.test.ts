@@ -94,8 +94,8 @@ describe('过期未收回的在飞必须可见（端到端）', () => {
     const status = await mailbox.status(address)
     expect(status.unreadCount).toBe(0) // 不在队列（回收惰性）
     expect(status.inFlightCount).toBe(1) // 挂在在飞
-    expect(status.overdueInFlightCount).toBe(1) // ← 已过期，必须看得见
-    expect(status.oldestOverdueMs).toBeGreaterThanOrEqual(60)
+    expect(status['mem.overdueInFlightCount']).toBe(1) // ← 已过期，必须看得见
+    expect(status['mem.oldestOverdueMs']).toBeGreaterThanOrEqual(60)
     await mailbox.stop({ purge: true })
   })
 
@@ -113,9 +113,9 @@ describe('过期未收回的在飞必须可见（端到端）', () => {
 
     const snapshot = await mailbox.status()
     expect(snapshot.inFlightCount).toBe(2)
-    expect(snapshot.overdueInFlightCount).toBe(1)
-    // addresses 按 canonicalId 排序，两个地址的先后是确定的：snap-a（会过期）、snap-b（不会）
-    expect(snapshot.addresses.map((entry) => entry.overdueInFlightCount ?? 0)).toEqual([1, 0])
+    // addresses 按地址串排序，两个地址的先后是确定的：snap-a（会过期）、snap-b（不会）。
+    // 过期积压是 `mem:` 的账，放在扩展键里；快照不再代求这个和（内核不认识这些键）。
+    expect(snapshot.addresses.map((entry) => (entry['mem.overdueInFlightCount'] as number) ?? 0)).toEqual([1, 0])
     await mailbox.stop({ purge: true })
   })
 
@@ -130,7 +130,7 @@ describe('过期未收回的在飞必须可见（端到端）', () => {
 
     const first = await mailbox.status(address)
     const again = await mailbox.status(address)
-    expect(again.overdueInFlightCount).toBe(first.overdueInFlightCount)
+    expect(again['mem.overdueInFlightCount']).toBe(first['mem.overdueInFlightCount'])
     expect(again.unreadCount).toBe(0) // 没被"顺手"放回队列
     expect((await mailbox.fetch(address, { peek: true })).length).toBe(0)
     await mailbox.stop({ purge: true })

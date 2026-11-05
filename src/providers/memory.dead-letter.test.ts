@@ -202,7 +202,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
     expect(await provider.listAddresses()).toContain(dlq!);
 
     const snapshot = await mailbox.snapshot();
-    expect(snapshot.addresses.map((entry) => entry.canonicalId)).toContain(dlq!);
+    expect(snapshot.addresses.map((entry) => entry.address)).toContain(dlq!);
 
     await mailbox.clear();
     expect((await mailbox.status(dlq!)).unreadCount).toBe(0);

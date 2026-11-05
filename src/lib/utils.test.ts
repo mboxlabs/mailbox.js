@@ -74,7 +74,8 @@ describe('地址规范化与无损校验', () => {
 
   it('错误对象带地址与错误码，调用方可以按 code 分支而不是匹配文案', () => {
     try {
-      parseMailboxAddress('mem:q@example.com/inbox?thread=1', 'post()')
+      // 这条策略属于 scheme（`mem:` 的折叠会丢 query），不属于内核：所以断言挂在 helper 上。
+      assertLosslessMailboxAddress(new URL('mem:q@example.com/inbox?thread=1'), 'post()')
       expect.unreachable('带 query 的地址应该被拒绝')
     } catch (error) {
       expect(error).toBeInstanceOf(InvalidMailboxAddressError);
@@ -85,7 +86,27 @@ describe('地址规范化与无损校验', () => {
   });
 });
 
-describe('parseMailboxAddress', () => {
+describe('parseMailboxAddress：内核只看 URL，地址语法归 scheme（D5）', () => {
+  it('query / fragment 不在内核这一层被禁止——那是 scheme 的策略', () => {
+    // 内核若统一禁止，就等于把 `mem:` 的折叠规则当成 URL 的通用规则：
+    // 一个「query 参与寻址」的 scheme（`q:a?thread=1` ≠ `q:a`）就没有合法的 query 可用。
+    const withQuery = parseMailboxAddress('q:inbox?thread=1', 'post()')
+    expect(withQuery.search).toBe('?thread=1')
+    expect(withQuery.href).toBe('q:inbox?thread=1')
+
+    const withHash = parseMailboxAddress('q:inbox#frag', 'subscribe()')
+    expect(withHash.hash).toBe('#frag')
+
+    // 内核也不折叠字段：这两个地址在 kernel 眼里就是两个 href（是否等价由 provider 决定）。
+    expect(parseMailboxAddress('q:a?thread=1').href).not.toBe(parseMailboxAddress('q:a').href)
+  })
+
+  it('内核只做 URL 解析：解析不了的地址报成地址错误', () => {
+    expect(() => parseMailboxAddress('not an address', 'status()')).toThrowError(
+      InvalidMailboxAddressError,
+    )
+  })
+
   it('接受字符串与 URL，返回等价的 URL', () => {
     // URL 保留写法（opaque 形式不会被改写成 hierarchical），topic 归一在 canonical id 那一步完成
     expect(parseMailboxAddress('mem:a@example.com/inbox').href).toBe('mem:a@example.com/inbox');

@@ -9,14 +9,15 @@ import { readSendId, MBX_SEND_ID_HEADER } from './delivery'
  */
 export type MailMessageAckable<T> = T & {
   /**
-   * Acknowledges the message, confirming successful processing.
+   * 结束这次取信（= 处置值 `handled`）。
+   * @returns 有没有落定；`void` = 实现不报告（公开契约里的 `Ackable` 也是这个形状）。
    */
-  ack: () => Promise<void>;
+  ack: () => Promise<boolean | void>;
   /**
-   * Negatively acknowledges the message, indicating failure to process.
-   * @param requeue If true, the message will be added back to the front of the queue. Defaults to false.
+   * 处置这次取信：`requeue` = 回队（`unhandled`），省略 / `false` = 放弃（`discard`）。
+   * @returns 有没有落定。
    */
-  nack: (requeue?: boolean) => Promise<void>;
+  nack: (requeue?: boolean) => Promise<boolean | void>;
 };
 
 /**
@@ -27,9 +28,8 @@ export type MailMessageAckable<T> = T & {
  * 而上层（provider 的死信接法）必须分清这两者 —— 否则一次重复 `nack(false)` 就会多留一条
  * 死信，而一条已被 stale 扫描重投的消息也会被旧 handle 迟到地判成“放弃”。
  *
- * 对外（`interfaces.ts` 里的 `Ackable`）仍是 `Promise<void>`：忽略返回值的调用方在运行时不受影响，
- * 但这个类型单独存在，因为 TS 里 `Promise<boolean>` 并不可赋给 `Promise<void>` —— 直接改公开
- * 契约会让第三方 provider 的 `_fetch` 编译不过。
+ * 对外（`interfaces.ts` 里的 `Ackable`）现在也是 `Promise<boolean | void>`：`void` 留给不报告结果的
+ * 第三方句柄，`boolean` 是把「没落定」说出来的手段——忽略返回值的调用方在运行时不受影响。
  */
 export type SettlingAckable<T> = T & {
   /** @returns `true` = 这次真的把消息从 in-flight 结算掉了；`false` = 它已经不归这次 `fetch` 了。 */
@@ -42,22 +42,6 @@ export type SettlingAckable<T> = T & {
 };
 
 /**
- * A generic, in-memory message queue that supports topic-based queuing and manual acknowledgement.
- *
- * This class provides a reliable queuing mechanism for producer-consumer patterns where consumers
- * might fail and need to retry messages. It features:
- * - Topic-based separation of queues.
- * - FIFO (First-In, First-Out) message delivery.
- * - Auto-acknowledgement mode (fire-and-forget).
- * - Manual acknowledgement mode, which places messages "in-flight" until they are explicitly
- *   acknowledged (`ack`) or negatively acknowledged (`nack`).
- * - Timeout-based requeueing for stale in-flight messages to prevent message loss.
- * - One disposition per handle: a stale (requeued) handle cannot settle the copy a newer consumer
- *   holds, and repeating `ack` / `nack` does not take effect twice.
- *
- * @template T The type of messages in the queue. Must have an `id` property of type string.
- */
-/**
  * 手动 ACK 模式下未显式指定 `ackTimeout` 时使用的默认超时（毫秒）。
  *
  * in-flight 消息必须有界：否则消费者崩溃后既取不回来、也不会在状态里可见，
@@ -66,11 +50,6 @@ export type SettlingAckable<T> = T & {
  */
 export const DEFAULT_ACK_TIMEOUT = 30_000;
 
-/**
- * 一条租约（in-flight 记录）：一次 manualAck 取信 = 一份信借出去一段时间。
- *
- * `expiresAt` 是**这条租约自己的**到期时刻（取走那一刻算好），`Infinity` = 永不过期。
- */
 /** 一条停放记录：判死但先不丢的那一份，加上「什么时候停的、为什么」。 */
 export type ParkedEntry<T> = {
   message: T;
@@ -78,7 +57,11 @@ export type ParkedEntry<T> = {
   reason: string;
 };
 
-/** 一条租约（manualAck 取信）：见 {@link MailMessageQueue} 的 `inFlight`。 */
+/**
+ * 一条租约（manualAck 取信）：一次 manualAck 取信 = 一份信借出去一段时间（见 {@link MailMessageQueue} 的 `inFlight`）。
+ *
+ * `expiresAt` 是**这条租约自己的**到期时刻（取走那一刻算好），`Infinity` = 永不过期。
+ */
 export type InFlightEntry<T> = {
   message: T;
   timestamp: number;
@@ -140,6 +123,22 @@ export type TopicQueueStatus = {
 /** 每个 topic 最多留多少条停放记录；超了淘汰最老的并**出声**（不静默丢）。 */
 export const MAX_PARKED_PER_TOPIC = 100;
 
+/**
+ * A generic, in-memory message queue that supports topic-based queuing and manual acknowledgement.
+ *
+ * This class provides a reliable queuing mechanism for producer-consumer patterns where consumers
+ * might fail and need to retry messages. It features:
+ * - Topic-based separation of queues.
+ * - FIFO (First-In, First-Out) message delivery.
+ * - Auto-acknowledgement mode (fire-and-forget).
+ * - Manual acknowledgement mode, which places messages "in-flight" until they are explicitly
+ *   acknowledged (`ack`) or negatively acknowledged (`nack`).
+ * - Timeout-based requeueing for stale in-flight messages to prevent message loss.
+ * - One disposition per handle: a stale (requeued) handle cannot settle the copy a newer consumer
+ *   holds, and repeating `ack` / `nack` does not take effect twice.
+ *
+ * @template T The type of messages in the queue. Must have an `id` property of type string.
+ */
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
   // Stores in-flight messages with their original topic for reliable requeueing.
@@ -623,6 +622,33 @@ export class MailMessageQueue<T extends { id: string }> {
   public listParked(topic: string, limit?: number): T[] {
     const list = this.parked.get(topic) ?? []
     return (limit === undefined ? list : list.slice(-limit)).map((entry) => entry.message)
+  }
+
+  /**
+   * 把**这一份**从队列里移除（`discard` 的落点）：不在队列里就返回 `false`，不谎报。
+   *
+   * 为什么需要它：`discard` 那句承诺是「这条消息不能再被交回给任何消费者」。
+   * `nack(key, false)` 只处理**在飞**的那一份（带租约的那次交付）；还没交出去的未读副本
+   * 归这里。只处理一半，另一半就还会被下一个 `fetch` 取走——承诺等于没兑现。
+   *
+   * 去重与移除都按**哪一份**（份号）判：同 id 的另一封信不受影响。
+   *
+   * @param topic 队列键
+   * @param message 要移除的那一份（用它的份号，不是它的 id）
+   * @returns `true` = 确实移除了；`false` = 队列里没有这一份（已经被取走 / 已经没了）
+   */
+  public drop(topic: string, message: T): boolean {
+    const queue = this.queues.get(topic);
+    if (!queue) {
+      return false;
+    }
+    const key = this.copyKeyOf(message);
+    const at = queue.findIndex((queued) => this.copyKeyOf(queued) === key);
+    if (at < 0) {
+      return false;
+    }
+    queue.splice(at, 1);
+    return true;
   }
 
   /**

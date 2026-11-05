@@ -9,8 +9,11 @@ import {
   ManualAckFetchOptions,
   PeekFetchOptions,
   PlainFetchOptions,
+  Disposition,
 } from '../interfaces';
 import { normalizePeekLimit } from '../lib/utils';
+import { Capability, type CapabilityDeclaration } from '../lib/capability';
+import { assertDisposition } from '../lib/disposition';
 import { UnsupportedCapabilityError, InvalidFetchOptionsError } from '../error';
 import {
   RetryPolicy,
@@ -91,7 +94,7 @@ const MAX_SETTLED_COPIES = 500;
 /** 投递结算原因。`ok` 表示回调成功。 */
 type DeliveryOutcome = 'ok' | 'retriable' | 'fatal' | 'cancelled';
 
-export abstract class MailboxProvider implements IMailboxProvider {
+export abstract class MailboxProvider implements IMailboxProvider, CapabilityDeclaration {
   public readonly protocol: string;
   protected readonly subscriptions: Map<string, ManagedSubscription> = new Map();
 
@@ -157,6 +160,64 @@ export abstract class MailboxProvider implements IMailboxProvider {
     }
     this.protocol = protocol;
     this.retry = resolveRetryPolicy(retry);
+    // 能力声明在建 provider 时就定型（按类上的钩子推导一次），之后就是普通可变数据：
+    // **运行期挂上方法不算声明**——谁注入谁更新声明，否则声明会跟着实现漂移，
+    // 而漂移不报错，只会让内核去做 provider 其实不想做的事。
+    this.declaredCapabilities = this.declareCapabilities(new Set<string>());
+  }
+
+  // --- 能力声明 ---
+
+  private declaredCapabilities: Set<string>;
+
+  /**
+   * 这个 provider 现在会做什么（**运行期可变的数据**，见 D6）。
+   *
+   * 初始值由已实现的可选钩子推导（`_status` → `status`、`_peek` → `peek`…），子类可以在
+   * {@link declareCapabilities} 里加自己协议独有的能力，也可以随时直接改这个集合：
+   *
+   * ```ts
+   * provider.supports.add('disposition:answered');   // 我认这个处置值，而且我知道怎么处理
+   * provider.supports.delete('peek');               // 这个实例现在不让人只读了
+   * ```
+   *
+   * 规矩：**未声明 = 没有这个操作**；谁给 provider 注入能力（包装、AoP、配置开关），谁就负
+   * 责更新声明。声明与实现漂移不会报错，所以诊断面、重试门限、conformance 都以声明为准。
+   */
+  public get supports(): Set<string> {
+    return this.declaredCapabilities;
+  }
+
+  /**
+   * 能不能做 `operation`。子类可按地址而异（`can('peek', addr)`）。
+   *
+   * 基类内部的判断（只读取信、状态查询）与 `Mailbox` 门面都走这里，不再探方法存在性。
+   */
+  public can(operation: string, address?: URL): boolean {
+    return this.supports.has(operation);
+  }
+
+  /**
+   * 子类扩能力的入口（想按地址而异就重写 {@link can}）。
+   *
+   * 基类的推导只覆盖接口层的可选钩子；自家协议特有的东西（停放区、死信队列、自定义处置值……）
+   * 在这里声明。它们必须真的被实现支撑：只声明不实现，内核会把错报成「这个 provider 答错了」，
+   * 而不是「它不支持」。
+   */
+  protected declareCapabilities(declared: Set<string>): Set<string> {
+    // `recoverLeases` / `listAddresses` 是接口上的可选方法：基类不实现，子类才带。
+    const optional = this as Partial<Pick<IMailboxProvider, 'recoverLeases' | 'listAddresses' | 'clear'>>;
+    if (typeof this._status === 'function') declared.add(Capability.Status);
+    if (typeof this._peek === 'function') declared.add(Capability.Peek);
+    if (typeof optional.recoverLeases === 'function') declared.add(Capability.RecoverLeases);
+    if (typeof optional.listAddresses === 'function') declared.add(Capability.ListAddresses);
+    // 基类的 `clear()` 是**空实现**（传输型 provider 的消息在 broker 里，没什么可清）：
+    // 只有真的覆写了它的 provider 才声明这个能力，否则「能 purge」是假的。
+    if (optional.clear !== MailboxProvider.prototype.clear) {
+      declared.add(Capability.Clear);
+    }
+    if (typeof this._settle === 'function') declared.add(Capability.Settle);
+    return declared;
   }
 
   /**
@@ -309,10 +370,18 @@ export abstract class MailboxProvider implements IMailboxProvider {
         'so there is nothing to acknowledge. Drop one of the two options.',
       );
     }
-    if (!this._peek) {
+    if (!this.can(Capability.Peek, address)) {
       throw new UnsupportedCapabilityError(
         this.protocol,
         'read-only peek (implement `_peek(address, { limit })` on the provider, or fetch without `peek`)',
+      );
+    }
+    if (typeof this._peek !== 'function') {
+      // 声明了能力却没实现：比“没声明”更糟——内核会去调一个不存在的方法。
+      // 照旧报能力错误（而不是 TypeError），并把原因说清。
+      throw new UnsupportedCapabilityError(
+        this.protocol,
+        'read-only peek (declared in `supports`, but `_peek(address, { limit })` is not implemented)',
       );
     }
     return this._peek(address, { limit: normalizePeekLimit(options.limit) });
@@ -337,24 +406,54 @@ export abstract class MailboxProvider implements IMailboxProvider {
     return nanoid();
   }
 
-  protected async ack(message: MailMessage) {
-    this._ack?.(message);
-  }
-
   /**
-   * 向 provider 发出处置决定：`requeue = true` 回队，`requeue = false` **放弃**
-   * （丢弃或落死信，由 provider 定）。
+   * 向 provider 发出处置：这一次交付按 `where` 收尾（内核词汇：`handled` / `unhandled` /
+   * `discard`，见 `CORE_DISPOSITIONS`）。
    *
-   * `_nack` 是可选钩子（内存型 provider 本来就没有 broker 可 nack），但「内核已经判定要回队 /
-   * 要放弃，provider 却没接」是另一回事：消息会停在 broker 把它放的位置上——真实 broker
-   * 里就是 visibility timeout 后无限重投。所以这里告警一次，把落空的决定挑明。
+   * 首选钩子是 {@link _settle}。没接它的子类（包括按 `v1.0.0` 写的第三方 provider）转发到
+   * 已发布的 {@link _ack} / {@link _nack}：`handled` → `_ack(message)`；
+   * `unhandled` → `_nack(message, true)`；`discard` → `_nack(message, false)`。
+   * 少这层转发，旧子类会收不到处置；留着它，新旧两种写法也能共存。
+   *
+   * 自定义处置值先过能力声明：没声明过就抛 `UnsupportedCapabilityError`，而不是递给一个
+   * 不认得这个值的钩子（那会把「不知道拿它怎么办」变成「当成 ack 处理」）。
    */
-  protected async nack(message: MailMessage, requeue: boolean) {
+  protected async settleDelivery(message: MailMessage, where: Disposition): Promise<boolean | void> {
+    assertDisposition(where, this, message.to);
+
+    if (typeof this._settle === 'function') {
+      return this._settle(message, where);
+    }
+    if (where === 'handled') {
+      await this._ack?.(message);
+      return;
+    }
     if (!this._nack) {
       this._warnMissingNack();
       return;
     }
-    await this._nack(message, requeue);
+    return this._nack(message, where === 'unhandled');
+  }
+
+  /** @deprecated 用 {@link settleDelivery}(message, 'handled')。本方法保留是因为 `v1.0.0` 就有它。 */
+  protected async ack(message: MailMessage) {
+    await this.settleDelivery(message, 'handled');
+  }
+
+  /**
+   * 向 provider 发出处置决定：`requeue = true` 回队（`unhandled`），`requeue = false` **放弃**
+   * （`discard`：丢弃或落死信，由 provider 定）。
+   *
+   * `_nack` 是可选钩子（内存型 provider 本来就没有 broker 可 nack），但「内核已经判定要回队 /
+   * 要放弃，provider 却没接」是另一回事：消息会停在 broker 把它放的位置上——真实 broker
+   * 里就是 visibility timeout 后无限重投。所以这里告警一次，把落空的决定挑明。
+   *
+   * @deprecated 用 {@link settleDelivery}(message, 'unhandled' | 'discard')。布尔参数在
+   *   `v1.0.0` 就发布了，直接去掉会让老代码里的 `nack(false)` 静默变成回队（从丢弃变无限
+   *   重投），所以它在 1.x 里必须是完整 alias，到 2.0 再删。
+   */
+  protected async nack(message: MailMessage, requeue: boolean) {
+    await this.settleDelivery(message, requeue ? 'unhandled' : 'discard');
   }
 
   // --- Protected Abstract Methods (to be implemented by subclasses) ---
@@ -403,8 +502,28 @@ export abstract class MailboxProvider implements IMailboxProvider {
   protected async _close?(): Promise<void>;
 
   /**
+   * [Subclass Responsibility - Optional] 处置一次交付（新入口，取代 {@link _ack} / {@link _nack}）。
+   *
+   * `where` 是内核词汇：
+   * - `handled`：这一份到此为止，不留痕；
+   * - `unhandled`：交回队列，还会再交出去；
+   * - `discard`：结束它，并按这个协议的规矩**善后**（死信 / bounce / 打标记——做什么由协议定）。
+   *
+   * 与已发布钩子的关系：没接 `_settle` 的子类继续走 {@link _ack} / {@link _nack}（基类转发，
+   * 语义等价），所以第三方 provider 不会因为这个改名而断。接了 `_settle` 就以它为准。
+   * 声明了它 = 能力 `settle`（见 {@link supports}）。
+   *
+   * @returns 这次处置有没有落定（`false` = 没落定，例如这份已经不归这次交付了）；
+   *   不报告就返 `undefined`，内核不会替你编一个 `true`。
+   */
+  protected _settle?(message: MailMessage, where: Disposition): Promise<boolean | void>;
+
+  /**
    * [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
    * For providers that don't support ACK (like in-memory), this can be an empty async function.
+   *
+   * @deprecated 用 {@link _settle}(message, 'handled')。它在 `v1.0.0` 就发布了，所以 1.x 里
+   *   继续支持（基类会把 `handled` 转给它），2.0 删。
    *
    * `message` 是**本次投递的副本**（浅拷贝，带 `mbx-attempt` / `mbx-round`，开了重试还有
    * `mbx-max-attempts`），与交给订阅回调的是同一份；**不是** `_send` 那个对象，也不是 `post()`
@@ -422,6 +541,9 @@ export abstract class MailboxProvider implements IMailboxProvider {
 
   /**
    * [Subclass Responsibility - Optional] Provides NACK capability.
+   *
+   * @deprecated 用 {@link _settle}(message, 'unhandled' | 'discard')。布尔参数在 `v1.0.0` 就发布了，
+   *   所以 1.x 里它仍是完整入口（`requeue = true` ≡ `unhandled`，`false` ≡ `discard`），2.0 删。
    *
    * 这是 provider 表达「放弃」的**唯一**入口，两个参数合起来就是内核的全部判定：
    * - `requeue = true`：回队（回到哪个位置、重投几次，由 provider 定，内核不管）；
@@ -867,9 +989,6 @@ export abstract class MailboxProvider implements IMailboxProvider {
     );
   }
 
-  /**
-   * 结算一条投递；广播型 provider 若这条消息没接 barrier，走兜底。
-   */
   /**
    * 结算一条投递，并按 provider 类型把**处置信号**发出去：
    *

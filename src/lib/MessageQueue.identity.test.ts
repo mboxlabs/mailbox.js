@@ -213,3 +213,47 @@ describe('结算只认系统发的份号：发送方的名字只能用来查，�
     })
   })
 })
+
+describe('discard 的落点：drop() 按份号移除**未读**副本', () => {
+  it('[语义] 移除的是「这一份」；同 id 的另一封信不受影响', () => {
+    const q = new MailMessageQueue<TestMessage>()
+    const t = topic('drop-by-copy')
+    q.enqueue(t, { id: 'same', body: '要判死的那份', headers: { [SEND_ID]: '1' } })
+    q.enqueue(t, { id: 'same', body: '另一封信', headers: { [SEND_ID]: '2' } })
+
+    expect(q.drop(t, { id: 'same', body: '要判死的那份', headers: { [SEND_ID]: '1' } })).toBe(true)
+    expect(q.getStatus(t).unreadCount).toBe(1)
+    expect(q.peek(t).map((m) => m.body)).toEqual(['另一封信'])
+    // 再 drop 同一份：它已经不在这儿了，不能谎报成功
+    expect(q.drop(t, { id: 'same', body: '要判死的那份', headers: { [SEND_ID]: '1' } })).toBe(false)
+  })
+
+  it('[语义] 没有份号的副本按对象同一性认份（与回队去重同一条规则）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const q = new MailMessageQueue<TestMessage>()
+    const t = topic('drop-untagged')
+    const copy = { id: 'x', body: '没发号的副本' }
+    q.enqueue(t, copy)
+    q.enqueue(t, { id: 'x', body: '重建的副本' }) // 同一份内容，但算新的一份
+
+    expect(q.drop(t, copy)).toBe(true)
+    expect(q.getStatus(t).unreadCount).toBe(1)
+    warn.mockRestore()
+  })
+
+  it('[语义] 在飞那一份不归 drop 管：那是 nack(key, false) 的活', () => {
+    const q = new MailMessageQueue<TestMessage>()
+    const t = topic('drop-vs-nack')
+    q.enqueue(t, { id: 'one', body: '已被取走', headers: { [SEND_ID]: '9' } })
+    const handle = q.dequeue(t, { manualAck: true, ackTimeout: 1000 })
+    expect(handle).not.toBeNull()
+
+    // 未读里没有它：drop 说“不在这里”，而不是假装丢弃成功
+    expect(q.drop(t, { id: 'one', body: '已被取走', headers: { [SEND_ID]: '9' } })).toBe(false)
+    expect(q.getStatus(t).inFlightCount).toBe(1)
+
+    expect(q.nack(q.locate('one')[0].key, false)).toBe(true) // 在飞那一份由这里结束
+    expect(q.getStatus(t).inFlightCount).toBe(0)
+    expect(q.getStatus(t).unreadCount).toBe(0)
+  })
+})

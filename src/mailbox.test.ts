@@ -317,7 +317,7 @@ describe('status', () => {
     expect(initialStatus.state).toBe('unknown');
     expect(initialStatus.exists).toBe(false);
     expect(initialStatus.unreadCount).toBe(0);
-    expect(initialStatus.subscriberCount).toBe(0);
+    expect(initialStatus['mem.subscriberCount']).toBe(0);
     expect(initialStatus.lastActivityTime).toBeNull();
 
     // 2. Post a message and check status
@@ -331,7 +331,7 @@ describe('status', () => {
     // 3. Subscribe and check status
     const subscription = mailbox.subscribe(address, () => {});
     const afterSubscribeStatus = await mailbox.status(address);
-    expect(afterSubscribeStatus.subscriberCount).toBe(1);
+    expect(afterSubscribeStatus['mem.subscriberCount']).toBe(1);
 
     // 4. Fetch message and check status
     await mailbox.fetch(address);
@@ -343,7 +343,7 @@ describe('status', () => {
     // Note: MemoryProvider doesn't track subscriber count decrease in this simple model,
     // but we can test that the core logic runs. The bus still holds the topic.
     const finalStatus = await mailbox.status(address);
-    expect(finalStatus.subscriberCount).toBe(0); // This will pass because the listener is removed.
+    expect(finalStatus['mem.subscriberCount']).toBe(0); // This will pass because the listener is removed.
   });
 
   it('should return a default status for providers without status implementation', async () => {
@@ -454,7 +454,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
     const received = await mailbox.fetch(address);
     expect(received).not.toBeNull();
     expect(received!.body).toEqual({ n: 1 });
-    expect((await mailbox.status(address)).subscriberCount).toBe(0);
+    expect((await mailbox.status(address))['mem.subscriberCount']).toBe(0);
   });
 
   it('decides delivery mode per message, not per topic', async () => {

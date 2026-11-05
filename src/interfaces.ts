@@ -87,56 +87,86 @@ export interface MailMessage extends Omit<OutgoingMail, 'from' | 'to'> {
 }
 
 /**
- * 代表一个可被手动确认或拒绝的信件。
+ * 内核的三个处置值（消费者侧唯一通用的词汇表）。
  *
- * **一次取信 = 一次处置**：只有第一次 `ack` / `nack` 生效，同一个 handle 上重复确认不再作数
- * （`ack()` 之后再 `nack(false)` 既不会退回队列也不会丢弃）。provider 必须守住这条：重复处置
- * 若还能生效，接了死信队列的 provider 就会为同一次放弃留下多条记录，而迟到的处置会误伤
- * 重投后新消费者手里的同一条消息。
+ * 它们说的不是「成功 / 失败」，而是「这一次交付要怎么收尾」：
+ *
+ * | 值 | 这一份信 | 还会再交给我吗 | provider 按协议善后 |
+ * | --- | --- | --- | --- |
+ * | `handled`   | 结束，不留痕 | 不 | 不 |
+ * | `unhandled` | 交回队列 | **会** | 不 |
+ * | `discard`   | 判它不合格，结束 | 不 | **做**（死信 / bounce / 打标记…） |
+ *
+ * 其余字符串是 provider 自定义值，必须由能力声明（`supports.has('disposition:<值>')`）覆盖，
+ * 否则内核在处置发生前就报 {@link UnsupportedCapabilityError}。
+ *
+ * 「按协议善后」是 provider 按自己协议做的事，内核不规定它是什么：`MemoryProvider` 是往死信
+ * topic 存一份副本（没开 `enableDeadLetterQueue()` 就等同于丢弃，零痕迹）；SMTP 是 reject /
+ * bounce；IMAP 是打 `\Deleted` 再 expunge；MQTT 一类压根没有这个概念。**不要指望 `discard`
+ * 自带 DLQ。**
+ *
+ * 不管各协议怎么善后，有一条对所有实现都成立：`discard` 之后**这条消息不能再被交回给任何
+ * 消费者**。死信链到顶（`maxNesting`）时也不例外——那种记录**停放**在那里：不在 `unreadCount`
+ * 里、`fetch` 取不到，只能查（`MemoryProvider#peekParked`），排走要显式 `purgeParked`。
+ * 把它塞回队列等于反悔这句承诺（排空脚本会永远取到同一条）。
+ *
+ * 回队位置、已重投几趟由 provider 决定，内核不管——但内核会把带 `mbx-attempt` / `mbx-round`
+ * 的投递副本交给你，设上限就有得数。
+ */
+export const CORE_DISPOSITIONS = ['handled', 'unhandled', 'discard'] as const;
+
+/** {@link CORE_DISPOSITIONS} 里的三个内核处置值。 */
+export type CoreDisposition = (typeof CORE_DISPOSITIONS)[number];
+
+/**
+ * 一次交付的处置值。三个内核值 + provider 自己声明过的自定义值
+ * （`string & {}` 只是为了让编辑器继续提示那三个值，不做限制）。
+ */
+export type Disposition = CoreDisposition | (string & {});
+
+/**
+ * 代表一个可被处置的信件句柄——它代表**这一次交付**，不是这封信。
+ *
+ * **一次取信 = 一次处置**：句柄只生效一次。重复处置、租约到期重投后拿着旧句柄来处置，
+ * 都**不生效**，并把这个事实回给你（返回 `false`）——不抛错，也不静默 no-op。
+ * 要「先占着再定」用租约（`ackTimeout`、`ackTimeout: 0` 常驻租约），不是靠多按几次按钮。
+ *
+ * 为什么必须守住这条：重复处置若能生效，接了死信队列的 provider 就会为同一次放弃留下多条
+ * 记录（补偿脚本会重复补偿）；迟到的处置若能生效，就会误伤重投后新消费者手里的同一条消息。
  */
 export interface Ackable {
   /**
-   * **结束这次交付：这一份到此为止，系统不留任何东西。**
+   * 结束这次交付，并说明怎么结束它（见 {@link CORE_DISPOSITIONS}）。
    *
-   * `ack` 不是“处理成功了”的意思，而是“我看完了，别再管这一份”——你怎么处理的、处理成
-   * 什么样、还是干脆判定这封信不合格直接扔掉，provider 不知道也不问。想静默丢弃，就用它。
+   * 省略 = `handled`：这一份到此为止，系统不留任何东西。`ack` 不是「处理成功了」的意思——
+   * 你怎么处理的、还是干脆判定这封信不合格，provider 不知道也不问。
    *
-   * 结算绑在这一次 `fetch` 上（句柄内部拿着份号 + 第几次交出去），所以迟到的旧句柄不能销掉
-   * 新消费者的租约：它只会安静地 no-op（本方法回 `void`，要看到“没落定”得用队列层的
-   * `MailMessageQueue.ack` / `nack`，它们回 boolean）。
+   * @param where 处置值。`handled` / `unhandled` / `discard`，或 provider 声明过的自定义值。
+   * @returns 这次处置**有没有生效**：
+   *   - `true`：生效了（消息按 `where` 收尾）；
+   *   - `false`：没生效——这个句柄已经处置过，或它代表的那次交付已经不归它了（租约被回收、
+   *     消息已被别的消费者处理 / 丢弃）。**调用方不该把 `false` 当成功。**
+   *   - `undefined`：这个 provider 不报告处置结果（能力没到）。想知道就别忽略这个返回值。
+   *
+   * 处置值不被认得时**先抛错、不动消息**：句柄的「一次处置」机会不会被一个失败的调用消耗掉。
    */
-  ack(): Promise<void>;
+  ack(where?: Disposition): Promise<boolean | void>;
 
   /**
-   * **结束这次交付，并且请 provider 按它自己协议的规矩善后。**
+   * @deprecated 用 {@link Ackable.ack} 的处置值：`nack(true)` = `ack('unhandled')`，
+   *   `nack(false)` = `ack('discard')`。
    *
-   * @param requeue `true` = 放回队列，还会再交给我一次；`false`（默认）= 结束它，
-   *   **不会再交给我**，由 provider 决定怎么善后。
+   *   为什么还留着：布尔参数在 `v1.0.0` 就发布了，直接把参数去掉会让老代码里的 `nack(false)`
+   *   （= 丢弃）静默变成「退回队列」——从丢弃变成无限重投，这是语义漂移而不是编译错误。
+   *   它会在 2.0 与拆包同时删除。
    *
-   * 三个动作的真实差别（不是“成功 / 失败”）：
-   *
-   * | 动作 | 这一份 | 还会交给我吗 | provider 按协议善后 |
-   * | --- | --- | --- | --- |
-   * | `ack()`             | 删 | 不 | 不 |
-   * | `nack(false)`       | 删 | 不 | **做** |
-   * | `nack(true)`        | 回队 | 会 | 不 |
-   *
-   * “善后”是 provider 按自己协议做的事，内核不规定它是什么：
-   * `MemoryProvider` 是往死信 topic 存一份副本（没开 `enableDeadLetterQueue()` 就等同于
-   * `ack()`——纯丢弃，零痕迹）；SMTP 是 reject / bounce；IMAP 是打 `\Deleted` 再 expunge；
-   * MQTT 一类压根没有这个概念。**不要指望 `nack(false)` 自带 DLQ。**
-   *
-   * 不管各协议怎么善后，有一条对所有实现都成立：`nack(false)` 之后**这条消息不能再被交回给
-   * 任何消费者**。死信链到顶（`maxNesting`）时也不例外——那种记录**停放**在那里：不在
-   * `unreadCount` 里、`fetch` 取不到，只能查（`MemoryProvider#peekParked`），排走要显式
-   * `purgeParked`。把它塞回队列等于反悔这句承诺（排空脚本会永远取到同一条）。
-   *
-   * 回队位置、已重投几趟由 provider 决定，内核不管——但内核会把带 `mbx-attempt` /
-   * `mbx-round` 的投递副本交给你，设上限就有得数。
+   * @param requeue `true` = 放回队列（还会再交给我一次）；`false`（默认）= 结束它，
+   *   **不会再交给我**，由 provider 按自己协议的规矩善后（死信 / bounce / 打标记…
+   *   没实现就等同于丢弃，**不要指望 `nack(false)` 自带 DLQ**）。
+   * @returns 语义同 {@link Ackable.ack}：这次处置有没有生效。
    */
-  nack(requeue?: boolean): Promise<void>;
+  nack(requeue?: boolean): Promise<boolean | void>;
 }
-
 export type AckableMailMessage = MailMessage & Ackable;
 
 /**
@@ -164,7 +194,7 @@ export interface ManualAckFetchOptions {
    * 注意它**不是**“清扫阈值”：到期回收扫的是每条租约自己的到期时刻。所以一个消费者拿 1ms
    * 来取信，不会提前接管别人未到期的租约；拿 60s 来取信，也不会拖后一条早已到期的租约。
    * 回收是惰性的（无后台定时器，只有下一次 manualAck 取信才扫）：过期未收回的份数在
-   * {@link MailboxStatus.overdueInFlightCount} 里可见。
+   * provider 的扩展键里可见（`mem:` 是 `status()['mem.overdueInFlightCount']`）。
    */
   ackTimeout?: number | null;
   [name: string]: any;
@@ -218,29 +248,10 @@ export interface MailboxStatus {
    *
    * 不计入 `unreadCount`，否则卡在 in-flight 的消息在状态里完全隐形。
    * 这些消息在自己那份租约到期后会被重新入队——但**回收是惰性的**（只有下一次 manualAck
-   * 取信才扫），所以必须跟 {@link overdueInFlightCount} 一起看。
+   * 取信才扫），所以光看它不够：过期未收回的那部分在 provider 的扩展键里
+   * （`mem:` 是 `['mem.overdueInFlightCount']`），或直接用 `Mailbox#recover()` 收回。
    */
   inFlightCount?: number;
-  /**
-   * `inFlightCount` 里**租约已到期、还没被收回**的份数。
-   *
-   * 在飞消息的回收是惰性的（没有后台定时器，只有下一次 manualAck 取信才扫），所以一个僵死的
-   * 消费者能把已过期的租约永远挂在 in-flight 里。这个数就是让那笔积压不再隐形：告警该盯它，
-   * 而不是 `inFlightCount`（健康的在飞也是非零的）。
-   */
-  overdueInFlightCount?: number;
-  /** 最老那条过期租约已经过期多久（ms）；没有过期租约时为 0。 */
-  oldestOverdueMs?: number;
-  /**
-   * **停放**的份数：已判死、不会再交给任何消费者，但也还没被真正丢弃的记录。
-   *
-   * 它们**不在** `unreadCount` 里，也不会被 `fetch` 交出来（否则排空脚本会永远取到同一条），
-   * 只能查：`MemoryProvider#peekParked(address)`。死信链到顶（`maxNesting`）就是典型来源。
-   * 没有这个数，运维就只看到「没未读」，看不出「有一条判死的停在这儿」。
-   */
-  parkedCount?: number;
-  /** 最老那条停放记录停了多久（ms）；没有停放时为 0。 */
-  oldestParkedMs?: number;
   /**
    * 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)；没有活动记录时为 `null`。
    *
@@ -250,18 +261,72 @@ export interface MailboxStatus {
   lastActivityTime?: string | null;
 
   /**
-   * 索引签名，允许 MailboxStatus 包含任意其他字符串键的属性。
-   * 这些属性将作为提供者特定的扩展信息。
+   * 扩展位：provider 自己的观测量放这里（`v1.0.0` 就留好的口子）。
+   *
+   * **入选判据（D7）**：只有「核心操作本身能产生的观测量」才进上面的具名字段——
+   * `state` / `exists` / `unreadCount` / `inFlightCount` / `lastActivityTime`。
+   * 停放区、租约过期积压、死信计数这些属于某个投递策略的账，一律走这里的扩展键，
+   * 并且**用 `<scheme>.<名字>` 前缀**，免得两个 provider 往同一个键上写不同的东西：
+   *
+   * - `mem.parkedCount` / `mem.oldestParkedMs`：判死但先不丢的那些（死信链封顶是典型来源），
+   *   不在 `unreadCount` 里、也不会被 `fetch` 交出来，只能查 `MemoryProvider#peekParked()`；
+   * - `mem.overdueInFlightCount` / `mem.oldestOverdueMs`：`inFlightCount` 里租约已到期、还没被
+   *   收回的份数与最老时长（回收是惰性的，靠下一次取信或 `recover()` 才扫）。告警该盯它，
+   *   而不是 `inFlightCount`（健康的在飞也是非零的）；
+   * - `mem.subscriberCount`：这条地址上挂着几个订阅者。
+   *
+   * 要不要填由 provider 的能力决定（见 `Capability.Parked` 之类）；内核不解释这些键的内容，
+   * 只原样带出去。
    */
   [key: string]: any;
+}
+
+/**
+ * 一个 scheme 的地址语法声明（D5）。
+ *
+ * 「`mem:` 与 `mem://` 是不是同一个信箱」「query 算不算寻址」「authority 有没有意义」——
+ * 这些是**某个 scheme 的知识**，不是 URL 的通用规则，也不该由内核统一强加：内核一旦折叠字段
+ * 或禁止 query，就等于把某一个 scheme 的折叠规则冒充成所有人的规则（`canonicalId` 曾干过这事）。
+ *
+ * 所以内核**不解析地址内部**：地址是一个不透明 URL，能不能等价、哪里非法，由该 scheme 的
+ * provider 声明（这里）并在自己的每个入口执行。内核只保证**一致性**：同一个地址串在
+ * `post` / `subscribe` / `fetch` / `status` / `recover` 每个入口都按同一方式解析、交给同一个
+ * provider——不会出现「只在一个入口合法」。
+ *
+ * 这份声明不是用来改变内核行为的（内核不看它），而是让**调用方与诊断面能问到**：运维不必读
+ * provider 源码就知道 `mem:` 会拒绝 query。声明与行为是否一致由 conformance 用例锁
+ * （见 `wiki/paper/conformance/cases/address.json`）。
+ */
+export interface MailboxAddressGrammar {
+  /** 这个语法属于哪个 scheme（`mem:` / `amqp:` / `input:`…）。 */
+  scheme: string;
+  /** `//host` 那一段在这个 scheme 里有没有意义。 */
+  authority: 'required' | 'optional' | 'forbidden';
+  /** 信箱身份在哪一段，一句人话（诊断页直接读）。 */
+  identity: string;
+  /** query 参与不参与寻址；`rejected` = 带 query 的地址在该 scheme 的入口直接报错（不静默合并）。 */
+  query: 'addressing' | 'ignored' | 'rejected';
+  /** fragment 同上。 */
+  fragment: 'addressing' | 'ignored' | 'rejected';
+  /**
+   * 这个 scheme 认为「同一个信箱」的等价写法（由 provider 实现，并保证所有入口一致）。
+   * 例：`mem:` 声明 `mem:a@h/i` ≡ `mem://a@h/i`——多写的 `//` 是容错写法，不是另一个信箱。
+   */
+  equivalences: string[];
 }
 
 /**
  * 快照里一个地址的状态：{@link MailboxStatus} 加地址身份。
  */
 export interface MailboxAddressSnapshot extends MailboxStatus {
-  /** 寻址用的规范形式（见 {@link getCanonicalMailboxAddressIdentifier}）。 */
-  canonicalId: string;
+  /**
+   * 这个地址，形式由处理它的 provider 给出（`listAddresses()` 返回什么就是什么）。
+   *
+   * 内核不折叠、不规范化它（D5）：`mem:` 会返回自己那套等价形式里的一个写法，别的 scheme 返回
+   * 自己的。它可以原样喂回同一个 provider（`fetch` / `status` / `recover`），这是
+   * {@link IMailboxProvider.listAddresses} 要求的**唯一**契约。
+   */
+  address: string;
   /** 处理这个地址的 provider 协议名。 */
   protocol: string;
 }
@@ -275,7 +340,7 @@ export interface LeaseRecoveryReport {
   reclaimed: number;
   /** 被调到的 provider 到底有没有“租约可回收”这个概念。 */
   supported: boolean;
-  /** 不带地址调用时：每个地址收回了几份（key = canonicalId）。 */
+  /** 不带地址调用时：每个地址收回了几份（key = provider 自己列出的地址串）。 */
   byAddress?: Record<string, number>;
   /** 不带地址调用时：本次碰不到的 provider（没有 `recoverLeases`，或不能枚举自身地址）。 */
   unreachableProviders?: string[];
@@ -304,13 +369,13 @@ export interface MailboxSnapshot {
   unreadCount: number;
   /** 所有地址的 `inFlightCount` 之和。 */
   inFlightCount: number;
-  /** 所有地址的 `overdueInFlightCount` 之和（僵死消费者的信号）。 */
-  overdueInFlightCount: number;
-  /** 所有地址里最老化的一条过期租约过期了多久（ms）；没有则 0。 */
-  oldestOverdueMs: number;
-  /** 所有地址的 `parkedCount` 之和（判死停放的信号，不在 `unreadCount` 里）。 */
-  parkedCount: number;
-  /** 按 `canonicalId` 排序的地址状态，保证快照可重复、断言可写死。 */
+  /**
+   * 按 `address` 排序的地址状态，保证快照可重复、断言可写死。
+   *
+   * 排序键是 provider 给出的地址串本身，不做规范化（D5）：内核不知道 `mem:` 与 `mem://` 等价，
+   * 也不该知道。策略专属的聚合（停放份数、过期租约积压）不在这里求和——内核不认识那些键，
+   * 要按 scheme 聚合就自己遍历 `addresses` 上的 `mem.*` 之类扩展键。
+   */
   addresses: MailboxAddressSnapshot[];
   /** 不支持枚举自身地址的 provider（它们的队列不在本次快照里）。 */
   unsupportedProviders: string[];
@@ -395,13 +460,6 @@ export interface IMailboxProvider {
   status?(address: URL): Promise<MailboxStatus>;
 
   /**
-   * 列出本 provider 当前认得的地址（canonical id，见 {@link getCanonicalMailboxAddressIdentifier}）。
-   *
-   * 可选能力：只有消息确实存在本地的 provider（如 `MemoryProvider`）能实现。
-   * 没实现就不实现——{@link MailboxSnapshot} 会把这类 provider 归入
-   * {@link MailboxSnapshot.unsupportedProviders}，不会把「枚举不了」当成「队列为空」。
-   */
-  /**
    * [Optional] 把该地址上**租约已到期**的在飞消息收回队列，返回收回了几份（幂等）。
    *
    * 有“租约”这个概念的 provider（队列型 / 拉取型）实现它，`Mailbox#recover()` 就能把僵死消费者
@@ -410,6 +468,26 @@ export interface IMailboxProvider {
    */
   recoverLeases?(address: URL): Promise<number>;
 
+  /**
+   * [Optional] 这个 scheme 的地址语法（见 {@link MailboxAddressGrammar}）。
+   *
+   * 内核不用它做任何判定（地址对内核是不透明的），但它是**能问到的东西**：诊断面、上层路由、
+   * 以及「我能不能往这个 scheme 写 query」的调用方都需要它。实现了地址能力
+   * （`listAddresses` / 自定义 scheme）的 provider 应当声明。
+   */
+  readonly addressGrammar?: MailboxAddressGrammar;
+
+  /**
+   * [Optional] 列出本 provider 当前认得的地址。
+   *
+   * **唯一要求**：列出的每个串都能原样喂回**同一个 provider**（`status` / `fetch` /
+   * `recoverLeases`）。形式由该 scheme 决定——内核不解析、不折叠、不排序规则（D5），
+   * `snapshot()` 只是把它们再查询一遍并按串排序以保证可重复。
+   *
+   * 可选能力：只有消息确实存在本地的 provider（如 `MemoryProvider`）能实现。
+   * 没实现就不实现——{@link MailboxSnapshot} 会把这类 provider 归入
+   * {@link MailboxSnapshot.unsupportedProviders}，不会把「枚举不了」当成「队列为空」。
+   */
   listAddresses?(): Promise<string[]>;
 
   /**

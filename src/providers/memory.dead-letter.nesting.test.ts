@@ -12,7 +12,7 @@
  *
  *   B. [语义] **链必须有上限**：`enableDeadLetterQueue({ maxNesting })`，默认 1 层。
  *      封顶之后不是「再造一层后缀」，而是**原地停放**（park）：记录留在它被放弃的那条
- *      就地**停放**（不再交付、不在 unreadCount 里、`parkedCount` 数得出来），打
+ *      就地**停放**（不再交付、不在 unreadCount 里、`['mem.parkedCount']` 数得出来），打
  *      `mbx-dead-letter-terminal: 'true'`，并大声记一条 CRITICAL。
  *      为什么不静默丢弃、也不无限拼后缀：地址空间必须有限（`_dlq` × N 会把 topic
  *      数量与地址长度变成无界增长），而「被放弃的消息凭空消失」违反本库的留痕原则。
@@ -201,7 +201,7 @@ describe('[语义] 死信链的上限：maxNesting（默认 1 层），封顶 = 
     // 停放 ≠ 重新入队：判死的那份不在未读里，也不会再被交出来（F8）
     expect(await unreadOf(dlq1)).toBe(0);
     expect(await peekOf(dlq1)).toEqual([]);
-    expect((await mailbox.status(dlq1)).parkedCount).toBe(1); // 但也没静默丢失
+    expect((await mailbox.status(dlq1))['mem.parkedCount']).toBe(1); // 但也没静默丢失
 
     const [parked] = provider.peekParked(dlq1);
     expect(parked.headers?.['mbx-dead-letter-terminal']).toBe('true');
@@ -221,7 +221,7 @@ describe('[语义] 死信链的上限：maxNesting（默认 1 层），封顶 = 
 
     await giveUpIn(dlq1);
     // 报告的就是停放目的地那条：判死后它不在未读里，但停放计数落在同一条队列上
-    expect((await mailbox.status(provider.deadLetterTopic(dlq1)!)).parkedCount).toBe(1);
+    expect((await mailbox.status(provider.deadLetterTopic(dlq1)!))['mem.parkedCount']).toBe(1);
     expect(await unreadOf(provider.deadLetterTopic(dlq1)!)).toBe(0);
   });
 
@@ -240,7 +240,7 @@ describe('[语义] 死信链的上限：maxNesting（默认 1 层），封顶 = 
       if (level === 4) {
         expect(next).toBe(topic); // 封顶：不再拼后缀
         expect(await unreadOf(topic)).toBe(0); // 停放不是重新入队
-        expect((await mailbox.status(topic)).parkedCount).toBe(1); // 但也没丢
+        expect((await mailbox.status(topic))['mem.parkedCount']).toBe(1); // 但也没丢
         const [deep] = provider.peekParked(topic);
         expect(deep.headers?.['mbx-dead-letter-terminal']).toBe('true');
         expect(deep.headers?.['mbx-dead-letter-depth']).toBe('3');
@@ -271,11 +271,11 @@ describe('[语义] 死信链的上限：maxNesting（默认 1 层），封顶 = 
       expect(await giveUpIn(dlq1)).toBeNull(); // 排空脚本再也取不到它——这就是 F8 修完的样子
     }
     expect(await unreadOf(dlq1)).toBe(0);
-    expect((await mailbox.status(dlq1)).parkedCount).toBe(1); // 反复放弃也不会堆积
+    expect((await mailbox.status(dlq1))['mem.parkedCount']).toBe(1); // 反复放弃也不会堆积
     expect(new Set(provider.peekParked(dlq1).map((m) => m.id)).size).toBe(1);
 
     expect(provider.purgeParked(dlq1)).toBe(1);
-    expect((await mailbox.status(dlq1)).parkedCount).toBe(0);
+    expect((await mailbox.status(dlq1))['mem.parkedCount']).toBe(0);
     expect(provider.peekParked(dlq1)).toEqual([]);
   });
 
@@ -321,7 +321,7 @@ describe('[语义] 死信链的上限：maxNesting（默认 1 层），封顶 = 
     // 归档目的地与 deadLetterTopic() 永远同一个 key；停放不进交付流，运维要排走用 purgeParked()。
     expect(await provider.listAddresses()).not.toContain(`${business}${DEFAULT_DEAD_LETTER_SUFFIX}`);
     expect(await unreadOf(business)).toBe(0);
-    expect((await mailbox.status(business)).parkedCount).toBe(1);
+    expect((await mailbox.status(business))['mem.parkedCount']).toBe(1);
     expect(provider.peekParked(business)[0].headers?.['mbx-dead-letter-terminal']).toBe('true');
 
     // 换一个不撞业务名的后缀：同一条队列就回到第 0 层，死信另开一层

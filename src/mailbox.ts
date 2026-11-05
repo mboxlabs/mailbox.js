@@ -14,6 +14,8 @@ import {
   FetchOptions,
 } from './interfaces';
 import { parseMailboxAddress } from './lib/utils';
+import { Capability, providerCan } from './lib/capability';
+import { bindConsumerHandle, hasHandle } from './lib/handle';
 import { stripSenderForgedSystemHeaders } from './lib/delivery';
 import { NoProviderError } from './error';
 
@@ -100,14 +102,16 @@ export class Mailbox {
   /**
    * 丢弃各 provider 持有的积压消息（含 in-flight），**不**拆订阅。
    *
-   * 测试隔离、用例之间重置状态用它；没实现 `clear()` 的 provider 会被跳过。
+   * 测试隔离、用例之间重置状态用它；没声明 `clear` 能力的 provider 会被跳过。
    * 注意默认构造的 `MemoryProvider` 共用进程级单例总线——`clear()` 会清掉同一份
    * 总线上其它 `Mailbox` 的队列。只清自己那份，请用 `MemoryProvider.createIsolated()`
    * 或 `MemoryProvider.forScope(scope)`。
    */
   public async clear(): Promise<void> {
     await Promise.all(Array.from(this._providers.values()).map(async (provider) => {
-      await provider.clear?.();
+      if (providerCan(provider, Capability.Clear)) {
+        await provider.clear!();
+      }
     }));
   }
 
@@ -154,6 +158,11 @@ export class Mailbox {
    *
    * `peek` 与 `manualAck` 同时给出会直接报错（互相矛盾），provider 不支持只读时抛
    * `UnsupportedCapabilityError`——都不会被静默降级成普通取信。
+   *
+   * **手动 ACK 模式下拿到的句柄由内核套过一层**（见 `bindConsumerHandle`）：处置词汇
+   * （`ack('handled' | 'unhandled' | 'discard')`）与「一次取信 = 一次处置」是内核保证，
+   * 不靠每个 provider 自己记得。句柄回 `boolean`：`false` = 这次处置没生效（重复处置 /
+   * 迟到的旧句柄），别当成功。
    */
   public async fetch(address: string | URL, options: PeekFetchOptions): Promise<MailMessage[]>;
   public async fetch(address: string | URL, options: ManualAckedMailBoxFetchOptions): Promise<AckableMailMessage | null>;
@@ -161,7 +170,12 @@ export class Mailbox {
   public async fetch(address: string | URL, options?: MailBoxFetchOptions): Promise<MailMessage | AckableMailMessage | MailMessage[] | null> {
     const addrUrl = parseMailboxAddress(address, 'fetch()');
     const provider = this.getProvider(addrUrl.protocol, true);
-    return provider.fetch(addrUrl, options);
+    const message = await provider.fetch(addrUrl, options);
+    // 只有手动 ACK 模式才有句柄；只读快照（数组）与隐式 ACK（普通消息）原样返回。
+    if (options?.manualAck && message && hasHandle(message)) {
+      return bindConsumerHandle(message as MailMessage, provider, addrUrl);
+    }
+    return message;
   }
 
   /**
@@ -187,8 +201,8 @@ export class Mailbox {
     const addrUrl = parseMailboxAddress(address, 'status()');
     const provider = this.getProvider(addrUrl.protocol, true);
 
-    if (!provider.status) {
-      // 如果 Provider 没有实现 status 方法，返回一个默认的未知状态。
+    if (!providerCan(provider, Capability.Status, addrUrl)) {
+      // 如果 Provider 没有声明 `status` 能力，返回一个默认的未知状态。
       // 注意这里**不**设 `exists: false`：问不到不等于不存在。
       return {
         state: 'unknown',
@@ -196,7 +210,8 @@ export class Mailbox {
       };
     }
 
-    return provider.status(addrUrl);
+    // `providerCan` 只做判断不做类型收窄；能力已确认，这里断言方法在。
+    return provider.status!(addrUrl);
   }
 
   /**
@@ -204,7 +219,8 @@ export class Mailbox {
    *
    * 为什么需要它：在飞租约的回收本来是惰性的（无后台定时器，只有下一次 manualAck 取信才扫）。
    * 对正常轮询的消费者够用；但“最后一个消费者崩了”、“这个地址再没人 fetch”时，那封信就永远挂在
-   * in-flight：`unreadCount` 0、`inFlightCount` 1、`overdueInFlightCount` 1，不会自愈。
+   * in-flight：`unreadCount` 0、`inFlightCount` 1（`mem:` 还会给出 `['mem.overdueInFlightCount']` 1），
+   * 不会自愈。
    * `recover()` 就是留给运维脚本 / 定时任务 / 健康检查的那个入口（不靠往默认路径里塞定时器）。
    *
    * 只动**已到期**的租约：别人手里未到期的、以及 `ackTimeout: 0` / `null` 的常驻租约都不会被碰。
@@ -222,7 +238,7 @@ export class Mailbox {
       const provider = this.getProvider(addrUrl.protocol, true);
       return {
         reclaimed: await recoverLeasesOf(provider, addrUrl),
-        supported: typeof provider.recoverLeases === 'function',
+        supported: providerCan(provider, Capability.RecoverLeases, addrUrl),
       };
     }
 
@@ -231,15 +247,16 @@ export class Mailbox {
     let reclaimed = 0;
 
     for (const [protocol, provider] of this._providers) {
-      // 没实现 `recoverLeases`（没有租约概念），或消息不在本地、枚举不到地址：这笔没做，
+      // 没声明 `recoverLeases` 能力（没有租约概念），或消息不在本地、枚举不到地址：这笔没做，
       // 也不能算成“没事”——列出来。
-      if (typeof provider.recoverLeases !== 'function' || typeof provider.listAddresses !== 'function') {
+      if (!providerCan(provider, Capability.RecoverLeases) || !providerCan(provider, Capability.ListAddresses)) {
         unreachableProviders.push(protocol);
         continue;
       }
-      for (const canonicalId of await provider.listAddresses()) {
-        const each = await recoverLeasesOf(provider, new URL(canonicalId));
-        byAddress[canonicalId] = each;
+      for (const address of await provider.listAddresses!()) {
+        // 地址串按原样喂回列出它的那个 provider（`listAddresses` 的唯一契约）：内核不折叠、不重写。
+        const each = await recoverLeasesOf(provider, new URL(address));
+        byAddress[address] = each;
         reclaimed += each;
       }
     }
@@ -265,27 +282,25 @@ export class Mailbox {
     const unsupportedProviders: string[] = [];
 
     for (const [protocol, provider] of this._providers) {
-      if (typeof provider.listAddresses !== 'function') {
+      if (!providerCan(provider, Capability.ListAddresses)) {
         unsupportedProviders.push(protocol);
         continue;
       }
 
-      for (const canonicalId of await provider.listAddresses()) {
+      for (const address of await provider.listAddresses!()) {
         addresses.push({
-          canonicalId,
+          address,
           protocol,
-          ...(await statusOfCanonicalAddress(provider, canonicalId)),
+          ...(await statusOfAddress(provider, address)),
         });
       }
     }
 
-    addresses.sort((a, b) => (a.canonicalId < b.canonicalId ? -1 : a.canonicalId > b.canonicalId ? 1 : 0));
+    // 按 provider 给出的地址串排序，保证快照可重复；不规范化（内核不认识 scheme 的等价规则）。
+    addresses.sort((a, b) => (a.address < b.address ? -1 : a.address > b.address ? 1 : 0));
 
     const unreadCount = addresses.reduce((total, entry) => total + (entry.unreadCount ?? 0), 0);
     const inFlightCount = addresses.reduce((total, entry) => total + (entry.inFlightCount ?? 0), 0);
-    const overdueInFlightCount = addresses.reduce((total, entry) => total + (entry.overdueInFlightCount ?? 0), 0);
-    const oldestOverdueMs = addresses.reduce((oldest, entry) => Math.max(oldest, entry.oldestOverdueMs ?? 0), 0);
-    const parkedCount = addresses.reduce((total, entry) => total + (entry.parkedCount ?? 0), 0);
     const enumerated = protocols.length - unsupportedProviders.length;
 
     let state: MailboxSnapshot['state'];
@@ -303,9 +318,6 @@ export class Mailbox {
       addressCount: addresses.length,
       unreadCount,
       inFlightCount,
-      overdueInFlightCount,
-      parkedCount,
-      oldestOverdueMs,
       addresses,
       unsupportedProviders: unsupportedProviders.sort(),
       takenAt: new Date().toISOString(),
@@ -313,29 +325,29 @@ export class Mailbox {
   }
 }
 
-/**
- * 快照里对单个地址的查询：canonical id 本身可以重新解析成 URL（它已经是
- * `protocol://user@host/path` 形式）。解析不了是 provider 的 bug，宁可报 unknown
- * 也不能让整个快照崩掉。
- */
-/** provider 没有租约概念时，回收就是“没做”（调用方靠 `supported` 区分“没做”与“做了但 0 份”）。 */
+/** provider 没声明租约能力时，回收就是“没做”（调用方靠 `supported` 区分“没做”与“做了但 0 份”）。 */
 async function recoverLeasesOf(provider: IMailboxProvider, address: URL): Promise<number> {
-  return typeof provider.recoverLeases === 'function' ? provider.recoverLeases(address) : 0;
+  return providerCan(provider, Capability.RecoverLeases, address) ? provider.recoverLeases!(address) : 0;
 }
 
-async function statusOfCanonicalAddress(provider: IMailboxProvider, canonicalId: string): Promise<MailboxStatus> {
-  if (!provider.status) {
+/**
+ * 快照里对单个地址的查询：地址按 provider 给的形式原样解析后喂回**同一个** provider
+ * （`listAddresses` 的唯一契约就是这个）。解析不了是 provider 的 bug，宁可报 unknown
+ * 也不能让整个快照崩掉。
+ */
+async function statusOfAddress(provider: IMailboxProvider, address: string): Promise<MailboxStatus> {
+  if (!providerCan(provider, Capability.Status, new URL(address))) {
     // 能枚举但不能报状态：至少把“这个地址存在”说出来。
     return { state: 'unknown', exists: true, message: `The '${provider.protocol}' provider does not support status queries.` };
   }
 
   try {
-    return await provider.status(new URL(canonicalId));
+    return await provider.status!(new URL(address));
   } catch (error) {
     return {
       state: 'unknown',
       exists: true,
-      message: `The '${provider.protocol}' provider listed '${canonicalId}', but it could not be queried back.`,
+      message: `The '${provider.protocol}' provider listed '${address}', but it could not be queried back.`,
       ...(error instanceof Error ? { cause: error.message } : {}),
     };
   }

@@ -135,7 +135,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await settle();
 
       expect(hits).toBe(1);
-      expect((await A.status(addr)).subscriberCount).toBe(1); // 订阅表是这份 bus 共有的
+      expect((await A.status(addr))['mem.subscriberCount']).toBe(1); // 订阅表是这份 bus 共有的
     });
   });
 
@@ -192,8 +192,8 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
 
       expect(bHits).toBe(0);
       expect((await B.status(addr)).unreadCount).toBe(0);
-      expect((await B.status(addr)).subscriberCount).toBe(1); // B 自己的订阅还在
-      expect((await A.status(addr)).subscriberCount).toBe(0); // A 看不见 B 的订阅
+      expect((await B.status(addr))['mem.subscriberCount']).toBe(1); // B 自己的订阅还在
+      expect((await A.status(addr))['mem.subscriberCount']).toBe(0); // A 看不见 B 的订阅
     });
 
     it('createIsolated()：B 既 fetch 不到 A 的消息，也不影响 A 取回它', async () => {
@@ -312,7 +312,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
 
       expect(hits).toBe(1);
       expect((await Elsewhere.status(addr)).unreadCount).toBe(0);
-      expect((await Elsewhere.status(addr)).subscriberCount).toBe(0);
+      expect((await Elsewhere.status(addr))['mem.subscriberCount']).toBe(0);
       expect((await Default.status(addr)).unreadCount).toBe(0);
     });
 
@@ -350,7 +350,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       expect((await mailbox.status(dropped)).lastActivityTime).toBeNull();
       expect((await mailbox.status(dropped)).state).toBe('unknown'); // 消息与活动记录都没了：这个地址在 bus 上不再存在
       expect((await mailbox.status(dropped)).exists).toBe(false);
-      expect((await mailbox.status(dropped)).subscriberCount).toBe(0);
+      expect((await mailbox.status(dropped))['mem.subscriberCount']).toBe(0);
     });
 
     it('bus.clear() 之后，被清理的 in-flight 消息迟到 ack / nack(requeue) 都不会复活它', async () => {

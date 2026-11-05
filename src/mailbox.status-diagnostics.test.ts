@@ -8,7 +8,6 @@ import {
   MailboxStatus,
 } from './index';
 import type { IMailboxProvider } from './index';
-import { getCanonicalMailboxAddressIdentifier } from './lib/utils';
 
 /**
  * issue#4 第 1 点 + 第 3 点的后半段：
@@ -34,7 +33,7 @@ describe('status() 认得「这个地址存不存在」', () => {
     expect(status.exists).toBe(false);
     expect(status.unreadCount).toBe(0);
     expect(status.inFlightCount).toBe(0);
-    expect(status.subscriberCount).toBe(0);
+    expect(status['mem.subscriberCount']).toBe(0);
     expect(status.message).toContain('No queue, subscription or activity is known');
   });
 
@@ -65,7 +64,7 @@ describe('status() 认得「这个地址存不存在」', () => {
     const status = await mailbox.status(address);
     expect(status.exists).toBe(true);
     expect(status.state).toBe('online');
-    expect(status.subscriberCount).toBe(1);
+    expect(status['mem.subscriberCount']).toBe(1);
     expect(status.unreadCount).toBe(0);
   });
 
@@ -115,7 +114,7 @@ describe('status() 认得「这个地址存不存在」', () => {
     expect((await mailbox.status(cleared)).exists).toBe(false);
     expect((await mailbox.status(cleared)).state).toBe('unknown');
     expect((await mailbox.status(subscribed)).exists).toBe(true); // 订阅表没被 clear 拆掉（issue#3 的语义）
-    expect((await mailbox.status(subscribed)).subscriberCount).toBe(1);
+    expect((await mailbox.status(subscribed))['mem.subscriberCount']).toBe(1);
   });
 
   it('provider 不支持 status 时仍然只说 unknown，不冒充 exists: false（问不到 ≠ 不存在）', async () => {
@@ -188,7 +187,7 @@ describe('bus.getStatus 的 exists / lastActivityTime（总线层同一套语义
  * issue#4 要求的配套能力：`status()` 无参 = 全量 topic 快照。
  */
 describe('Mailbox#status()（无参）/ snapshot()：全量快照', () => {
-  it('列出所有 topic 的状态，按 canonicalId 排序，聚合计数字段', async () => {
+  it('列出所有 topic 的状态，按地址排序，只聚合核心具名字段', async () => {
     const mailbox = new Mailbox();
     mailbox.registerProvider(MemoryProvider.createIsolated());
     await mailbox.start();
@@ -205,7 +204,7 @@ describe('Mailbox#status()（无参）/ snapshot()：全量快照', () => {
     expect(snap.addressCount).toBe(2);
     expect(snap.unreadCount).toBe(2); // snapshot-a: 1 + snapshot-b: 2 - 1 (in-flight)
     expect(snap.inFlightCount).toBe(1);
-    expect(snap.addresses.map((entry) => entry.canonicalId))
+    expect(snap.addresses.map((entry) => entry.address))
       .toEqual(['mem://snapshot-a@example.com/inbox', 'mem://snapshot-b@example.com/inbox']);
     expect(snap.addresses[0]).toMatchObject({ protocol: 'mem', state: 'online', exists: true, unreadCount: 1, inFlightCount: 0 });
     expect(snap.addresses[1]).toMatchObject({ state: 'online', exists: true, unreadCount: 1, inFlightCount: 1 });
@@ -295,16 +294,19 @@ describe('Mailbox#status()（无参）/ snapshot()：全量快照', () => {
     expect((await b.status()).state).toBe('online');
   });
 
-  it('快照里的每个地址都能按 canonicalId 再查一次，结果一致', async () => {
+  it('快照列出的每个地址都能原样再查一次（`listAddresses` 的唯一契约）', async () => {
     const mailbox = new Mailbox();
-    mailbox.registerProvider(MemoryProvider.createIsolated());
+    const provider = MemoryProvider.createIsolated();
+    mailbox.registerProvider(provider);
     const address = 'mem:snapshot-roundtrip@example.com/inbox/thread-1';
     await mailbox.post({ from: 'mem:a@example.com/u', to: address, body: {} });
 
     const [entry] = (await mailbox.status()).addresses;
-    const direct = await mailbox.status(entry.canonicalId);
+    const direct = await mailbox.status(entry.address);
 
-    expect(entry.canonicalId).toBe(getCanonicalMailboxAddressIdentifier(new URL(address)));
+    // 内核不规范化它：列出的就是 provider 自己认得的那个写法，喂回去也认得。
+    expect(entry.address).toBe(provider.bus.listTopics()[0]);
+    expect(provider.bus.knows(entry.address)).toBe(true);
     expect(direct.unreadCount).toBe(entry.unreadCount);
     expect(direct.state).toBe(entry.state);
   });

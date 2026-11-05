@@ -3,7 +3,7 @@
  *
  * 惰性扫描（只有下一次 manualAck 取信才扫）对正常轮询的消费者够用，但“最后一个消费者崩了”
  * 或“这个地址再没人 fetch”时，那份信就永远挂在 in-flight 里：`unreadCount` 0、
- * `inFlightCount` 1、`overdueInFlightCount` 1，谁也救不了它。
+ * `inFlightCount` 1、`['mem.overdueInFlightCount']` 1，谁也救不了它。
  *
  * 两条出口，都不靠往默认路径里塞定时器：
  *   1. `mailbox.recover(address)`：显式、幂等、报出收回了几份。运维脚本 / 定时任务调它。
@@ -117,11 +117,11 @@ describe('显式回收：不靠有人来取信', () => {
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: 'A' })
     const stale = await mailbox.fetch(address, { manualAck: true, ackTimeout: 20 })
     await tick(80)
-    expect((await mailbox.status(address)).overdueInFlightCount).toBe(1)
+    expect((await mailbox.status(address))['mem.overdueInFlightCount']).toBe(1)
 
     await mailbox.recover(address)
     const status = await mailbox.status(address)
-    expect(status.overdueInFlightCount).toBe(0)
+    expect(status['mem.overdueInFlightCount']).toBe(0)
     expect(status.unreadCount).toBe(1)
 
     const fresh = await mailbox.fetch(address, { manualAck: true, ackTimeout: 60_000 })
@@ -146,7 +146,7 @@ describe('显式回收：不靠有人来取信', () => {
 
     expect((await mailbox.recover(a)).reclaimed).toBe(1)
     expect((await mailbox.status(b)).inFlightCount).toBe(1) // b 那份仍挂在 b 的在飞里
-    expect((await mailbox.status(b)).overdueInFlightCount).toBe(1)
+    expect((await mailbox.status(b))['mem.overdueInFlightCount']).toBe(1)
     await mailbox.stop({ purge: true })
   })
 
@@ -193,7 +193,7 @@ describe('opt-in 定时回收（默认关）', () => {
 
     const status = await mailbox.status(address)
     expect(status.unreadCount).toBe(0)
-    expect(status.overdueInFlightCount).toBe(1) // 只能靠 recover() 或下一次取信
+    expect(status['mem.overdueInFlightCount']).toBe(1) // 只能靠 recover() 或下一次取信
     await mailbox.stop({ purge: true })
   })
 

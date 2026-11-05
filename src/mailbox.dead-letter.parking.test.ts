@@ -15,7 +15,7 @@
  * 固化的不变量：
  *   [语义] 死信队列上 `nack(false)` 之后，那条队列不能再被 `fetch` 出来。
  *   [语义] 一次 `nack(false)` 不得让死信队列里多出第二份未读。
- *   [语义] 停放不等于消失：`status()` 里 `parkedCount` 数得出来，副本也读得出来。
+ *   [语义] 停放不等于消失：`status()` 里 `['mem.parkedCount']` 数得出来，副本也读得出来。
  *   [语义] 门面级 `status()` 要能看见停放数（不然运维只看得到"没未读"）。
  *   [事实] 未到封顶时归档行为不变：正常在 `x_dlq` 里留一份未读记录。
  */
@@ -74,7 +74,7 @@ describe('死信封顶：停放不是重投', () => {
 
     const s = await mailbox.status(dlq)
     expect(s.unreadCount).toBe(0)
-    expect(s.parkedCount).toBe(1)
+    expect(s['mem.parkedCount']).toBe(1)
 
     const parked = provider.peekParked(dlq)
     expect(parked).toHaveLength(1)
@@ -108,7 +108,9 @@ describe('死信封顶：停放不是重投', () => {
     await first!.nack(false)
 
     const global = await mailbox.status()
-    expect(global.parkedCount).toBe(1)
+    // 快照不再代求策略专属的聚合（内核不认识 `mem.*` 这些键）：按地址自己加起来。
+    const parked = global.addresses.reduce((t, e) => t + ((e['mem.parkedCount'] as number) ?? 0), 0)
+    expect(parked).toBe(1)
 
     await mailbox.stop({ purge: true })
   })
@@ -120,7 +122,7 @@ describe('死信封顶：停放不是重投', () => {
 
     const s = await mailbox.status(dlq)
     expect(s.unreadCount).toBe(1)
-    expect(s.parkedCount).toBe(0)
+    expect(s['mem.parkedCount']).toBe(0)
 
     const peeked = await mailbox.fetch(dlq, { peek: true })
     expect(peeked[0].headers?.['mbx-dead-letter']).toBe('true')
@@ -138,7 +140,7 @@ describe('死信封顶：停放不是重投', () => {
 
     const s = await mailbox.status(dlq)
     expect(s.unreadCount).toBe(0)
-    expect(s.parkedCount).toBe(0)
+    expect(s['mem.parkedCount']).toBe(0)
     expect(provider.peekParked(dlq)).toEqual([])
 
     await mailbox.stop({ purge: true })
@@ -151,7 +153,7 @@ describe('死信封顶：停放不是重投', () => {
 
     const first = await mailbox.fetch(dlq, { manualAck: true })
     await first!.nack(false)
-    expect((await mailbox.status(dlq)).parkedCount).toBe(1)
+    expect((await mailbox.status(dlq))['mem.parkedCount']).toBe(1)
 
     await mailbox.stop({ purge: true })
     expect(bus.listParked(dlq)).toEqual([])
@@ -168,7 +170,7 @@ describe('死信封顶：停放不是重投', () => {
     const s = await mailbox.status(address)
     expect(s.unreadCount).toBe(0)
     expect(s.inFlightCount).toBe(0)
-    expect(s.parkedCount).toBe(0)
+    expect(s['mem.parkedCount']).toBe(0)
     expect(await mailbox.fetch(address, { manualAck: true })).toBeNull()
 
     await mailbox.stop({ purge: true })

@@ -166,23 +166,34 @@ const status = await mailbox.status('mem:service@example.com/inbox')
 console.log(`State: ${status.state}`) // 'online' | 'unknown' | 'degraded' | 'offline'
 console.log(`Exists: ${status.exists}`) // does the provider know this address at all?
 console.log(`Unread count: ${status.unreadCount}`) // still waiting in the queue
-console.log(`In flight: ${status.inFlightCount}`) // handed out, awaiting ack/nack
-console.log(`Overdue: ${status.overdueInFlightCount}`) // in flight, lease already expired, not yet reclaimed
-console.log(`Oldest overdue: ${status.oldestOverdueMs}ms`)
-console.log(`Parked: ${status.parkedCount}`) // written off: never delivered again, never silently dropped
-console.log(`Subscribers: ${status.subscriberCount}`)
+console.log(`In flight: ${status.inFlightCount}`) // handed out, not yet settled
 console.log(`Last activity: ${status.lastActivityTime}`) // ISO 8601, or null
+
+// a provider's own bookkeeping lives in namespaced extension keys
+console.log(`Overdue: ${status['mem.overdueInFlightCount']}`) // in flight, lease expired, not yet reclaimed
+console.log(`Oldest overdue: ${status['mem.oldestOverdueMs']}ms`)
+console.log(`Parked: ${status['mem.parkedCount']}`) // written off: never delivered again, not silently dropped
+console.log(`Subscribers: ${status['mem.subscriberCount']}`)
 ```
+
+Only measurements a **core operation** produces get a named field: `state`, `exists`,
+`unreadCount`, `inFlightCount`, `lastActivityTime`. Anything that belongs to one delivery
+strategy — a parked-copies bin, a lease sweeper, dead-letter counters — goes into the open
+index signature that `1.0.0` already had, prefixed with the scheme (`mem.parkedCount`). A broker
+(AMQP / SQS) may not have those concepts at all, and a contract that names them would insist every
+provider is shaped like `MemoryProvider`. Ask a provider what it can actually answer via its
+capability declaration (`provider.supports` / `provider.can(op, address?)`) instead of guessing.
 
 `unreadCount` only counts messages still waiting in the queue. A message taken with
 `manualAck: true` has left the queue but is not yet processed — it is reported separately as
 `inFlightCount`, and it returns to the queue once its lease expires. Reclaiming that lease is
 **lazy** (there is no background timer; the next `manualAck` fetch of that topic sweeps expired
 leases back), so a wedged consumer can park expired leases in-flight indefinitely. That is why
-`overdueInFlightCount` is reported separately: `inFlightCount` is legitimately non-zero on a
-healthy system, so **alert on `overdueInFlightCount`**, not on it.
+the overdue count is reported separately (`mem:` exposes it as `['mem.overdueInFlightCount']`):
+`inFlightCount` is legitimately non-zero on a healthy system, so **alert on the overdue count**,
+not on it — or reclaim explicitly with `mailbox.recover()`.
 
-`parkedCount` counts the third state: copies that were **written off** (a dead-letter chain that hit
+`['mem.parkedCount']` counts the third state: copies that were **written off** (a dead-letter chain that hit
 its nesting cap) and therefore must never be delivered again. They are in neither `unreadCount` nor
 `inFlightCount`, `fetch` will not hand them to anybody, and `peekParked()` / `purgeParked()` are the
 only ways to read them or get rid of them — §2 lists the three dispositions, §4 covers the dead-letter
@@ -205,13 +216,15 @@ arguments (or `snapshot()`, same view) to get every topic of every registered pr
 const snap = await mailbox.status()
 console.log(snap.state) // 'online' | 'degraded' | 'unknown'
 console.log(snap.addressCount) // topics known across the registered providers
-console.log(snap.unreadCount, snap.inFlightCount, snap.parkedCount)
+console.log(snap.unreadCount, snap.inFlightCount)
 for (const entry of snap.addresses) {
-  console.log(entry.canonicalId, entry.state, entry.unreadCount)
+  console.log(entry.address, entry.state, entry.unreadCount, entry['mem.parkedCount'])
 }
 ```
 
-`addresses` is sorted by `canonicalId` so snapshots are reproducible. Providers whose messages do
+`addresses` is sorted by the address string as the provider listed it (the kernel does not
+normalize addresses — see below), so snapshots are reproducible. The snapshot only aggregates the
+core fields; strategy-specific numbers are per-address extension keys. Providers whose messages do
 not live locally (AMQP / SQS style brokers) cannot enumerate their topics; they are listed in
 `unsupportedProviders` and the snapshot degrades to `state: 'degraded'` instead of pretending the
 queues are empty.
@@ -268,33 +281,49 @@ see. `peek` never lists messages another consumer is holding; those only show up
 provider that cannot do read-only snapshots throws `UnsupportedCapabilityError` rather than
 silently falling back to a consuming fetch.
 
-**Settling a fetched message.** `fetch(addr, { manualAck: true })` hands you a handle with two
-verbs. They are not "success / failure" — that reading costs people real downtime, because it
-suggests a message you decided to discard does not deserve `ack`, so drain scripts get written with
-`nack(false)` and then spin. The honest table is two questions: *will this be handed to me again*,
-and *should the provider do something on its way out*:
+**Settling a fetched message: three dispositions.** `fetch(addr, { manualAck: true })` hands you a
+handle, and settling is not "success / failure" — that reading costs people real downtime, because
+it suggests a message you decided to discard does not deserve `ack`, so drain scripts get written
+with `nack(false)` and then spin. The vocabulary is `ack(where)`, and the three core values answer
+two questions: *will this be handed to me again*, and *should the provider do something on its way
+out*:
 
-| What you do | this copy | handed to anyone again | provider tidies up afterwards |
+| Disposition | this copy | handed to anyone again | provider tidies up afterwards |
 | ----------- | --------- | ---------------------- | ----------------------------- |
-| `ack()`             | removed | no | no |
-| `nack(false)`       | removed | no | **yes** |
-| `nack(true)`        | back in the queue | yes | no |
+| `ack('handled')`   | removed | no | no |
+| `ack('discard')`   | removed | no | **yes** |
+| `ack('unhandled')` | back in the queue | yes | no |
 
-`ack()` means "I am done with this copy, stop tracking it" — whatever you did with it, including
+`handled` means "I am done with this copy, stop tracking it" — whatever you did with it, including
 deciding the letter is malformed and dropping it on the floor. That is the normal way to discard.
 
-`nack(false)` adds exactly one thing: the provider gets to tidy up *by its own protocol's rules*.
-For `MemoryProvider` that means a copy into the dead-letter topic (and with
-`enableDeadLetterQueue()` off, it degrades to a plain silent drop — identical to `ack()`). For SMTP
-it would be reject/bounce, for IMAP a `\Deleted` flag plus expunge, for MQTT there is no such thing.
-Never assume `nack(false)` implies a DLQ.
+`discard` adds exactly one thing: the provider gets to tidy up *by its own protocol's rules*. For
+`MemoryProvider` that means a copy into the dead-letter topic (and with `enableDeadLetterQueue()`
+off it degrades to a plain silent drop — identical to `handled`, because the provider declares no
+`dead-letter` capability, and the declaration is what the kernel believes). For SMTP it would be
+reject/bounce, for IMAP a `\Deleted` flag plus expunge, for MQTT there is no such thing. Never
+assume `discard` implies a DLQ — ask with `provider.can('dead-letter', address)`.
 
-What every provider must guarantee: after `nack(false)`, that message is never handed to anyone
-again — including when the dead-letter chain hits `maxNesting`. There it is **parked**: not in
-`unreadCount`, invisible to `fetch`, readable via `peekParked()` / `status().parkedCount`, removable
-only through `purgeParked()`. Push consumers get the same three choices without a handle: returning
-normally is `ack`, throwing a plain error is `nack(false)`, throwing `{ isRetriable: true }` is
-`nack(true)`.
+`ack()` with no argument means `handled`. `nack(requeue?)` is kept as a deprecated alias of the
+same thing (`nack(true)` ≡ `unhandled`, `nack(false)` ≡ `discard`) and disappears in `2.0.0`.
+
+Any other value is the provider's own vocabulary and must be declared
+(`disposition:<value>` in `provider.supports`); an undeclared value fails with
+`UnsupportedCapabilityError` **before** anything is mutated — it never quietly degrades into a
+built-in one.
+
+**One fetch = one disposition.** A handle represents one delivery attempt: a repeated disposition,
+or a late disposition from a handle whose lease was already reclaimed, does not take effect and
+returns `false` (no throw, no silent no-op, no configuration switch). If you want to hold a message
+while you decide, that is what the lease is for (`ackTimeout`, `ackTimeout: 0` for a permanent
+lease, and a `renewLease` capability on providers that support it).
+
+What every provider must guarantee: after `discard`, that copy is never handed to anyone again —
+including when a dead-letter chain hits `maxNesting`. There it is **parked**: not in `unreadCount`,
+invisible to `fetch`, readable via `peekParked()` / `status()['mem.parkedCount']`, removable only
+through `purgeParked()`. Push consumers get the same three dispositions without a handle: returning
+normally is `handled`, throwing a plain error is `discard`, throwing `{ isRetriable: true }` is
+`unhandled`.
 
 
 ### 3. When a subscriber fails
@@ -460,7 +489,7 @@ record fetched out of `X_dlq` and given up again is **parked** in `X_dlq` (marke
 `X_dlq_dlq_dlq`, forever. Parking is not losing, and it is **not re-queueing**: a parked record is
 not in `unreadCount`, no `fetch` will hand it to anyone (that is exactly the trap that made drain
 scripts spin forever, re-reading the same poison record), and it can only be read with
-`peekParked()` or dropped with `purgeParked()`; `status().parkedCount` counts them. Pass a bigger
+`peekParked()` or dropped with `purgeParked()`; `status()['mem.parkedCount']` counts them. Pass a bigger
 `maxNesting` to get a real chain; `Number.POSITIVE_INFINITY` is the explicit "no limit" exit.
 `deadLetterTopic()` tells you where the give-up actually lands — at the cap it returns the topic
 itself rather than a deeper address that would never be written.
@@ -512,7 +541,7 @@ nor stretch one that has (an expired lease is reclaimed no matter how long the n
 for), and it cannot void a `0` / `null` lease. Whether a lease has expired is decided by the lease
 itself, at the moment it was handed out — otherwise any consumer's single fetch could cancel
 another consumer's lease. What an expired-but-unreclaimed lease costs you is visibility, which is
-what `overdueInFlightCount` (§2) exists to remove.
+what the overdue count (§2, `mem:` exposes it as `['mem.overdueInFlightCount']`) exists to remove.
 
 Reclaiming is triggered by the next `manualAck` fetch. That is fine for a polling consumer, but if
 the last consumer crashes — nobody fetches that address again — the expired lease sits in-flight

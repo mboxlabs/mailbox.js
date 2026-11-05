@@ -163,21 +163,30 @@ flowchart LR
    console.log(`状态: ${status.state}`) // 'online' | 'unknown' | 'degraded' | 'offline'
    console.log(`存在性: ${status.exists}`) // provider 到底认不认这个地址
    console.log(`未读数量: ${status.unreadCount}`) // 仍在队列里等待
-   console.log(`in-flight: ${status.inFlightCount}`) // 已取出、尚未 ack/nack
-   console.log(`已过期的: ${status.overdueInFlightCount}`) // 在飞、租约已到期、还没被收回
-   console.log(`最老化过期: ${status.oldestOverdueMs}ms`)
-   console.log(`停放: ${status.parkedCount}`) // 已判死：不会再交给任何人，但也没有被静默丢弃
-   console.log(`订阅数: ${status.subscriberCount}`)
+   console.log(`in-flight: ${status.inFlightCount}`) // 已取出、尚未处置
    console.log(`最后活动: ${status.lastActivityTime}`) // ISO 8601，没有记录时是 null
+
+   // provider 自己的账，放在带命名空间的扩展键里
+   console.log(`已过期的: ${status['mem.overdueInFlightCount']}`) // 在飞、租约已到期、还没被收回
+   console.log(`最老化过期: ${status['mem.oldestOverdueMs']}ms`)
+   console.log(`停放: ${status['mem.parkedCount']}`) // 已判死：不会再交给任何人，但也没被静默丢弃
+   console.log(`订阅数: ${status['mem.subscriberCount']}`)
    ```
+
+   只有**核心操作本身**能产生的观测量才有具名字段：`state`、`exists`、`unreadCount`、
+   `inFlightCount`、`lastActivityTime`。属于某一套投递策略的账（停放区、租约清扫、死信计数）
+   一律走 `1.0.0` 就留好的索引签名，并带 scheme 前缀（`mem.parkedCount`）——换成 AMQP / SQS
+   这些概念未必存在，契约里写死它们等于要求所有 provider 都长得像 `MemoryProvider`。
+   要问「这个 provider 到底能答什么」，用能力声明：`provider.supports` / `provider.can(op, address?)`。
 
    `unreadCount` 只统计队列里等待的消息。用 `manualAck: true` 取出的消息已经离开队列但尚未
    处理完，它单独计入 `inFlightCount`；租约到期后会回到队列。但**回收是惰性的**（没有后台
    定时器，只有下一次 `manualAck` 取信才把已过期的租约扫回队头），所以一个僵死的消费者能把
-   过期租约永远挂在 in-flight 里。这就是为什么要单独报 `overdueInFlightCount`：健康的系统
-   `inFlightCount` 本来就非零，**告警只能盯 `overdueInFlightCount`**。
+   过期租约永远挂在 in-flight 里。所以过期未收回的份数要单独报（`mem:` 是
+   `['mem.overdueInFlightCount']`）：健康的系统 `inFlightCount` 本来就非零，
+   **告警只能盯那个过期数**——或者直接 `mailbox.recover()` 显式回收。
 
-   `parkedCount` 是第三个状态的份数：**已判死**的副本（死信链到顶就是这种），按定义不能再被交付。
+   `['mem.parkedCount']` 是第三个状态的份数：**已判死**的副本（死信链到顶就是这种），按定义不能再被交付。
    它既不在 `unreadCount` 也不在 `inFlightCount` 里，`fetch` 取不出来，只能 `peekParked()` 查、
    `purgeParked()` 排走——§2 讲三个处置动作，§4 讲会把它们停放的死信链。没有这个数，「未读 0」
    和「有一条毒记录停在这儿」就完全分不开。
@@ -198,11 +207,12 @@ flowchart LR
    console.log(snap.addressCount) // 已注册 provider 认得的 topic 数
    console.log(snap.unreadCount, snap.inFlightCount)
    for (const entry of snap.addresses) {
-     console.log(entry.canonicalId, entry.state, entry.unreadCount)
+     console.log(entry.address, entry.state, entry.unreadCount, entry['mem.parkedCount'])
    }
    ```
 
-   `addresses` 按 `canonicalId` 排序，快照因此可重复。AMQP / SQS 这类消息不在本地的 broker 无法枚举
+   `addresses` 按 provider 自己列出的地址串排序（内核不规范化地址，见下文），快照因此可重复。
+   快照只聚合核心具名字段；策略专属的数在每条地址的扩展键里。AMQP / SQS 这类消息不在本地的 broker 无法枚举
    自己的 topic，它们会被列进 `unsupportedProviders`，快照降级为 `state: 'degraded'`，而不是假装
    队列为空。
 
@@ -254,30 +264,40 @@ flowchart LR
    （`InvalidFetchOptionsError`）；不支持只读快照的 provider 会报 `UnsupportedCapabilityError`，
    不会静默退化成会取信的 `fetch`。
 
-   **取到的信怎么结算。** `fetch(addr, { manualAck: true })` 给你的句柄有两个动作。它们的区别
-   **不是“成功 / 失败”**——这个读法坑过真人在生产上：它暗示“判定不合格想扔掉的信不配 `ack`”，
-   于是排空脚本全写成 `nack(false)`，然后空转。真实的差别只有两个问题：**还会不会再交给我**、
-   **要不要 provider 顺手做点什么**。
+   **取到的信怎么处置：三个处置值。** `fetch(addr, { manualAck: true })` 给你的句柄用
+   `ack(where)` 结算。区别**不是“成功 / 失败”**——这个读法坑过真人在生产上：它暗示“判定不合格
+   想扔掉的信不配 `ack`”，于是排空脚本全写成 `nack(false)`，然后空转。真实的差别只有两个问题：
+   **还会不会再交给我**、**要不要 provider 顺手做点什么**。
 
-   | 你做什么 | 这一份 | 还会交给我吗 | provider 按协议善后 |
+   | 处置值 | 这一份 | 还会交给我吗 | provider 按协议善后 |
    | --- | --- | --- | --- |
-   | `ack()`       | 删 | 不 | 不 |
-   | `nack(false)` | 删 | 不 | **做** |
-   | `nack(true)`  | 回队 | 会 | 不 |
+   | `ack('handled')`   | 删 | 不 | 不 |
+   | `ack('discard')`   | 删 | 不 | **做** |
+   | `ack('unhandled')` | 回队 | 会 | 不 |
 
-   `ack()` 的意思是“这一份我处理完了，别再管它”——你怎么处理的、还是干脆判定这封信不合格直接
-   扔了，都一样。**想静默丢弃，就用它。**
+   `handled` 的意思是“这一份我处理完了，别再管它”——你怎么处理的、还是干脆判定这封信不合格直接
+   扔了，都一样。**想静默丢弃，就用它。**（省略参数的 `ack()` 就是 `handled`。）
 
-   `nack(false)` 只多一件事：provider 按**它自己协议的规矩**善后。对 `MemoryProvider` 就是往死信
-   topic 存一份副本（没开 `enableDeadLetterQueue()` 时它退化成纯丢弃，跟 `ack()` 一模一样）；
-   SMTP 是 reject / bounce，IMAP 是打 `\Deleted` 再 expunge，MQTT 一类根本没这个概念。
-   别把 DLQ 当成 `nack(false)` 的自带行为。
+   `discard` 只多一件事：provider 按**它自己协议的规矩**善后。对 `MemoryProvider` 就是往死信 topic
+   存一份副本（没开 `enableDeadLetterQueue()` 时退化成纯丢弃，跟 `handled` 一模一样——因为那时
+   provider 根本没声明 `dead-letter` 能力，而内核只认声明）；SMTP 是 reject / bounce，IMAP 是打
+   `\Deleted` 再 expunge，MQTT 一类根本没这个概念。别把 DLQ 当成 `discard` 的自带行为——
+   用 `provider.can('dead-letter', address)` 问。
 
-   所有 provider 都必须兑现同一条：`nack(false)` 之后这条消息**不会再交给任何人**——死信链到
+   别的处置值属于 provider 自己的词汇表，必须先声明（`provider.supports` 里的
+   `disposition:<值>`）；没声明的值会抛 `UnsupportedCapabilityError`，**而且发生在任何状态改动
+   之前**——绝不静默降级成某个内置值。`nack(requeue?)` 保留为 deprecated 别名
+   （`nack(true)` ≡ `unhandled`、`nack(false)` ≡ `discard`），`2.0.0` 删除。
+
+   **一次取信 = 一次处置。** 句柄代表一次交付：重复处置、或租约已被收回的旧句柄迟到处置，都
+   **不生效**并返回 `false`（不抛错、不静默、也不给开关）。想“先占着再定”用的是租约
+   （`ackTimeout`、`ackTimeout: 0` 的常驻租约，以及支持续租的 provider 声明的续租能力）。
+
+   所有 provider 都必须兑现同一条：`discard` 之后这条消息**不会再交给任何人**——死信链到
    `maxNesting` 时也一样。那种记录是**停放**：不在 `unreadCount` 里、`fetch` 取不出来，只能
-   `peekParked()` 查 / `status().parkedCount` 数，只有 `purgeParked()` 能排走。
-   push 侧没有句柄，同样三个选择：正常 `return` = `ack`；抛普通错误 = `nack(false)`；
-   抛 `{ isRetriable: true }` = `nack(true)`。
+   `peekParked()` 查 / `status()['mem.parkedCount']` 数，只有 `purgeParked()` 能排走。
+   push 侧没有句柄，同样三个处置值：正常 `return` = `handled`；抛普通错误 = `discard`；
+   抛 `{ isRetriable: true }` = `unhandled`。
 
    ### 3. 订阅失败时
 
@@ -416,7 +436,7 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    的记录会**停放**在 `X_dlq`（打 `mbx-dead-letter-terminal: 'true'`，并记一条 CRITICAL），
    而不是开出一条 `X_dlq_dlq`、再 `X_dlq_dlq_dlq`……无穷无尽。停放不是丢弃，也**不是重新入队**：
    它不在 `unreadCount` 里、`fetch` 也取不出来（否则排空脚本会永远拿到同一条），只能
-   `peekParked()` 查、`purgeParked()` 排走，`status().parkedCount` 数得出来。要真想要一条链就传更大的
+   `peekParked()` 查、`purgeParked()` 排走，`status()['mem.parkedCount']` 数得出来。要真想要一条链就传更大的
    `maxNesting`；`Number.POSITIVE_INFINITY` 是显式的“我不要上限”。封顶时 `deadLetterTopic()` 返回
    的是这条队列**自己**（消息真正会落的地方），而不是一个永远不会被写入的更深地址。
 
@@ -457,7 +477,7 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    别人的 `ackTimeout` 既不能缩短一条未到期的租约（拿 1ms 来取信也抢不走别人手里的 in-flight），
    也不能拖后一条已过期的（不管下一个取信者传多长都会被收回），更不能作废一条 `0` / `null` 的
    常驻租约。“过没过期”由租约自己、在取走那一刻决定；否则任意消费者的一次取信就能作废别人的
-   租约。过期未收回的代价是可见性，`overdueInFlightCount`（§2）负责把它补回来。
+   租约。过期未收回的代价是可见性，那个过期计数（§2，`mem:` 是 `['mem.overdueInFlightCount']`）负责把它补回来。
 
    回收由「下一次 manualAck 取信」触发。对正常轮询的消费者够用，但最后一个消费者崩了——这个地址
    再没人来取信——已过期的租约就永远挂在 in-flight 里。这种场景有显式、幂等的入口：

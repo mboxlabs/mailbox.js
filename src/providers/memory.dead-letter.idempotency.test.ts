@@ -229,7 +229,8 @@ describe('[语义] 拉取侧留痕的顺序：先处置、后 DLQ', () => {
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
     const taken = await mailbox.fetch(address, { manualAck: true });
 
-    await expect(taken!.nack(false)).resolves.toBeUndefined();
+    // 处置已落定（回 true），只是那份痕没了——归档失败不能把处置打回。
+    await expect(taken!.nack(false)).resolves.toBe(true);
 
     const status = await mailbox.status(address);
     expect(status.unreadCount).toBe(0);

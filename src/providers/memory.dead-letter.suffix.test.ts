@@ -181,7 +181,7 @@ describe('[语义] 开启死信后，被放弃的消息必须「可达」', () =
     await tick();
 
     const snapshot = await mailbox.snapshot();
-    const dlq = snapshot.addresses.find((entry) => entry.canonicalId === provider.deadLetterTopic(address));
+    const dlq = snapshot.addresses.find((entry) => entry.address === provider.deadLetterTopic(address));
     expect(dlq, 'snapshot 里找不到死信地址').toBeDefined();
     expect(dlq!.exists).toBe(true);
     expect(dlq!.state).toBe('online');

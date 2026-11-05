@@ -2,12 +2,14 @@ import { MailboxProvider } from './MailboxProvider';
 import {
   Ackable,
   MailMessage,
+  MailboxAddressGrammar,
   MailboxStatus,
 } from '../interfaces';
 import { MailMessageQueue, MailMessageAckable, SettlingAckable, type LocatedCopy } from '../lib/MessageQueue';
 import { RetryPolicy } from '../lib/retry';
 import { DeliveryResult, MBX_ATTEMPT_HEADER, nextRoundCopy, readRound } from '../lib/delivery';
 import { getCanonicalMailboxAddressIdentifier, parseMailboxAddress } from '../lib/utils';
+import { Capability } from '../lib/capability';
 import { InvalidDeadLetterNestingError, InvalidDeadLetterSuffixError } from '../error';
 
 type Listener = (message: MailMessage) => void | Promise<DeliveryResult | void>;
@@ -473,6 +475,75 @@ export class MemoryProvider extends MailboxProvider {
   }
 
   /**
+   * 本 provider 的能力声明。
+   *
+   * 接口层的可选钩子（`status` / `peek` / `recoverLeases` / `listAddresses` / `clear`）由基类从实现推导；
+   * 这里只补**不属于通用接口**的形状：
+   *
+   * - `parked`：有停放区（`peekParked` / `purgeParked`）——没这个能力就没有「判死但没丢」这个状态可查；
+   * - `dead-letter`：只在 `enableDeadLetterQueue()` 之后有（见那两个方法里的声明增删）。
+   *   没开时 `discard` 就是纯丢弃、零痕迹——能力声明不说谎。
+   */
+  protected override declareCapabilities(declared: Set<string>): Set<string> {
+    super.declareCapabilities(declared);
+    declared.add(Capability.Parked);
+    if (this.deadLetter) {
+      declared.add(Capability.DeadLetter);
+    }
+    return declared;
+  }
+
+  /**
+   * `mem:` 的地址语法（D5）——本 provider 声明，并在自己的**每个**入口执行。
+   *
+   * 内核不折叠地址、不判等、不禁止 query / fragment：那些规则属于某一个 scheme。
+   * 这里把它写成**能问到的数据**，而不是只藏在 {@link MemoryProvider.topicOf} 的实现里。
+   */
+  public readonly addressGrammar: MailboxAddressGrammar = {
+    scheme: 'mem',
+    // mailto 形状：`alice@example.com` 是身份（host 段），不是路径；`//` 可写可不写。
+    authority: 'optional',
+    identity: '身份在 host 段（`alice@example.com`），path 段是信箱内的分区（`/inbox/thread-1`）',
+    // 折叠会丢掉 query / fragment（见 topicOf）——所以直接拒绝，而不是静默并入另一条队列。
+    query: 'rejected',
+    fragment: 'rejected',
+    equivalences: [
+      '`mem:alice@example.com/inbox` ≡ `mem://alice@example.com/inbox`（多写的 `//` 是容错写法，不是另一个信箱）',
+    ],
+  };
+
+  /**
+   * `mem:` 的等价规则：把地址折叠成本总线的内部队列键。
+   *
+   * 这是 **scheme 的语法**（见 {@link MemoryProvider.addressGrammar}），不是内核规则：
+   * `mem:a@h/i` 与 `mem://a@h/i` 落到同一个键，而带 query / fragment 的写法直接报错
+   * （折叠会把它们丢掉，两条业务流静默共用一条队列——issue#4）。
+   *
+   * 正因为 `_send` / `_fetch` / `_peek` / `_status` / `subscribe` / 死信命名 / 停放区
+   * 每个入口都过这里，「同一个地址在所有入口一致」在 `mem:` 里是**结构性成立**的，
+   * 不靠调用方小心。
+   */
+  protected topicOf(address: URL): string {
+    return getCanonicalMailboxAddressIdentifier(address);
+  }
+
+  /**
+   * 只做语法检查、不取键：给那些**不是队列键**的本 scheme 地址用（目前就是 `from`）。
+   *
+   * 两端必须同规则——否则 `from: 'mem:x@e/u?route=direct'` 这种手滑写法会一端合法、
+   * 另一端报错。**别的 scheme 的地址不归本 provider 判**：跨协议路由
+   * （`from: 'input:…'` → `to: 'mem:…'`）里 from 走的是别人的语法。
+   */
+  private checkGrammar(address: URL): void {
+    this.topicOf(address);
+  }
+
+  /** 这个地址属于本 scheme 吗（`URL#protocol` 带冒号，`this.protocol` 不带）。 */
+  private isMine(address: URL): boolean {
+    return address.protocol === `${this.protocol}:`;
+  }
+
+  /**
    * 启动（opt-in 的）租约清扫定时器。
    *
    * 扫的是整个总线上已知的所有 topic：回收只按**每条租约自己的到期时刻**判，所以定时扫是
@@ -513,7 +584,7 @@ export class MemoryProvider extends MailboxProvider {
    * 幂等，返回收回了几份。
    */
   public async recoverLeases(address: URL): Promise<number> {
-    return this.bus.reclaimExpired(getCanonicalMailboxAddressIdentifier(address))
+    return this.bus.reclaimExpired(this.topicOf(address))
   }
 
   /**
@@ -557,7 +628,10 @@ export class MemoryProvider extends MailboxProvider {
    * 把它退回队列（判定在基类的 `shouldRequeueAfterBroadcast`，issue#2）。
    */
   protected async _send(message: MailMessage): Promise<void> {
-    const topic = getCanonicalMailboxAddressIdentifier(message.to);
+    if (this.isMine(message.from)) {
+      this.checkGrammar(message.from); // from 不是队列键，但它同样是 `mem:` 的地址
+    }
+    const topic = this.topicOf(message.to);
     const deliveries = this.bus.publish(topic, message);
     if (!deliveries) {
       return; // 没有订阅者：消息入队，由 fetch / ack 那套语义负责
@@ -569,7 +643,7 @@ export class MemoryProvider extends MailboxProvider {
     address: URL,
     onReceive: (message: MailMessage) => Promise<DeliveryResult>,
   ): any {
-    const topic = getCanonicalMailboxAddressIdentifier(address);
+    const topic = this.topicOf(address);
     // The returned unsubscribe function is the "unsubscribeHandle"
     return this.bus.subscribe(topic, onReceive);
   }
@@ -587,7 +661,7 @@ export class MemoryProvider extends MailboxProvider {
     address: URL,
     options?: { manualAck?: boolean; ackTimeout?: number | null },
   ): Promise<MailMessage | MailMessageAckable<MailMessage> | null> { // Updated return type
-    const topic = getCanonicalMailboxAddressIdentifier(address);
+    const topic = this.topicOf(address);
 
     if (!options?.manualAck) {
       const message = this.bus.fetchAndForget(topic);
@@ -611,7 +685,7 @@ export class MemoryProvider extends MailboxProvider {
    * in-flight（默认 30s 后重投），既干扰正常消费者的计数，也不是只读（issue#4）。
    */
   protected async _peek(address: URL, options?: { limit?: number }): Promise<MailMessage[]> {
-    const topic = getCanonicalMailboxAddressIdentifier(address);
+    const topic = this.topicOf(address);
     return this.bus.peek(topic, options?.limit);
   }
 
@@ -619,10 +693,10 @@ export class MemoryProvider extends MailboxProvider {
    * 只读：这条地址上**停放**着的记录（判死、不再交付、但也没丢）。
    *
    * 停放记录不在 `fetch` / `peek` 的交付流里——否则排空脚本又会取到它。要看只能走这里，
-   * 或者看 `status().parkedCount`。
+   * 或者看 `status()['mem.parkedCount']`。
    */
   public peekParked(address: string | URL, limit?: number): MailMessage[] {
-    const topic = getCanonicalMailboxAddressIdentifier(parseMailboxAddress(address, 'peekParked()'));
+    const topic = this.topicOf(parseMailboxAddress(address, 'peekParked()'));
     return this.bus.listParked(topic, limit);
   }
 
@@ -636,19 +710,29 @@ export class MemoryProvider extends MailboxProvider {
     address: string | URL,
     predicate?: (message: MailMessage) => boolean,
   ): number {
-    const topic = getCanonicalMailboxAddressIdentifier(parseMailboxAddress(address, 'purgeParked()'));
+    const topic = this.topicOf(parseMailboxAddress(address, 'purgeParked()'));
     return this.bus.clearParked(topic, predicate);
   }
 
   /**
-   * 本总线认得的地址（canonical id）—— `mem:` 的消息就在本地，所以能枚举。
+   * 本总线认得的地址（`mem:` 自己的形式）——消息就在本地，所以能枚举。
+   * 唯一契约：这些串能原样喂回本 provider（`status` / `fetch` / `recoverLeases`）。
    */
   public async listAddresses(): Promise<string[]> {
     return this.bus.listTopics();
   }
 
+  /**
+   * 状态：具名字段只放核心操作本身就有的观测量（D7），本策略的账走命名空间扩展键。
+   *
+   * 为什么分开：`parkedCount` / `overdueInFlightCount` 讲的是「停放区」与「租约清扫」这两套
+   * **投递策略**——换个 broker（AMQP / SQS）这两个概念未必存在，硬塞进核心类型就等于要求所有
+   * provider 都长得像 `MemoryProvider`。所以核心具名字段只有
+   * `state` / `exists` / `unreadCount` / `inFlightCount` / `lastActivityTime`，
+   * `mem:` 自己的观测量挂在 `mem.*` 上（`v1.0.0` 就留好的扩展位）。
+   */
   protected async _status(address: URL): Promise<MailboxStatus> {
-    const topic = getCanonicalMailboxAddressIdentifier(address);
+    const topic = this.topicOf(address);
     const {
       exists,
       unreadCount,
@@ -660,6 +744,16 @@ export class MemoryProvider extends MailboxProvider {
       lastActivityTime,
       subscriberCount,
     } = this.bus.getStatus(topic);
+    // `mem:` 的账带 `mem.` 前缀：两个 provider 不会往同一个键上写不同的东西。
+    const extension = {
+      // 已过期、还没被回收的那部分在飞（回收是惰性的，靠下一次取信或 recover() 才扫）。
+      'mem.overdueInFlightCount': overdueInFlightCount,
+      'mem.oldestOverdueMs': oldestOverdueMs,
+      // 判死但先不丢的份数（死信链封顶那类）：不在 unreadCount 里，也不会再被交付。
+      'mem.parkedCount': parkedCount,
+      'mem.oldestParkedMs': oldestParkedMs,
+      'mem.subscriberCount': subscriberCount,
+    };
 
     if (!exists) {
       // 对“这个地址从不存在”回 `online` + 0，诊断页就分不出「不存在」和「空闲」（issue#4）。
@@ -669,12 +763,8 @@ export class MemoryProvider extends MailboxProvider {
         message: `No queue, subscription or activity is known for '${topic}'.`,
         unreadCount,
         inFlightCount,
-        overdueInFlightCount,
-        oldestOverdueMs,
-        parkedCount,
-        oldestParkedMs,
         lastActivityTime,
-        subscriberCount,
+        ...extension,
       };
     }
 
@@ -684,14 +774,8 @@ export class MemoryProvider extends MailboxProvider {
       unreadCount,
       // in-flight 消息已离开队列但尚未确认，单独报出来，否则 status 会把它们当作已处理完。
       inFlightCount,
-      // 其中已经过期、还没被回收的那部分（回收是惰性的，靠下一次取信才扫）。
-      overdueInFlightCount,
-      oldestOverdueMs,
-      // 判死但先不丢的份数（死信链封顶那类）：不在 unreadCount 里，也不会再被交付。
-      parkedCount,
-      oldestParkedMs,
       lastActivityTime,
-      subscriberCount,
+      ...extension,
     };
   }
 
@@ -711,7 +795,7 @@ export class MemoryProvider extends MailboxProvider {
     if (!this.deadLetter) {
       return;
     }
-    const sourceTopic = getCanonicalMailboxAddressIdentifier(message.to);
+    const sourceTopic = this.topicOf(message.to);
     for (const failure of failed) {
       this.archiveDeadLetter(message, sourceTopic, {
         reason: failure.reason ?? 'unknown',
@@ -758,9 +842,9 @@ export class MemoryProvider extends MailboxProvider {
     let canonical: string;
     try {
       // 用地址解析校验一遍：带 query / hash 的后缀在规范化时会被静默丢掉，死信就会落错地方。
-      probeKey = getCanonicalMailboxAddressIdentifier(new URL(DEAD_LETTER_PROBE_ADDRESS));
+      probeKey = this.topicOf(new URL(DEAD_LETTER_PROBE_ADDRESS));
       candidate = appendDeadLetterSuffix(probeKey, suffix);
-      canonical = getCanonicalMailboxAddressIdentifier(new URL(candidate));
+      canonical = this.topicOf(new URL(candidate));
     } catch (error) {
       throw new InvalidDeadLetterSuffixError(
         suffix,
@@ -803,11 +887,14 @@ export class MemoryProvider extends MailboxProvider {
       );
     }
     this.deadLetter = { suffix, maxNesting };
+    // 能力声明跟着配置走：开了死信才有 `dead-letter`（谁改行为谁更新声明）。
+    this.supports.add(Capability.DeadLetter);
   }
 
   /** 关闭死信队列：之后被放弃的消息回到默认的“直接丢弃”。 */
   public disableDeadLetterQueue(): void {
     this.deadLetter = null;
+    this.supports.delete(Capability.DeadLetter);
   }
 
   /**
@@ -831,7 +918,7 @@ export class MemoryProvider extends MailboxProvider {
     if (this.deadLetterDepth(canonicalTopic) + 1 > this.deadLetter.maxNesting) {
       return canonicalTopic; // 封顶：就地停放（目的地就是它自己）
     }
-    return getCanonicalMailboxAddressIdentifier(
+    return this.topicOf(
       new URL(appendDeadLetterSuffix(canonicalTopic, this.deadLetter.suffix)),
     );
   }
@@ -856,7 +943,7 @@ export class MemoryProvider extends MailboxProvider {
       return null; // 保险：空后缀（已在 enableDeadLetterQueue 里禁止）会造成无限剥
     }
     try {
-      return getCanonicalMailboxAddressIdentifier(new URL(parent)) === parent ? parent : null;
+      return this.topicOf(new URL(parent)) === parent ? parent : null;
     } catch {
       return null;
     }
@@ -898,7 +985,7 @@ export class MemoryProvider extends MailboxProvider {
       return null;
     }
     const parsed = parseMailboxAddress(address, 'deadLetterTopic()');
-    return this.deadLetterKey(getCanonicalMailboxAddressIdentifier(parsed));
+    return this.deadLetterKey(this.topicOf(parsed));
   }
 
   /**
@@ -965,7 +1052,7 @@ export class MemoryProvider extends MailboxProvider {
         `[${this.protocol}] CRITICAL: Message ${record.id} reached the dead-letter nesting limit ` +
         `(${this.deadLetter?.maxNesting}) in '${sourceTopic}'. It is parked there (no longer deliverable), marked ` +
         `${MBX_DEAD_LETTER_TERMINAL_HEADER}=true, instead of opening one more dead-letter level. ` +
-        `Read it with peekParked() / status().parkedCount, or raise maxNesting if this chain is intentional.`,
+        `Read it with peekParked() / status()['mem.parkedCount'], or raise maxNesting if this chain is intentional.`,
       );
       return;
     }
@@ -1004,22 +1091,22 @@ export class MemoryProvider extends MailboxProvider {
 
     return {
       ...ackable,
-      ack: async (): Promise<void> => {
+      ack: async (): Promise<boolean> => {
         if (settled) {
-          return;
+          return false;
         }
         settled = true;
-        await originalAck();
+        return originalAck();
       },
-      nack: async (requeue = false): Promise<void> => {
+      nack: async (requeue = false): Promise<boolean> => {
         if (settled) {
-          return;
+          return false;
         }
         settled = true;
 
         const dispositioned = await originalNack(requeue);
         if (requeue || !provider.deadLetter || !dispositioned) {
-          return; // 回队不是放弃；没落定的处置也不是
+          return dispositioned; // 回队不是放弃；没落定的处置也不是
         }
 
         try {
@@ -1038,6 +1125,7 @@ export class MemoryProvider extends MailboxProvider {
             error,
           );
         }
+        return dispositioned;
       },
     };
   }
@@ -1058,7 +1146,7 @@ export class MemoryProvider extends MailboxProvider {
     if (!requeue) {
       return;
     }
-    const topic = getCanonicalMailboxAddressIdentifier(message.to);
+    const topic = this.topicOf(message.to);
     this.bus.requeue(topic, message);
   }
 }
