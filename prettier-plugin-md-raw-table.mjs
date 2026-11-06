@@ -7,7 +7,7 @@ import markdownPlugin from 'prettier/plugins/markdown'
  * 于是整张表每一行都被补成同样宽的长尾空格：`format:fix` 一次，
  * diff 全是纯空格，逐字推敲过的正文被冲散，且 md 文件在 git diff 里彻底没法读。
  *
- * 为什么只能这么办：prettier 没有「关掉表格格式化」的开关——3.8.3 与 3.9.6 的
+ * 为什么只能这么办：prettier 没有「关掉表格格式化」的开关——3.8.3 / 3.9.6 / 3.9.10 的
  * `--support-info` 里与 wrap 有关的都只有 printWidth / proseWrap / objectWrap
  * （加一个 embeddedLanguageFormatting，管的是内嵌代码，不是表格）；markdown 侧也不认
  * `<!-- prettier-ignore-table -->`，只有整块的 `<!-- prettier-ignore -->`
@@ -24,8 +24,9 @@ import markdownPlugin from 'prettier/plugins/markdown'
  *    等于把 base **没有**的 key 也声明成「我有」：prettier 只要看见 `printPrettierIgnored`
  *    是函数就调它，拿到 `undefined` 当 doc → 碰到 `<!-- prettier-ignore -->` 直接
  *    `InvalidDocError: Unexpected doc 'undefined'`。而 3.8.3 的 mdast printer 没有这个 key、
- *    3.9.6 才有——同一份插件就是这样在两个版本之间坏的（内核四个包吃 3.8.3，
- *    plan-executor 吃 3.9.6）。展开之后能力面永远等于 base，版本升降级都不需要改这里。
+ *    3.9.6 才有——同一份插件就是这样在两个版本之间坏的（mailbox 系四个包现在吃 3.9.10，
+ *    plan-executor 吃 3.9.6：同一条插件得在两端都成立，所以能力面不能按某个版本手写）。
+ *    展开之后能力面永远等于 base，版本升降级都不需要改这里。
  * 3. 切片的**首行**不能带前导空格：prettier 会先给出当前缩进，而切片带不带原文缩进
  *    看上下文（列表项里的段落有一行没缩进——markdown 的 lazy continuation——后面那张表的
  *    切片就开始带原文缩进）。不剔就是表头 6 空格、表体 3 空格：表格散架，且不幂等。

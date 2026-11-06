@@ -15,7 +15,8 @@
  *    等于把 base **没有**的 key 也声明成「我有」。prettier 只要看见 `printPrettierIgnored`
  *    是个函数就调它，拿到 `undefined` 当 doc，直接 `InvalidDocError: Unexpected doc 'undefined'`。
  *    3.8.3 的 mdast printer 没有这个 key，3.9.6 才有——同一份插件就是这样在两个版本之间坏的
- *    （本包吃 3.8.3，plan-executor 吃 3.9.6）。现在的写法是 `...base` 展开，能力面永远等于 base。
+ *    （坏的时候本包吃 3.8.3；现在 mailbox 系四个包都吃 3.9.10，plan-executor 吃 3.9.6）。
+ *    现在的写法是 `...base` 展开，能力面永远等于 base。
  * 3. **内嵌 ```ts / ```yaml 照常按项目配置格式化**：换 parser 不能把内嵌那轮的选项继承弄丢，
  *    否则 README 里的代码示例会被格式化成与代码库相反的引号/分号风格。
  * 4. **幂等**：`format(format(x)) === format(x)`。不幂等 = `pnpm format` 永远红，
