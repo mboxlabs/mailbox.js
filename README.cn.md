@@ -356,7 +356,7 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
 
    结算发生在全部投递（含重试链）落定之后。`post()` 只等派发、不等结算，因此 `post()` 之后立刻
    读 `status()` 看不出结果；要观察被丢弃的投递，就重写 `_onDeliveryDeadLettered(message,
-   failedDeliveries)`（继承 `MemoryProvider`）。
+failedDeliveries)`（继承 `MemoryProvider`）。
 
    **内核不裁决的三件事。** 内核只决定要不要把投递交回去（`_nack(message, requeue)` +
    `shouldRequeueAfterBroadcast`）；重投几次、回到队列的哪个位置、放弃之后留下什么，都是
