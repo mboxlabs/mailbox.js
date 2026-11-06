@@ -734,6 +734,12 @@ export class MemoryProvider extends MailboxProvider {
    * provider 都长得像 `MemoryProvider`。所以核心具名字段只有
    * `state` / `exists` / `unreadCount` / `inFlightCount` / `lastActivityTime`，
    * `mem:` 自己的观测量挂在 `mem.*` 上（`v1.0.0` 就留好的扩展位）。
+   *
+   * **`mem:` 没有存活态可报**：进程内总线没有「可达性」这回事，它永远连得上，所以这里
+   * 只出 `online` / `unknown` 两档，永远不会出 `offline` / `degraded`。这里的 `online` 说的是
+   * 「这条地址我有活动记录（投过 / 订过）」，不是「broker 活着」——存活态由 provider 自己判，
+   * 内核只转述。真要测 offline 那一档，得自己扩展一个会答的 provider（直接实现
+   * `IMailboxProvider` 的第三方，或子类覆写 `_status`），别指望 `mem:` 报出来。
    */
   protected async _status(address: URL): Promise<MailboxStatus> {
     const topic = this.topicOf(address);
