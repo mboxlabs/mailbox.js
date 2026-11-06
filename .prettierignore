@@ -8,13 +8,18 @@ refs
 # 由 commit-and-tag-version 生成
 CHANGELOG.md
 
-# 本地实验目录 / 其构建产物（不属于 npm 包内容）
+# 本地实验目录与草稿（不属于 npm 包内容，也不归排版判据管）
 python/
 rust/
 wiki/
-.pytest_cache/
-.freebuff/
+scratch/
+
+# 本机工具状态：agent 配置、测试缓存、编辑器——各人机器上不一样，
+# 进了判据就永远红，而一条永远红的检查会被所有人绕过
+.pi/
 .gemini/
+.freebuff/
+.pytest_cache/
 
 # 本地编辑器配置
 .vscode
