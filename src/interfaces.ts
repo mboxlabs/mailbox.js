@@ -454,8 +454,12 @@ export interface IMailboxProvider {
    * `enableDeadLetterQueue()`）。需要 DLQ 就在钩子里自己写。
    *
    * **返回 Promise：`await` 完成才是「订阅可收投递」的时刻。** 与 Python `Mailbox.subscribe`
-   * / Rust `Mailbox::subscribe` 同形：「这条订阅已生效」是**每订阅**粒度的事实（NATS sub-ack /
-   * AMQP `consume` 回包 / MQTT SUBACK），放进 provider 级的 `init()` 就丢了。
+   * / Rust `Mailbox::subscribe` 同形。「这条订阅已生效」是**每订阅**粒度的事实，而且只有管着这个
+   * scheme 的 provider 答得上：进程内总线是登记完成那一刻；接了真实对端的，是它能按自己协议的
+   * 规矩确认的那一刻——**协议不给确认时，由 provider 决定怎么如实答，内核不替它编一个**。
+   * 正因为内核不知道也不该猜，它只能等 provider 回答——这件事因此挂在每个订阅上，
+   * 收不进 provider 级的 `init()`：那里只答得出「这个 provider 起来了」，答不出
+   * 「这条订阅现在能收投递」。
    * **不 await 等于未订阅**：回调可能根本没注册，错误也只会变成没人接的 rejection。
    *
    * 错误时机（两边都是刻意的，不要抹平）：

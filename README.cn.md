@@ -229,16 +229,19 @@ flowchart LR
 
    `subscribe()` 返回 Promise，而 **await 完成的那一刻才是「订阅已生效」**——与
    [Python](https://github.com/mboxlabs/mailbox.py)（`async def subscribe`）和
-   [Rust](https://github.com/mboxlabs/mailbox.rust)（`async fn subscribe`）同形，那两个端口
-   一直是可 await 的。“这条订阅已生效”是一个**每订阅**粒度、需要 broker 回话确认的事实
-   （NATS 的 sub-ack、AMQP 的 `consume` 回包、MQTT 的 SUBACK），塞不进 provider 级的 `init()`。
+   [Rust](https://github.com/mboxlabs/mailbox.rust)（`async fn subscribe`）同形。「这条订阅已生效」
+   是一个**每订阅**粒度的事实，只有管着这个 scheme 的 provider 答得上：进程内总线是登记完成的
+   那一刻；接了真实对端的，是它能按自己协议的规矩确认的那一刻——**协议不给确认时，由 provider
+   决定怎么如实答，内核不替它编一个**。内核不知道也不该猜，只能等 provider 回答——所以这件事
+   挂在每个订阅上，塞不进 provider 级的 `init()`：那里只答得出「这个 provider 起来了」。
 
    **不 await 的 `subscribe()` 是一个静默的空操作。** 它能通过类型检查，但回调可能根本没
    注册；provider 拒绝订阅只会变成一个没人接的 rejection，而不是你看得见的错误。发信前
    要 await，清积压前也要 await：“先订阅、再 drain”这个顺序，只有把 `await` 写进代码里才算数。
 
    错误时机是刻意分开的，为的是与 `post()` / `fetch()` 一致：地址解析不了、scheme 没注册、
-   以及 provider **同步**拒约，都仍然**同步 throw**；只有 broker 回话拒绝才是 rejection。
+   以及 provider **同步**拒约，都仍然**同步 throw**；只有异步到达的拒绝（`_subscribe` reject）
+   才是 rejection。
 
    发布只是写入。一条消息只会进两个入口的**其中一个**，在 `post()` 执行那一刻定：
 

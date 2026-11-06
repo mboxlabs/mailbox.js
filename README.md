@@ -241,11 +241,15 @@ Four verbs, four APIs — use these words consistently:
 | peek      | `fetch(addr, { peek: true })` | an observer looks at the queue without consuming anything    |
 
 `subscribe()` returns a promise, and the awaited moment is **when the subscription is
-established** — same shape as the [Python](https://github.com/mboxlabs/mailbox.py)
+established** — the same signature as the [Python](https://github.com/mboxlabs/mailbox.py)
 (`async def subscribe`) and [Rust](https://github.com/mboxlabs/mailbox.rust)
-(`async fn subscribe`) ports, where it has always been awaitable. "Subscribed" is a
-per-subscription fact that a broker confirms (NATS' sub-ack, AMQP's `consume` reply, MQTT's
-SUBACK), so it cannot live in the provider-level `init()`.
+(`async fn subscribe`) ports. "Subscribed" is a per-subscription fact, and only the provider that
+owns the scheme can answer it: for the in-process bus that is the moment the listener gets
+registered; for a provider talking to a peer, whatever moment that protocol lets it confirm.
+Some protocols offer no confirmation at all, and then the provider decides what honest answer to
+give — the kernel never invents one on its behalf. It waits for the provider's answer rather than
+guessing, which is why this belongs to each subscription and not to `init()`, where the only
+honest answer is "this provider started".
 
 **An un-awaited `subscribe()` is a silent no-op.** It type-checks, the callback may never be
 registered, and a provider that refuses the subscription surfaces as an unhandled rejection
@@ -253,9 +257,9 @@ instead of an error you can see. Await it before you post, and await it before y
 backlog: "subscribe first, then drain" is only a real ordering once the `await` is in the code.
 
 Error timing is split on purpose, so that `subscribe()` stays consistent with `post()` and
-`fetch()`: an unparseable address, an unregistered scheme, and a provider that rejects
-_synchronously_ all still **throw synchronously**; only a broker that refuses the subscription
-over the wire rejects.
+`fetch()`: an unparseable address, an unregistered scheme, and a provider that refuses
+_synchronously_ all still **throw synchronously**; a refusal that arrives asynchronously — a
+`_subscribe` that rejects — is what becomes a rejection.
 
 Publishing only writes. A published message goes to **one** of the two receiving paths,
 decided at the moment `post()` runs:

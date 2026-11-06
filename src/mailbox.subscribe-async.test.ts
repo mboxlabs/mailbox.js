@@ -57,7 +57,7 @@ class GateProvider extends MemoryProvider {
     return this.gate !== null
   }
 
-  /** broker 回话了：这时才真的在总线上挂监听器，把真 handle 交回基类。 */
+  /** provider 答话了：这时才真的在总线上挂监听器，把真 handle 交回基类。 */
   public release(): void {
     const gate = this.gate
     this.gate = null

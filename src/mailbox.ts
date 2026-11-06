@@ -151,7 +151,7 @@ export class Mailbox {
    * 靠 `subscribe()` 恰好是同步的。
    *
    * 错误时机与 `post()` / `fetch()` 一致：地址解析失败、scheme 未注册、provider 同步拒约
-   * 仍是**同步 throw**（所以本方法不是 `async`）；只有 broker 回话拒绝才是 rejection。
+   * 仍是**同步 throw**（所以本方法不是 `async`）；只有 `_subscribe` 异步 reject 才是 rejection。
    *
    * @param address 订阅地址（带 query / hash 是否合法由该 scheme 的 provider 判定）。
    * @param onReceive 投递回调。内核会 **await** 它：resolve = 隐式 ACK，reject = nack（

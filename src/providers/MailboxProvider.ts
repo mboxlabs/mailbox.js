@@ -53,7 +53,7 @@ interface ManagedSubscription {
   /**
    * `_subscribe` 还没落定时的那颗 promise（handle 在路上）。
    *
-   * 存在的唯一理由：**await 窗口里的拆除**。真实 broker 回话之前来了一次 `unsubscribe()` /
+   * 存在的唯一理由：**await 窗口里的拆除**。provider 还没答话就来了一次 `unsubscribe()` /
    * `close()`，此刻既不能拿 `undefined` 去调 `_unsubscribe`（provider 只认自己的句柄，
    * 不知道「还没建立」），也不能当作已经拆完——所以留个标记，由 `subscribe()` 那侧在
    * handle 落地时补拆（见 {@link MailboxProvider._settleSubscription}）。
@@ -326,17 +326,20 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * `Promise<DeliveryResult>`。广播型 provider 的发送侧靠它做结算判定（issue#2）。
    *
    * **返回 Promise 就是 await 点**（对齐 Python `Mailbox.subscribe` / Rust `Mailbox::subscribe`）：
-   * 「这条订阅已生效」是**每订阅**粒度的事实（NATS 的 sub-ack、AMQP 的 `consume` 回包、
-   * MQTT 的 SUBACK），塞进 provider 级的 `init()` 就丢了。`await` 完成之前调用方拿不到
-   * `Subscription`——不先递对象再背后填 handle，那是把未生效的订阅当成已生效。
+   * 「这条订阅已生效」是**每订阅**粒度的事实，只有 provider 自己答得上（进程内总线是登记完成
+   * 那一刻；接了真实对端的，照它自己协议的规矩答——有些协议根本不给确认），所以它挂在每个订阅
+   * 上，塞进 provider 级的 `init()` 就丢了。
+   * `await` 完成之前调用方拿不到 `Subscription`——不先递对象再背后填 handle，那是把未生效的
+   * 订阅当成已生效。
    *
    * 两个刻意保留的错误时机（这个方法**故意不写成 `async`**，`_subscribe` 同步调用）：
    * - 「同步就能发现的错」（地址语法、scheme 未注册、钩子直接 `throw`）**照旧同步 throw**，
    *   不漂成 rejection —— 否则同一个地址在 `post()` 是 throw、在 `subscribe()` 是 reject，
    *   违反 I-4「不能只在一个入口合法」；
-   * - 只有 `_subscribe` 真的 reject（broker 回话拒绝）才是 rejection，与 `send()` 对称。
+   * - 只有 `_subscribe` 真的 reject（异步拒绝）才是 rejection，与 `send()` 对称。
    *
-   * 钩子不要求 async：v1 写的**同步** `_subscribe` 不改也能跑（`Promise.resolve` 包一层）。
+   * 钩子不要求 async：v1 写的**同步** `_subscribe` 不改也能跑——基类 `await` 它，
+   * 非 Promise 的返回值一样等得起。
    */
   public subscribe(
     address: URL,
