@@ -30,7 +30,7 @@
     "format:fix": "prettier --write \"**/*.{md,json,jsonc,yaml,yml}\"",
     "lint": "eslint .",
     "lint:fix": "pnpm run lint --fix",
-    "test": "vitest run",
+    "test": "pnpm run typecheck && vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "release": "pnpm run clean && pnpm run build && git add -f docs && git ci -m 'docs: update API docs' && pnpm dlx commit-and-tag-version -s",
     "release.alpha": "pnpm run release -- --prerelease alpha"

@@ -49,6 +49,11 @@
    (cd rust && cargo test)
    ```
 
+   `pnpm test` 会先跑 `pnpm run typecheck`：`vitest` 只做转译、不做类型检查，下游还没跟上契约的
+   改动本来会一路绿。这条接线由 `test/typecheck-runs-before-tests.test.ts` 钉住，别为了快几秒
+   把它改回 `vitest run`。`tsconfig.release.json` **不是检查面**（`noEmit: false` 且没有 `outDir`，
+   `tsc -p` 会把 JS 吐进 `src/`）；发布面由 `pnpm build` 过。
+
 5. **提交代码**：遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范进行提交。
 6. **发起 Pull Request**：将您的分支推送到 GitHub，并创建一个 Pull Request 到主仓库的 `main` 分支。请在 PR 描述中清晰说明您所做的更改。
 

@@ -49,6 +49,12 @@ Based on your interests and experience, you can start with any of the following:
    (cd rust && cargo test)
    ```
 
+   `pnpm test` runs `pnpm run typecheck` first: `vitest` only transpiles, it does not type-check, so a
+   change the downstream code has not caught up with would otherwise sail through green. That wiring is
+   pinned by `test/typecheck-runs-before-tests.test.ts` — do not "speed it up" back to `vitest run`.
+   `tsconfig.release.json` is **not** a check surface (`noEmit: false`, no `outDir`: `tsc -p` writes JS
+   into `src/`); the published surface is checked by `pnpm build`.
+
 5. **Commit your code**: Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 6. **Open a Pull Request**: Push your branch to GitHub and create a Pull Request to the `main` branch of the main repository. Please clearly describe the changes you have made in the PR description.
 
