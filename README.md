@@ -218,7 +218,12 @@ console.log(snap.state) // 'online' | 'degraded' | 'unknown'
 console.log(snap.addressCount) // topics known across the registered providers
 console.log(snap.unreadCount, snap.inFlightCount)
 for (const entry of snap.addresses) {
-  console.log(entry.address, entry.state, entry.unreadCount, entry['mem.parkedCount'])
+  console.log(
+    entry.address,
+    entry.state,
+    entry.unreadCount,
+    entry['mem.parkedCount']
+  )
 }
 ```
 
@@ -306,8 +311,8 @@ silently falling back to a consuming fetch.
 handle, and settling is not "success / failure" — that reading costs people real downtime, because
 it suggests a message you decided to discard does not deserve `ack`, so drain scripts get written
 with `nack(false)` and then spin. The vocabulary is `ack(where)`, and the three core values answer
-two questions: *will this be handed to me again*, and *should the provider do something on its way
-out*:
+two questions: _will this be handed to me again_, and _should the provider do something on its way
+out_:
 
 | Disposition | this copy | handed to anyone again | provider tidies up afterwards |
 | ----------- | --------- | ---------------------- | ----------------------------- |
@@ -318,7 +323,7 @@ out*:
 `handled` means "I am done with this copy, stop tracking it" — whatever you did with it, including
 deciding the letter is malformed and dropping it on the floor. That is the normal way to discard.
 
-`discard` adds exactly one thing: the provider gets to tidy up *by its own protocol's rules*. For
+`discard` adds exactly one thing: the provider gets to tidy up _by its own protocol's rules_. For
 `MemoryProvider` that means a copy into the dead-letter topic (and with `enableDeadLetterQueue()`
 off it degrades to a plain silent drop — identical to `handled`, because the provider declares no
 `dead-letter` capability, and the declaration is what the kernel believes). For SMTP it would be
@@ -345,7 +350,6 @@ invisible to `fetch`, readable via `peekParked()` / `status()['mem.parkedCount']
 through `purgeParked()`. Push consumers get the same three dispositions without a handle: returning
 normally is `handled`, throwing a plain error is `discard`, throwing `{ isRetriable: true }` is
 `unhandled`.
-
 
 ### 3. When a subscriber fails
 
@@ -430,7 +434,7 @@ up — those belong to the provider. Consequences worth knowing:
   `mbx-max-attempts`, `mbx-sent-at`, `mbx-dead-letter*`) are stripped from anything handed to
   `send()`: trusting
   them would let the sender pick its own redelivery cap or stamp live mail as a dead-letter record.
-  Content-level idempotency is a separate, explicit, *loud* policy at the send edge — the kernel
+  Content-level idempotency is a separate, explicit, _loud_ policy at the send edge — the kernel
   never drops a letter silently.
 
 **Search by their name, act by ours.** The pull-side settlement door takes our identity, not the
@@ -569,8 +573,8 @@ the last consumer crashes — nobody fetches that address again — the expired 
 forever. For that case there is an explicit, idempotent entry point:
 
 ```ts
-const r = await mailbox.recover(addr)  // { reclaimed: 1, supported: true }
-const all = await mailbox.recover()    // every enumerable address: { reclaimed, byAddress, unreachableProviders }
+const r = await mailbox.recover(addr) // { reclaimed: 1, supported: true }
+const all = await mailbox.recover() // every enumerable address: { reclaimed, byAddress, unreachableProviders }
 ```
 
 `recover()` only touches **expired** leases: letters still inside their lease, and `ackTimeout: 0`

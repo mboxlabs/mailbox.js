@@ -207,7 +207,12 @@ flowchart LR
    console.log(snap.addressCount) // 已注册 provider 认得的 topic 数
    console.log(snap.unreadCount, snap.inFlightCount)
    for (const entry of snap.addresses) {
-     console.log(entry.address, entry.state, entry.unreadCount, entry['mem.parkedCount'])
+     console.log(
+       entry.address,
+       entry.state,
+       entry.unreadCount,
+       entry['mem.parkedCount']
+     )
    }
    ```
 
@@ -499,8 +504,8 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    再没人来取信——已过期的租约就永远挂在 in-flight 里。这种场景有显式、幂等的入口：
 
    ```ts
-   const r = await mailbox.recover(addr)  // { reclaimed: 1, supported: true }
-   const all = await mailbox.recover()    // 全部可枚举地址：{ reclaimed, byAddress, unreachableProviders }
+   const r = await mailbox.recover(addr) // { reclaimed: 1, supported: true }
+   const all = await mailbox.recover() // 全部可枚举地址：{ reclaimed, byAddress, unreachableProviders }
    ```
 
    `recover()` 只动**已到期**的租约：别人手里未到期的那份、以及 `ackTimeout: 0` / `null` 的常驻租约
@@ -509,7 +514,9 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    清扫器是 opt-in（默认**关**、`unref()` 不拖住进程、`stop()` 拆掉）：
 
    ```ts
-   new MemoryProvider(null, new MemoryEventBus(), { leaseSweepIntervalMs: 1000 })
+   new MemoryProvider(null, new MemoryEventBus(), {
+     leaseSweepIntervalMs: 1000,
+   })
    ```
 
    [Python](https://github.com/mboxlabs/mailbox.py) 与 [Rust](https://github.com/mboxlabs/mailbox.rust)
