@@ -33,7 +33,7 @@ describe('同 id 的两封信：两份各一本账', () => {
 
     const address = addrOf('dup-retriable')
     const seen: number[] = []
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seen.push(message.body.n)
       throw retriable()
     })
@@ -57,7 +57,7 @@ describe('同 id 的两封信：两份各一本账', () => {
     await mailbox.start()
 
     const address = addrOf('dup-fatal')
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw new Error('malformed payload')
     })
 
@@ -86,7 +86,7 @@ describe('同 id 的两封信：两份各一本账', () => {
     expect(handle).not.toBeNull()
 
     // 另一个地址上，同 id 的另一封信投递失败（可重试）→ 必须回队。
-    mailbox.subscribe(failing, () => {
+    await mailbox.subscribe(failing, () => {
       throw retriable()
     })
     await mailbox.post({ id: 'shared', from: 'mem://s@bus/u', to: failing, body: 'must-come-back' })
@@ -135,7 +135,7 @@ describe('发送方伪造系统头', () => {
 
     const address = addrOf('spoof-round')
     const seen: { round?: string; attempt?: string }[] = []
-    mailbox.subscribe(address, (message: MailMessage) => {
+    await mailbox.subscribe(address, (message: MailMessage) => {
       seen.push({
         round: message.headers?.[MBX_ROUND_HEADER] as string | undefined,
         attempt: message.headers?.[MBX_ATTEMPT_HEADER] as string | undefined,
@@ -175,7 +175,7 @@ describe('发送方伪造系统头', () => {
     await mailbox.start()
 
     const address = addrOf('spoof-dlq-headers')
-    mailbox.subscribe(address, (message: MailMessage) => {
+    await mailbox.subscribe(address, (message: MailMessage) => {
       expect(message.headers?.['mbx-dead-letter']).toBeUndefined()
       expect(message.headers?.['mbx-dead-letter-terminal']).toBeUndefined()
     })
@@ -206,7 +206,7 @@ describe('发送方伪造系统头', () => {
 
     const address = addrOf('reply-to')
     let got: MailMessage | undefined
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       got = message
     })
 

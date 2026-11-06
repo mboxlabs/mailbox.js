@@ -99,7 +99,7 @@ describe('[语义] 开启死信后，被放弃的消息必须「可达」', () =
       provider.enableDeadLetterQueue({ suffix });
 
       const address = addrOf('reachable');
-      mailbox.subscribe(address, () => {
+      await mailbox.subscribe(address, () => {
         throw fatal();
       });
       await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
@@ -128,7 +128,7 @@ describe('[语义] 开启死信后，被放弃的消息必须「可达」', () =
     provider.enableDeadLetterQueue();
 
     const address = addrOf('single-key');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
@@ -146,10 +146,10 @@ describe('[语义] 开启死信后，被放弃的消息必须「可达」', () =
 
     const plain = addrOf('invariant-plain');
     const unicode = 'mem://sfx-unicode@bus/镜像'; // 地址本身就是非 ASCII ⇒ canonical 里是 percent-encoding
-    mailbox.subscribe(plain, () => {
+    await mailbox.subscribe(plain, () => {
       throw fatal();
     });
-    mailbox.subscribe(unicode, () => {
+    await mailbox.subscribe(unicode, () => {
       throw fatal();
     });
 
@@ -174,7 +174,7 @@ describe('[语义] 开启死信后，被放弃的消息必须「可达」', () =
     provider.enableDeadLetterQueue();
 
     const address = addrOf('snapshot-consistency');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
@@ -289,7 +289,7 @@ describe('[语义] 会被地址规范化改写的后缀必须在 enable 处拒�
 
       // 拒绝必须是「什么都没配」而不是「配了但取不出来」
       const address = addrOf(`rejected-${suffix.codePointAt(suffix.length - 1)}`);
-      mailbox.subscribe(address, () => {
+      await mailbox.subscribe(address, () => {
         throw fatal();
       });
       await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });

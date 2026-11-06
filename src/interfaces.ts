@@ -1,10 +1,31 @@
 /**
  * 代表一个活跃的订阅会话。
+ *
+ * 它是在 `await subscribe(...)` **完成之后**才递到调用方手上的：await 就是
+ * 「provider 确认这条订阅已生效」的时刻。
  */
 export interface Subscription {
   readonly id: string;
   readonly address: URL;
-  status: 'active' | 'connecting' | 'paused' | 'closed';
+  /**
+   * 订阅状态。
+   *
+   * - `active` / `closed`：继承 {@link MailboxProvider} 的实现能给出的两个值（按“还在不在
+   *   订阅表里”推导，不靠 provider 自己上报）。
+   * - `paused`：**留给 provider 扩展的类型约定**。内核不实现 pause / resume，也不会在任何
+   *   时刻产出它——把它当成“系统支持暂停”就错了；只实现了暂停语义的 provider 才能返它。
+   *
+   * 这里没有 `connecting`：订阅建立是一个 `await` 点，await 完成前根本拿不到本对象，
+   * 所以不存在「已拿到对象但还在连接中」这个可观察中间态。
+   */
+  status: 'active' | 'paused' | 'closed';
+  /**
+   * 退订。
+   *
+   * 在「handle 还在 `await` 里」的窗口里调用也安全：登记先于 await，所以退订看得见它；
+   * 拆 handle 的动作则后移到 handle 落地时（基类保证不把 `undefined` 当句柄递给 provider）。
+   * 代价是那条补拆发生在 `subscribe()` 那一侧、而不是本方法里——本方法会先返回。
+   */
   unsubscribe(): Promise<void>;
 }
 
@@ -431,8 +452,22 @@ export interface IMailboxProvider {
    * 并发广播 / 副本表淘汰，所以 读取计数时要容 `undefined`。）
    * “移入死信队列”不是内核行为：基类只给钩子，默认实现不接（`MemoryProvider` 需要显式
    * `enableDeadLetterQueue()`）。需要 DLQ 就在钩子里自己写。
+   *
+   * **返回 Promise：`await` 完成才是「订阅可收投递」的时刻。** 与 Python `Mailbox.subscribe`
+   * / Rust `Mailbox::subscribe` 同形：「这条订阅已生效」是**每订阅**粒度的事实（NATS sub-ack /
+   * AMQP `consume` 回包 / MQTT SUBACK），放进 provider 级的 `init()` 就丢了。
+   * **不 await 等于未订阅**：回调可能根本没注册，错误也只会变成没人接的 rejection。
+   *
+   * 错误时机（两边都是刻意的，不要抹平）：
+   * - 同步就能发现的错（地址语法、scheme 未注册、provider 的 `_subscribe` 直接 `throw`）
+   *   **照旧同步 throw**，与 `post()` / `fetch()` 一致（I-4：同一个地址不能只在一个入口合法）；
+   * - provider 回话拒绝（`_subscribe` reject）才是 rejection，与 `send()` 对称。
+   *
+   * 实现提示：继承 {@link MailboxProvider} 时，`_subscribe` **不要求 async**（v1 的同步钩子不改
+   * 也能跑），但基类会等它。直接实现本接口的 provider 请自己保证：`await subscribe()` 返回后
+   * 投递就能开始，而且订阅在 await 窗口里被退订时不要把 `undefined` 当句柄拆。
    */
-  subscribe(address: URL, onReceive: (message: MailMessage) => void | Promise<void>): Subscription;
+  subscribe(address: URL, onReceive: (message: MailMessage) => void | Promise<void>): Promise<Subscription>;
 
   /**
    * 【拉取模式】从指定地址主动拉取一封信件。

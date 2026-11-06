@@ -59,7 +59,7 @@ describe('status() 认得「这个地址存不存在」', () => {
 
   it('只有订阅、一条消息都没有的地址也算存在（订阅就是「这个地址有人用」）', async () => {
     const address = 'mem:subscribed-only@example.com/inbox';
-    mailbox.subscribe(address, () => {});
+    await mailbox.subscribe(address, () => {});
 
     const status = await mailbox.status(address);
     expect(status.exists).toBe(true);
@@ -105,7 +105,7 @@ describe('status() 认得「这个地址存不存在」', () => {
   it('clear() 之后地址回到「不存在」；但仍有订阅者的地址继续算存在', async () => {
     const cleared = 'mem:cleared@example.com/inbox';
     const subscribed = 'mem:cleared-but-subscribed@example.com/inbox';
-    mailbox.subscribe(subscribed, () => {});
+    await mailbox.subscribe(subscribed, () => {});
     await mailbox.post({ from: 'mem:a@example.com/u', to: cleared, body: { n: 1 } });
     await mailbox.post({ from: 'mem:a@example.com/u', to: subscribed, body: { n: 1 } });
 

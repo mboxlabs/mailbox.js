@@ -89,7 +89,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       const topic = 'mem://same-topic-both-buses/inbox'; // 同名 topic，故意撞
 
       let xHits = 0;
-      x.subscribe(topic, () => {
+      await x.subscribe(topic, () => {
         xHits++;
       });
 
@@ -128,7 +128,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await B.start();
 
       let hits = 0;
-      B.subscribe(addr, () => {
+      await B.subscribe(addr, () => {
         hits++;
       });
       await A.post({ from: SENDER, to: addr, body: { n: 1 } });
@@ -153,7 +153,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await B.start();
 
       let hits = 0;
-      B.subscribe(addr, () => {
+      await B.subscribe(addr, () => {
         hits++;
       });
       await A.post({ from: SENDER, to: addr, body: { n: 1 } });
@@ -183,7 +183,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await B.start();
 
       let bHits = 0;
-      B.subscribe(addr, () => {
+      await B.subscribe(addr, () => {
         bHits++;
       });
 
@@ -228,7 +228,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await B.start();
 
       let bHits = 0;
-      B.subscribe(addr, () => {
+      await B.subscribe(addr, () => {
         bHits++;
       });
 
@@ -249,7 +249,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await B.start();
 
       let calls = 0;
-      A.subscribe(addr, () => {
+      await A.subscribe(addr, () => {
         calls++;
         throw retriable();
       });
@@ -271,7 +271,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       await A.start();
       await B.start();
 
-      A.subscribe(addr, () => {
+      await A.subscribe(addr, () => {
         throw retriable();
       });
       await A.post({ from: SENDER, to: addr, body: { n: 1 } });
@@ -304,7 +304,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       expect(providerA.bus.scope).toBe(scope);
 
       let hits = 0;
-      B.subscribe(addr, () => {
+      await B.subscribe(addr, () => {
         hits++;
       });
       await A.post({ from: SENDER, to: addr, body: { n: 1 } });
@@ -472,7 +472,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       const live = addrOf('keep-sub-live');
 
       let hits = 0;
-      const sub = mailbox.subscribe(live, () => {
+      const sub = await mailbox.subscribe(live, () => {
         hits++;
       });
 
@@ -513,7 +513,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
       const live = addrOf('stop-purge-live');
       const queued = addrOf('stop-purge-queue');
 
-      const sub = mailbox.subscribe(live, () => {});
+      const sub = await mailbox.subscribe(live, () => {});
       await mailbox.post({ from: SENDER, to: live, body: { n: 0 } }); // 有订阅者：走广播，不入队
       await settle();
       expect((await mailbox.status(live)).unreadCount).toBe(0);
@@ -582,7 +582,7 @@ describe('issue#3: MemoryEventBus 实例边界与状态清理', () => {
 
       const addr = addrOf('shared-provider-reuse');
       let bHits = 0;
-      B.subscribe(addr, () => {
+      await B.subscribe(addr, () => {
         bHits++;
       });
 

@@ -152,7 +152,7 @@ describe('[语义] 归档目标是「消息实际所在的队列」，不是 mes
     const base = addrOf('broadcast');
     const dlq1 = `${base}${DEFAULT_DEAD_LETTER_SUFFIX}`;
 
-    mailbox.subscribe(dlq1, () => {
+    await mailbox.subscribe(dlq1, () => {
       throw fatal('compensation script crashed');
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: dlq1, body: { n: 1 } });
@@ -166,10 +166,10 @@ describe('[语义] 归档目标是「消息实际所在的队列」，不是 mes
     provider.enableDeadLetterQueue();
     const base = addrOf('no-auto-redelivery');
     const seen: string[] = [];
-    mailbox.subscribe(provider.deadLetterTopic(base)!, (message) => {
+    await mailbox.subscribe(provider.deadLetterTopic(base)!, (message) => {
       seen.push(message.id);
     });
-    mailbox.subscribe(base, () => {
+    await mailbox.subscribe(base, () => {
       throw fatal();
     });
 
@@ -286,7 +286,7 @@ describe('[语义] 死信链的上限：maxNesting（默认 1 层），封顶 = 
     for (let level = 0; level < 4; level++) {
       const next = provider.deadLetterTopic(topic)!;
       expect(next).not.toBe(topic);
-      mailbox.subscribe(next, () => {
+      await mailbox.subscribe(next, () => {
         throw fatal();
       });
       await mailbox.post({ from: 'mem://s@bus/u', to: next, body: { level } });

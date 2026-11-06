@@ -139,7 +139,7 @@ describe('隐患6 [语义]：畸形错误不得打断投递结算', () => {
     await mailbox.start()
 
     const address = 'mem://malformed-retriable@bus/inbox'
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       throw malformedError(true)
     })
 
@@ -162,7 +162,7 @@ describe('隐患6 [语义]：畸形错误不得打断投递结算', () => {
     await mailbox.start()
 
     const address = 'mem://malformed-fatal@bus/inbox'
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       throw malformedError()
     })
 
@@ -189,7 +189,7 @@ describe('隐患6 [语义]：畸形错误不得打断投递结算', () => {
 
     const address = 'mem://malformed-retry@bus/inbox'
     let attempts = 0
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       attempts += 1
       throw malformedError(true) // 同步抛：第二轮的 _handleDeliveryError 跑在 setTimeout 里
     })
@@ -216,7 +216,7 @@ describe('隐患6 [语义]：畸形错误不得打断投递结算', () => {
 
     const address = 'mem://malformed-watchdog@bus/inbox'
     let attempts = 0
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       attempts += 1
       if (attempts === 1) {
         throw malformedError(true) // 记下畸形的 pending.lastError
@@ -243,7 +243,7 @@ describe('隐患6 [语义]：畸形错误不得打断投递结算', () => {
     await mailbox.start()
 
     const address = 'raw://bus/malformed-no-barrier'
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw malformedError(true)
     })
 
@@ -265,7 +265,7 @@ describe('隐患6 [语义]：畸形错误不得打断投递结算', () => {
     await mailbox.start()
 
     const address = 'mem://malformed-third-party@bus/inbox'
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw malformedError(true)
     })
 

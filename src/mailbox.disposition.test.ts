@@ -412,7 +412,7 @@ class TinyProvider extends MailboxProvider {
     this.boxes.set(message.to.href, list)
   }
 
-  public subscribe(): Subscription {
+  public async subscribe(): Promise<Subscription> {
     return {
       id: 'tiny-sub',
       address: new URL('tiny:x@example.com/inbox'),
@@ -516,7 +516,7 @@ class SettleHookProvider extends MailboxProvider {
 
   protected async _unsubscribe(): Promise<void> {}
 
-  public subscribe(): Subscription {
+  public async subscribe(): Promise<Subscription> {
     return {
       id: 'hook-sub',
       address: new URL('hook:x@example.com/inbox'),
@@ -561,7 +561,7 @@ class LegacyHookProvider extends MailboxProvider {
 
   protected async _unsubscribe(): Promise<void> {}
 
-  public subscribe(): Subscription {
+  public async subscribe(): Promise<Subscription> {
     return {
       id: 'hook-sub',
       address: new URL('hook:x@example.com/inbox'),

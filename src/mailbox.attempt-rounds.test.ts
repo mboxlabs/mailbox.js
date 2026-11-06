@@ -80,7 +80,7 @@ describe('计数头：广播回队的副本必须带本轮次数与轮次', () =
     mailbox.registerProvider(provider);
     const address = memAddr('requeue-copy');
 
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
@@ -103,8 +103,8 @@ describe('计数头：广播回队的副本必须带本轮次数与轮次', () =
     mailbox.registerProvider(provider);
     const address = memAddr('barrier-copy');
 
-    mailbox.subscribe(address, () => { /* 成功者：整条不回队 */ });
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => { /* 成功者：整条不回队 */ });
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
@@ -125,7 +125,7 @@ describe('计数头：广播回队的副本必须带本轮次数与轮次', () =
     const address = memAddr('chain-round');
 
     const seen: { attempt?: string; round?: string }[] = [];
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seen.push(countersOf(message));
       throw retriable();
     });
@@ -244,7 +244,7 @@ describe('计数头：链内趟数与跨轮轮次各管各的', () => {
     const address = 'q://t-cross@broker/inbox';
 
     const seen: { attempt?: string; round?: string }[] = [];
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seen.push(countersOf(message));
       throw retriable();
     });
@@ -281,7 +281,7 @@ describe('计数头：链内趟数与跨轮轮次各管各的', () => {
     const address = 'q://t-preserve@broker/inbox';
 
     const seen: { attempt?: string; round?: string }[] = [];
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seen.push(countersOf(message));
       throw new Error('bad payload'); // 不可重试：只投一次就放弃，计数头一眼能看完
     });
@@ -304,7 +304,7 @@ describe('计数头：链内趟数与跨轮轮次各管各的', () => {
     const address = 'q://t-cap@broker/inbox';
 
     const seen: { attempt?: string; round?: string }[] = [];
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seen.push(countersOf(message));
       throw retriable();
     });
@@ -390,7 +390,7 @@ describe('计数头：死信记录里的次数与轮次必须是真的', () => {
     mailbox.registerProvider(provider);
     const address = memAddr('cn-attempts');
 
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });
@@ -414,8 +414,8 @@ describe('计数头：死信记录里的次数与轮次必须是真的', () => {
     mailbox.registerProvider(provider);
     const address = memAddr('sub-round');
 
-    mailbox.subscribe(address, () => { /* 成功者 */ });
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => { /* 成功者 */ });
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } });

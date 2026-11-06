@@ -50,6 +50,15 @@ interface ManagedSubscription {
   // Holds the underlying handle returned by the concrete provider's _subscribe method,
   // which is needed for unsubscribing.
   unsubscribeHandle?: any;
+  /**
+   * `_subscribe` 还没落定时的那颗 promise（handle 在路上）。
+   *
+   * 存在的唯一理由：**await 窗口里的拆除**。真实 broker 回话之前来了一次 `unsubscribe()` /
+   * `close()`，此刻既不能拿 `undefined` 去调 `_unsubscribe`（provider 只认自己的句柄，
+   * 不知道「还没建立」），也不能当作已经拆完——所以留个标记，由 `subscribe()` 那侧在
+   * handle 落地时补拆（见 {@link MailboxProvider._settleSubscription}）。
+   */
+  handlePromise?: Promise<any>;
 }
 
 type PendingRetryTimer = ReturnType<typeof setTimeout>;
@@ -250,7 +259,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       await Promise.all(
         subscriptions.map(async (sub) => {
           try {
-            await this._unsubscribe(sub.id, sub.unsubscribeHandle);
+            await this._teardownSubscription(sub);
           } catch (e) {
             console.error(`[${this.protocol}] Error unsubscribing ${sub.id} during close:`, e);
           }
@@ -315,11 +324,24 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    *
    * 注册给具体 provider 的监听器返回一个在**投递最终结算**（含整条重试链）时才 resolve 的
    * `Promise<DeliveryResult>`。广播型 provider 的发送侧靠它做结算判定（issue#2）。
+   *
+   * **返回 Promise 就是 await 点**（对齐 Python `Mailbox.subscribe` / Rust `Mailbox::subscribe`）：
+   * 「这条订阅已生效」是**每订阅**粒度的事实（NATS 的 sub-ack、AMQP 的 `consume` 回包、
+   * MQTT 的 SUBACK），塞进 provider 级的 `init()` 就丢了。`await` 完成之前调用方拿不到
+   * `Subscription`——不先递对象再背后填 handle，那是把未生效的订阅当成已生效。
+   *
+   * 两个刻意保留的错误时机（这个方法**故意不写成 `async`**，`_subscribe` 同步调用）：
+   * - 「同步就能发现的错」（地址语法、scheme 未注册、钩子直接 `throw`）**照旧同步 throw**，
+   *   不漂成 rejection —— 否则同一个地址在 `post()` 是 throw、在 `subscribe()` 是 reject，
+   *   违反 I-4「不能只在一个入口合法」；
+   * - 只有 `_subscribe` 真的 reject（broker 回话拒绝）才是 rejection，与 `send()` 对称。
+   *
+   * 钩子不要求 async：v1 写的**同步** `_subscribe` 不改也能跑（`Promise.resolve` 包一层）。
    */
   public subscribe(
     address: URL,
     onReceive: (message: MailMessage) => void | Promise<void>
-  ): Subscription {
+  ): Promise<Subscription> {
     const subId = this.generateId();
 
     const managedSub: ManagedSubscription = {
@@ -327,15 +349,98 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       address,
       onReceive,
     };
-
-    // Call the concrete provider's implementation to start listening.
-    managedSub.unsubscribeHandle = this._subscribe(address, (message) =>
-      this._startDelivery(subId, message)
-    );
+    // **先登记，再等 handle**。顺序反过来（Python `MailboxProvider.subscribe` 现在就是那个顺序）
+    // 会把 await 窗口里的 `unsubscribe()` / `close()` 变成空操作：记录还不存在 → 没人负责拆 →
+    // handle 落地后那个监听器永久留在总线上（默认总线是进程级单例，跳 `Mailbox` 可见）。
     this.subscriptions.set(subId, managedSub);
 
-    // Return a standard Subscription object to the caller.
-    return this._createSubscriptionObject(subId, address);
+    let pendingHandle: Promise<any>;
+    try {
+      // Call the concrete provider's implementation to start listening.
+      // 同步调用：钩子同步抛错时，错误要能同步出家门（见上面那段）。
+      pendingHandle = Promise.resolve(this._subscribe(address, (message) =>
+        this._startDelivery(subId, message)
+      ));
+    } catch (error) {
+      this.subscriptions.delete(subId); // 不留半截登记
+      throw error;
+    }
+    managedSub.handlePromise = pendingHandle;
+    // 由这里（而不是调用方）去 await：调用方没 await 时 rejection 不会变成
+    // unhandledRejection，而在途 handle 落地后仍然需要被拆。
+    return this._settleSubscription(subId, managedSub, pendingHandle);
+  }
+
+  /**
+   * 等 provider 把 handle 交回来，然后处理两种“在 await 窗口里已经变了的世界”：
+   *
+   * 1. **拆除先发生**（`unsubscribe()` / `stop()` 在 handle 落地前跑过）：迟到的 handle
+   *    必须补拆，否则就是一个没人认领的订阅永久留在 broker / 总线上。这条路径**不 reject**：
+   *    退订不是错误，调用方拿到的是一个 `status: 'closed'` 的 Subscription。
+   * 2. **broker 拒绝订阅**：删登记后把 rejection 交给调用方；若拆除已经发生则静默收尾
+   *    （没人在等这个结果，也不能让它变成 unhandledRejection）。
+   *
+   * 拆完仍然有界：`close()` 不等这颗 promise（见 {@link MailboxProvider._teardownSubscription}），
+   * 所以一个永不落地的 `_subscribe` 卡不住关闭，代价是那条订阅归 broker 自己负。
+   */
+  private async _settleSubscription(
+    subId: string,
+    managedSub: ManagedSubscription,
+    pendingHandle: Promise<any>
+  ): Promise<Subscription> {
+    let handle: any;
+    try {
+      handle = await pendingHandle;
+    } catch (error) {
+      managedSub.handlePromise = undefined;
+      const tornDown = !this.subscriptions.has(subId);
+      this.subscriptions.delete(subId);
+      if (tornDown) {
+        // 没人在等这个结果了：静默收尾，不造 unhandledRejection。
+        console.warn(
+          `[${this.protocol}] Subscription ${subId} was torn down while the provider was still `
+          + `establishing it, and the broker then rejected it. Nothing left to clean up.`,
+        );
+        return this._createSubscriptionObject(subId, managedSub.address);
+      }
+      throw error;
+    }
+
+    managedSub.unsubscribeHandle = handle;
+    managedSub.handlePromise = undefined;
+
+    if (!this.subscriptions.has(subId)) {
+      // 迟到的 handle：补拆。报错只能日志——已经没有调用方在听（拆它的人已经返了）。
+      try {
+        await this._unsubscribe(subId, handle);
+      } catch (error) {
+        console.error(
+          `[${this.protocol}] Error unsubscribing ${subId} after it was torn down mid-subscribe:`,
+          error,
+        );
+      }
+    }
+    return this._createSubscriptionObject(subId, managedSub.address);
+  }
+
+  /**
+   * 拆一条订阅：删登记 + 取消等待重投的投递 + 交给 provider 拆 handle。
+   *
+   * **handle 还在路上时不碰 provider**：`_unsubscribe(id, undefined)` 会被 broker 当成
+   * 一个非法句柄（它只认自己的句柄，不知道「还没建立」），所以补拆交给
+   * {@link MailboxProvider._settleSubscription}。这也是 `close()` 有界的原因。
+   */
+  private async _teardownSubscription(sub: ManagedSubscription): Promise<void> {
+    if (!this.subscriptions.has(sub.id)) {
+      return; // 已经被别的路径拆过了（unsubscribe / 另一次 close）
+    }
+    this.subscriptions.delete(sub.id);
+    // 退订不替正在执行的回调下结论（它可能马上就要成功），只取消「还在等重投」的那些。
+    this._cancelPendingDeliveries(sub.id);
+    if (sub.handlePromise) {
+      return;
+    }
+    await this._unsubscribe(sub.id, sub.unsubscribeHandle);
   }
 
   /**
@@ -587,9 +692,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
         // Use the captured `provider` context.
         const sub = provider.subscriptions.get(subId);
         if (sub) {
-          provider.subscriptions.delete(subId);
-          provider._cancelPendingDeliveries(subId);
-          await provider._unsubscribe(sub.id, sub.unsubscribeHandle);
+          await provider._teardownSubscription(sub);
         }
       },
     };

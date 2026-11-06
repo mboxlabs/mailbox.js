@@ -38,7 +38,7 @@ describe('Mailbox', () => {
   it('should call close on all providers during stop and cleanup subscriptions', async () => {
     const address = 'mem://test/stop-cleanup';
     const onReceive = vi.fn();
-    const subscription = mailbox.subscribe(address, onReceive);
+    const subscription = await mailbox.subscribe(address, onReceive);
     expect(subscription.status).toBe('active');
 
     await mailbox.stop();
@@ -73,7 +73,7 @@ describe('Mailbox', () => {
     const messageBody = { content: 'Hello, World!' };
 
     const onReceive = vi.fn();
-    mailbox.subscribe(toAddress, onReceive);
+    await mailbox.subscribe(toAddress, onReceive);
 
     await mailbox.post({
       from: fromAddress,
@@ -96,7 +96,7 @@ describe('Mailbox', () => {
     const address = 'mem://test/unsubscribe';
     const onReceive = vi.fn();
 
-    const subscription = mailbox.subscribe(address, onReceive);
+    const subscription = await mailbox.subscribe(address, onReceive);
     expect(subscription.status).toBe('active');
 
     await subscription.unsubscribe();
@@ -250,8 +250,8 @@ describe('Mailbox', () => {
     const user1OnReceive = vi.fn();
     const user2OnReceive = vi.fn();
 
-    mailbox.subscribe(user1Address, user1OnReceive);
-    mailbox.subscribe(user2Address, user2OnReceive);
+    await mailbox.subscribe(user1Address, user1OnReceive);
+    await mailbox.subscribe(user2Address, user2OnReceive);
 
     await mailbox.post({
       from: fromAddress,
@@ -329,7 +329,7 @@ describe('status', () => {
     expect(afterPostStatus.lastActivityTime).toBeTypeOf('string');
 
     // 3. Subscribe and check status
-    const subscription = mailbox.subscribe(address, () => {});
+    const subscription = await mailbox.subscribe(address, () => {});
     const afterSubscribeStatus = await mailbox.status(address);
     expect(afterSubscribeStatus['mem.subscriberCount']).toBe(1);
 
@@ -387,7 +387,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
   it('交给订阅者时不在队列里留下副本', async () => {
     const address = 'mem://sub-only@bus/inbox';
     const onReceive = vi.fn();
-    mailbox.subscribe(address, onReceive);
+    await mailbox.subscribe(address, onReceive);
 
     await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -402,7 +402,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
   it('does not redeliver an already-delivered message to the next subscriber', async () => {
     const address = 'mem://sub-then-fetch@bus/inbox';
     const first = vi.fn();
-    const subscription = mailbox.subscribe(address, first);
+    const subscription = await mailbox.subscribe(address, first);
 
     await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -431,8 +431,8 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
     const address = 'mem://two-subscribers@bus/inbox';
     const a = vi.fn();
     const b = vi.fn();
-    mailbox.subscribe(address, a);
-    mailbox.subscribe(address, b);
+    await mailbox.subscribe(address, a);
+    await mailbox.subscribe(address, b);
 
     await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -446,7 +446,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
     // 守护 `listeners.length > 0` 这个条件：只判断 topics.has(topic) 的写法会让
     // 退订后的 topic 永远走订阅分支（空监听器列表），消息被静默丢弃。
     const address = 'mem://unsub-then-fetch@bus/inbox';
-    const subscription = mailbox.subscribe(address, vi.fn());
+    const subscription = await mailbox.subscribe(address, vi.fn());
     await subscription.unsubscribe();
 
     await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
@@ -465,7 +465,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
     await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
 
     const onReceive = vi.fn();
-    mailbox.subscribe(address, onReceive);
+    await mailbox.subscribe(address, onReceive);
     await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 2 } });
     await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -481,11 +481,11 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
     // 订阅者抛错由 MailboxProvider 的投递入口（`_runDelivery` / `_handleDeliveryError`）兜底：post() 不应 reject，
     // 其余订阅者仍要收到消息。（注意：抛错的那份目前不会回到队列，见审核报告。）
     const address = 'mem://throwing-listener@bus/inbox';
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw new Error('handler boom');
     });
     const healthy = vi.fn();
-    mailbox.subscribe(address, healthy);
+    await mailbox.subscribe(address, healthy);
 
     await expect(
       mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } }),
@@ -503,7 +503,7 @@ describe('MemoryProvider: 订阅与取回是二选一，不是双投递', () => 
     await other.start();
 
     const onReceive = vi.fn();
-    mailbox.subscribe(address, onReceive);
+    await mailbox.subscribe(address, onReceive);
 
     await other.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -534,7 +534,7 @@ describe('MemoryProvider: 投递失败与 in-flight 可见性', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const address = 'mem://retriable-failure@bus/inbox';
 
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       const error = new Error('temporary outage') as Error & { isRetriable?: boolean };
       error.isRetriable = true;
       throw error;
@@ -556,7 +556,7 @@ describe('MemoryProvider: 投递失败与 in-flight 可见性', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const address = 'mem://fatal-failure@bus/inbox';
 
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw new Error('malformed payload');
     });
 
@@ -636,8 +636,8 @@ describe('MemoryProvider: 回队去重与订阅重试（opt-in）', () => {
     const failing = () => {
       throw retriableError();
     };
-    mailbox.subscribe(address, failing);
-    mailbox.subscribe(address, failing);
+    await mailbox.subscribe(address, failing);
+    await mailbox.subscribe(address, failing);
 
     const sent = await mailbox.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await settle();
@@ -658,10 +658,10 @@ describe('MemoryProvider: 回队去重与订阅重试（opt-in）', () => {
     let flakyCalls = 0;
     let healthyCalls = 0;
 
-    retrying.subscribe(address, () => {
+    await retrying.subscribe(address, () => {
       healthyCalls++;
     });
-    retrying.subscribe(address, () => {
+    await retrying.subscribe(address, () => {
       flakyCalls++;
       if (flakyCalls < 3) {
         throw retriableError();
@@ -687,7 +687,7 @@ describe('MemoryProvider: 回队去重与订阅重试（opt-in）', () => {
 
     const address = 'mem://retry-exhausted@bus/inbox';
     let calls = 0;
-    retrying.subscribe(address, () => {
+    await retrying.subscribe(address, () => {
       calls++;
       throw retriableError();
     });
@@ -712,7 +712,7 @@ describe('MemoryProvider: 回队去重与订阅重试（opt-in）', () => {
     const handler = vi.fn(() => {
       throw new Error('malformed payload');
     });
-    retrying.subscribe(address, handler);
+    await retrying.subscribe(address, handler);
 
     await retrying.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await settle(80);
@@ -733,7 +733,7 @@ describe('MemoryProvider: 回队去重与订阅重试（opt-in）', () => {
     const handler = vi.fn(() => {
       throw retriableError();
     });
-    const sub = retrying.subscribe(address, handler);
+    const sub = await retrying.subscribe(address, handler);
 
     const sent = await retrying.post({ from: 'mem://sender@bus/out', to: address, body: { n: 1 } });
     await settle(10);
@@ -765,7 +765,7 @@ describe('MemoryProvider: 回队去重与订阅重试（opt-in）', () => {
 
     const address = 'mem://retry-hook@bus/inbox';
     let calls = 0;
-    retrying.subscribe(address, () => {
+    await retrying.subscribe(address, () => {
       calls++;
       throw retriableError();
     });

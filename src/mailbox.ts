@@ -141,7 +141,29 @@ export class Mailbox {
     return await provider.send(message);
   }
 
-  public subscribe(address: string | URL, onReceive: (message: MailMessage) => void): Subscription {
+  /**
+   * 订阅一个地址（推送模式）。隐式 ACK：回调正常返回即确认，抛错即 nack。
+   *
+   * **`await` 完成才是「订阅可收投递」的时刻**（与 Python / Rust 同形）：真实 broker 的
+   * 「订阅已生效」是每订阅粒度的事实，只能在这个 await 里确认。**忘了 await 是静默失败**：
+   * 回调可能根本没注册，错误也只是一个没人接的 rejection。需要「订阅已建立后再往下走」
+   * （典型的：先订阅、再 drain 积压），必须 await——那个顺序现在写在代码里，而不是
+   * 靠 `subscribe()` 恰好是同步的。
+   *
+   * 错误时机与 `post()` / `fetch()` 一致：地址解析失败、scheme 未注册、provider 同步拒约
+   * 仍是**同步 throw**（所以本方法不是 `async`）；只有 broker 回话拒绝才是 rejection。
+   *
+   * @param address 订阅地址（带 query / hash 是否合法由该 scheme 的 provider 判定）。
+   * @param onReceive 投递回调。内核会 **await** 它：resolve = 隐式 ACK，reject = nack（
+   *                  可重试判定决定回队还是放弃）。返回 Promise 就是让内核等你。
+   * @returns 已生效的订阅句柄；若在这期间已被 `stop()` / `unsubscribe()` 拆掉，
+   *          拿到的是一个 `status: 'closed'` 的句柄（不报错）。
+   */
+  public subscribe(
+    address: string | URL,
+    onReceive: (message: MailMessage) => void | Promise<void>
+  ): Promise<Subscription> {
+    // 故意不写成 async：下面的校验要同步抛（见上面「错误时机」）。
     const addrUrl = parseMailboxAddress(address, 'subscribe()');
     const provider = this.getProvider(addrUrl.protocol, true);
 

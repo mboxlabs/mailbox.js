@@ -66,8 +66,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
   it('[语义] A 成功 + B 可重试失败 → 整条消息不回队', async () => {
     const address = addrOf('partial-no-requeue')
     const a = vi.fn()
-    mailbox.subscribe(address, a)
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, a)
+    await mailbox.subscribe(address, failing())
 
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -84,8 +84,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
       sideEffects++
     }
 
-    mailbox.subscribe(address, () => work()) // 成功的订阅者
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, () => work()) // 成功的订阅者
+    await mailbox.subscribe(address, failing())
 
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -100,8 +100,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
 
   it('[语义] 纯订阅模式不留无人认领的滞留消息', async () => {
     const address = addrOf('no-orphan')
-    mailbox.subscribe(address, () => undefined)
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, () => undefined)
+    await mailbox.subscribe(address, failing())
 
     for (let i = 1; i <= 3; i++) {
       await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: i } })
@@ -113,8 +113,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
 
   it('[语义] 全部退订再重新订阅：已处理过的消息不会广播给新订阅者', async () => {
     const address = addrOf('resubscribe')
-    const s1 = mailbox.subscribe(address, failing())
-    const s2 = mailbox.subscribe(address, () => undefined) // 成功
+    const s1 = await mailbox.subscribe(address, failing())
+    const s2 = await mailbox.subscribe(address, () => undefined) // 成功
 
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -122,7 +122,7 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
     await s2.unsubscribe()
 
     const late = vi.fn()
-    mailbox.subscribe(address, late)
+    await mailbox.subscribe(address, late)
     await tick()
 
     expect(late).toHaveBeenCalledTimes(0)
@@ -138,8 +138,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
     const address = addrOf('exhaust-partial')
     const a = vi.fn()
     const b = vi.fn(failing())
-    retryMailbox.subscribe(address, a)
-    retryMailbox.subscribe(address, b)
+    await retryMailbox.subscribe(address, a)
+    await retryMailbox.subscribe(address, b)
 
     await retryMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(200)
@@ -157,8 +157,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
 
     const address = addrOf('cancel-partial')
     const a = vi.fn()
-    retryMailbox.subscribe(address, a)
-    const failingSub = retryMailbox.subscribe(address, failing())
+    await retryMailbox.subscribe(address, a)
+    const failingSub = await retryMailbox.subscribe(address, failing())
 
     await retryMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(10)
@@ -177,8 +177,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
     await dlMailbox.start()
 
     const address = addrOf('dead-letter-partial')
-    const okSub = dlMailbox.subscribe(address, () => undefined)
-    const badSub = dlMailbox.subscribe(address, failing())
+    const okSub = await dlMailbox.subscribe(address, () => undefined)
+    const badSub = await dlMailbox.subscribe(address, failing())
 
     const sent = await dlMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -207,8 +207,8 @@ describe('issue#2 [语义]：部分失败不回队，也不重复投递给已成
     await poster.start()
 
     const a = vi.fn()
-    host.subscribe(address, a)
-    poster.subscribe(address, failing())
+    await host.subscribe(address, a)
+    await poster.subscribe(address, failing())
 
     await poster.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -239,9 +239,9 @@ describe('issue#2 [语义]：全部投递失败时仍然回队（issue#1 的兜�
 
   it('[语义] N 个订阅者全部失败 → 队列只留一份，可被 fetch 取回', async () => {
     const address = addrOf('all-fail-dedup')
-    mailbox.subscribe(address, failing())
-    mailbox.subscribe(address, failing())
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
 
     const sent = await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -253,10 +253,10 @@ describe('issue#2 [语义]：全部投递失败时仍然回队（issue#1 的兜�
 
   it('[语义] 可重试 + 不可重试混合且无人成功 → 仍回队（可重试那份值得再试）', async () => {
     const address = addrOf('mixed-fatal-retriable')
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw new Error('malformed payload')
     })
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
 
     const sent = await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -266,10 +266,10 @@ describe('issue#2 [语义]：全部投递失败时仍然回队（issue#1 的兜�
 
   it('[语义] 全部不可重试 → 死信，不回队', async () => {
     const address = addrOf('all-fatal')
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw new Error('malformed payload')
     })
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw new Error('also malformed')
     })
 
@@ -287,7 +287,7 @@ describe('issue#2 [语义]：全部投递失败时仍然回队（issue#1 的兜�
 
     const address = addrOf('exhaust-all-fail')
     const b = vi.fn(failing())
-    retryMailbox.subscribe(address, b)
+    await retryMailbox.subscribe(address, b)
 
     const sent = await retryMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(200)
@@ -304,7 +304,7 @@ describe('issue#2 [语义]：全部投递失败时仍然回队（issue#1 的兜�
     await retryMailbox.start()
 
     const address = addrOf('cancel-only-subscriber')
-    const sub = retryMailbox.subscribe(address, failing())
+    const sub = await retryMailbox.subscribe(address, failing())
 
     const sent = await retryMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(10)
@@ -335,11 +335,11 @@ describe('issue#2 [事实]：结算 barrier 的时序', () => {
   it('[事实] 慢速成功订阅者还没结算时，判定还没发生（不会提前回队）', async () => {
     const address = addrOf('barrier-waits-slow-success')
     const order: string[] = []
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       await new Promise((r) => setTimeout(r, 50)) // 成功，但需要一次 I/O
       order.push('A-success')
     })
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       order.push('B-fail')
       throw Object.assign(new Error('down'), { isRetriable: true })
     })
@@ -359,7 +359,7 @@ describe('issue#2 [事实]：结算 barrier 的时序', () => {
   it('[事实] post() 只等派发，不等投递结算', async () => {
     const address = addrOf('post-not-awaiting-delivery')
     let settled = false
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       await new Promise((r) => setTimeout(r, 30))
       settled = true
     })
@@ -379,7 +379,7 @@ describe('issue#2 [事实]：结算 barrier 的时序', () => {
 
     const address = addrOf('settle-after-retry-chain')
     const calls: number[] = []
-    retryMailbox.subscribe(address, (m) => {
+    await retryMailbox.subscribe(address, (m) => {
       calls.push(Date.now())
       if (calls.length < 3) {
         throw Object.assign(new Error('flaky'), { isRetriable: true })
@@ -420,8 +420,8 @@ describe('issue#2 [事实]：opt-in 重试与手动 ack 交叉', () => {
     expect((await mailbox.status(address)).inFlightCount).toBe(1)
 
     const a = vi.fn()
-    mailbox.subscribe(address, a)
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, a)
+    await mailbox.subscribe(address, failing())
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 'broadcast' } })
     await tick()
 

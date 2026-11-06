@@ -41,7 +41,7 @@ class BareProvider extends MailboxProvider {
     this.sent.push(message)
   }
 
-  public subscribe(): Subscription {
+  public async subscribe(): Promise<Subscription> {
     return {
       id: 'sub-1',
       address: new URL('bare:x@example.com/u'),
@@ -220,7 +220,7 @@ describe('能力声明：内核以声明为准', () => {
     const foreign: IMailboxProvider = {
       protocol: 'foreign',
       send: async (message) => message,
-      subscribe: () => ({
+      subscribe: async () => ({
         id: 's',
         address: new URL('foreign:x@example.com/u'),
         status: 'active',

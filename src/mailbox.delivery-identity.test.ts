@@ -43,7 +43,7 @@ describe('投递尝试按份记：同 id 不共账', () => {
     const address = addrOf('f9-budget')
     const seen: Array<{ tag: string; attempt: number; max: number }> = []
 
-    mailbox.subscribe(address, (m: MailMessage) => {
+    await mailbox.subscribe(address, (m: MailMessage) => {
       seen.push({
         tag: String(m.body.tag),
         attempt: Number(m.headers?.[MBX_ATTEMPT_HEADER]),
@@ -92,7 +92,7 @@ describe('投递尝试按份记：同 id 不共账', () => {
   it('[语义] 每份信带回自己的计数（回队的副本不拿别人的数）', async () => {
     const { mailbox } = await setup({ maxAttempts: 2, baseDelay: 1 })
     const address = addrOf('f9-counters')
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable()
     })
 
@@ -115,7 +115,7 @@ describe('投递尝试按份记：同 id 不共账', () => {
     const { mailbox } = await setup(null)
     const address = addrOf('f9-noretry')
     const seen: string[] = []
-    mailbox.subscribe(address, (m: MailMessage) => {
+    await mailbox.subscribe(address, (m: MailMessage) => {
       seen.push(String(m.body.tag))
       throw retriable()
     })
@@ -132,7 +132,7 @@ describe('投递尝试按份记：同 id 不共账', () => {
     const { mailbox } = await setup({ maxAttempts: 5, baseDelay: 60 })
     const address = addrOf('f9-cancel')
     const seen: string[] = []
-    const sub = mailbox.subscribe(address, (m: MailMessage) => {
+    const sub = await mailbox.subscribe(address, (m: MailMessage) => {
       seen.push(String(m.body.tag))
       throw retriable()
     })

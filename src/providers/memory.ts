@@ -147,6 +147,10 @@ export class MemoryEventBus {
    * @param topic The topic (canonical address) to subscribe to.
    * @param listener The callback function to execute when a message is received.
    * @returns A function that, when called, unsubscribes the listener.
+   *
+   * 同步返回是有意的，即使 `IMailboxProvider#subscribe()` 返回 Promise：这是进程内的派发总线，
+   * 没有 broker 要等，「已生效」在这层就是「已登记」。把它也改成 Promise 只是把破坏性改动
+   * 抄进私有实现。
    */
   public subscribe(topic: string, listener: Listener): () => void {
     if (!this.topics.has(topic)) {

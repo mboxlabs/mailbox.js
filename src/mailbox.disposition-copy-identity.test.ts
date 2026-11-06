@@ -114,7 +114,7 @@ describe('交给 provider 的 message 是副本：对象同一性不可依赖', 
     const address = addrOf('ack-copy');
 
     let seenByCallback: MailMessage | undefined;
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seenByCallback = message;
     });
     const posted = await mailbox.post({
@@ -153,7 +153,7 @@ describe('交给 provider 的 message 是副本：对象同一性不可依赖', 
     mailbox.registerProvider(provider);
     const address = addrOf('nack-copy');
 
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       provider.handedTo.push(message);
       throw retriable();
     });

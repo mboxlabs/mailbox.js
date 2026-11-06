@@ -169,7 +169,7 @@ describe('放弃的信号：队列 / 传输型 provider 上的不可重试失败
   });
 
   it('[语义] 不可重试失败必须发出「放弃」信号：nack(requeue=false) 恰好一次', async () => {
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -182,7 +182,7 @@ describe('放弃的信号：队列 / 传输型 provider 上的不可重试失败
   });
 
   it('[语义] 放弃的事实必须可观测：死信钩子收到 reason / attempts / error', async () => {
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal('payload schema mismatch');
     });
 
@@ -215,7 +215,7 @@ describe('放弃的信号：队列 / 传输型 provider 上的不可重试失败
     const box = new Mailbox();
     const ordered = new OrderedProvider();
     box.registerProvider(ordered);
-    box.subscribe(address, () => {
+    await box.subscribe(address, () => {
       throw fatal();
     });
 
@@ -227,7 +227,7 @@ describe('放弃的信号：队列 / 传输型 provider 上的不可重试失败
   });
 
   it('[语义] 可重试失败不是放弃：nack(requeue=true)，且不走死信钩子', async () => {
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
 
@@ -240,7 +240,7 @@ describe('放弃的信号：队列 / 传输型 provider 上的不可重试失败
   });
 
   it('[语义] 重试预算耗尽也不是放弃：仍回队、死信钩子不触发，但耗尽钩子要报到次数', async () => {
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
     provider.setRetryPolicy({ maxAttempts: 2, baseDelay: 5 });
@@ -256,7 +256,7 @@ describe('放弃的信号：队列 / 传输型 provider 上的不可重试失败
 
   it('[语义] 内核不自己裁决次数：上限由 RetryPolicy 决定，记账里带上次数', async () => {
     let attempts = 0;
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       attempts++;
       throw retriable();
     });
@@ -288,13 +288,13 @@ describe('放弃的信号：provider 漏接时不能让决定静默蒸发', () =
     await mailbox.start();
     const address = addrOf('missing-nack', 'nolock');
 
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable(); // → 内核决定 nack(true)
     });
     await mailbox.post({ from: 'nolock://s@broker/u', to: address, body: { n: 1 } });
     await tick();
 
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal(); // → 内核决定 nack(false)
     });
     await mailbox.post({ from: 'nolock://s@broker/u', to: address, body: { n: 2 } });
@@ -312,7 +312,7 @@ describe('放弃的信号：provider 漏接时不能让决定静默蒸发', () =
     const mailbox = new Mailbox();
     mailbox.registerProvider(new TransportProvider());
     const address = addrOf('has-nack');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -345,7 +345,7 @@ describe('死信钩子自己不可靠时，处置判定不能被它吞掉', () =
     const boom = new Boom();
     mailbox.registerProvider(boom);
     const address = addrOf('hook-throws');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -375,7 +375,7 @@ describe('死信钩子自己不可靠时，处置判定不能被它吞掉', () =
     const provider = new AsyncBoom(null, new MemoryEventBus());
     mailbox.registerProvider(provider);
     const address = addrOf('async-hook', 'mem');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -408,8 +408,8 @@ describe('死信钩子自己不可靠时，处置判定不能被它吞掉', () =
     mailbox.registerProvider(provider);
     const address = addrOf('broadcast-hook', 'mem');
 
-    mailbox.subscribe(address, () => undefined); // 成功的订阅者
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => undefined); // 成功的订阅者
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
 
@@ -438,7 +438,7 @@ describe('放弃的余料：内核只留痕，不做上限', () => {
 
     const seen: (string | undefined)[] = [];
     const seenMax: (string | undefined)[] = [];
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       seen.push(message.headers?.['mbx-attempt'] as string | undefined);
       seenMax.push(message.headers?.['mbx-max-attempts'] as string | undefined);
       throw retriable();
@@ -459,10 +459,10 @@ describe('放弃的余料：内核只留痕，不做上限', () => {
     const address = addrOf('no-leak', 'mem');
 
     let goodAttempt: string | undefined;
-    mailbox.subscribe(address, (message) => {
+    await mailbox.subscribe(address, (message) => {
       goodAttempt = message.headers?.['mbx-attempt'] as string | undefined;
     });
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
 

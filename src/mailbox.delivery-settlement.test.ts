@@ -133,7 +133,7 @@ describe('隐患1 [语义]：退订 / 关闭不得替正在执行的投递下结
   it('[语义] 退订时正在执行的回调不得被当成失败（不回队、副作用一次）', async () => {
     const address = addrOf('unsubscribe-inflight')
     let sideEffects = 0
-    const sub = mailbox.subscribe(address, async () => {
+    const sub = await mailbox.subscribe(address, async () => {
       await tick(40)
       sideEffects++
     })
@@ -151,7 +151,7 @@ describe('隐患1 [语义]：退订 / 关闭不得替正在执行的投递下结
   it('[语义] stop() 时正在执行的回调成功后不得回队', async () => {
     const address = addrOf('stop-inflight')
     let sideEffects = 0
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       await tick(40)
       sideEffects++
     })
@@ -168,7 +168,7 @@ describe('隐患1 [语义]：退订 / 关闭不得替正在执行的投递下结
 
   it('[语义] 退订时正在执行的回调如果最终失败，仍可被 fetch 兜底', async () => {
     const address = addrOf('unsubscribe-inflight-fail')
-    const sub = mailbox.subscribe(address, async () => {
+    const sub = await mailbox.subscribe(address, async () => {
       await tick(30)
       throw retriable()
     })
@@ -189,7 +189,7 @@ describe('隐患1 [语义]：退订 / 关闭不得替正在执行的投递下结
     await retryMailbox.start()
 
     const address = addrOf('unsubscribe-during-backoff')
-    const sub = retryMailbox.subscribe(address, failing())
+    const sub = await retryMailbox.subscribe(address, failing())
 
     const sent = await retryMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(10)
@@ -222,7 +222,7 @@ describe('隐患2 [语义]：广播 provider 没接结算 barrier 时不得静�
 
   it('[语义] 可重试失败必须仍可被 fetch 取回（barrier 缺失时基类兜底）', async () => {
     const address = 'raw://bus/no-barrier'
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
 
     const sent = await mailbox.post({ from: 'raw://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -233,8 +233,8 @@ describe('隐患2 [语义]：广播 provider 没接结算 barrier 时不得静�
 
   it('[语义] barrier 缺失时的兜底回队仍只留一份', async () => {
     const address = 'raw://bus/no-barrier-dedup'
-    mailbox.subscribe(address, failing())
-    mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
+    await mailbox.subscribe(address, failing())
 
     await mailbox.post({ from: 'raw://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -249,7 +249,7 @@ describe('隐患2 [语义]：广播 provider 没接结算 barrier 时不得静�
     const memMailbox = new Mailbox()
     memMailbox.registerProvider(new MemoryProvider())
     await memMailbox.start()
-    memMailbox.subscribe(address, failing())
+    await memMailbox.subscribe(address, failing())
 
     await memMailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick()
@@ -268,7 +268,7 @@ describe('隐患3 [语义]：同 id 并发投递各自独立结算', () => {
 
     const address = addrOf('dup-id-fatal')
     const seen: number[] = []
-    mailbox.subscribe(address, async (message) => {
+    await mailbox.subscribe(address, async (message) => {
       seen.push(message.body.n)
       await tick(30)
       throw new Error('malformed payload') // 全部不可重试 → 各自死信
@@ -295,7 +295,7 @@ describe('隐患3 [语义]：同 id 并发投递各自独立结算', () => {
 
     const address = addrOf('dup-id-retriable')
     let calls = 0
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       calls++
       await tick(20)
       throw retriable()
@@ -345,7 +345,7 @@ describe('隐患4 [语义]：卡死的订阅回调必须有界', () => {
     await mailbox.start()
 
     const address = addrOf('hung-callback')
-    mailbox.subscribe(address, () => new Promise<void>(() => undefined))
+    await mailbox.subscribe(address, () => new Promise<void>(() => undefined))
 
     const sent = await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(150)
@@ -367,7 +367,7 @@ describe('隐患4 [语义]：卡死的订阅回调必须有界', () => {
 
     const address = addrOf('late-success-after-stall')
     let sideEffects = 0
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       await tick(80) // 比看门狗晚
       sideEffects++
     })
@@ -392,7 +392,7 @@ describe('隐患4 [语义]：卡死的订阅回调必须有界', () => {
 
     const address = addrOf('watchdog-not-cutting-retry')
     let calls = 0
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       calls++
       await tick(20) // 单次尝试 20ms < 40ms，但整条重试链 > 40ms
       if (calls < 3) {
@@ -419,7 +419,7 @@ describe('隐患4 [语义]：卡死的订阅回调必须有界', () => {
 
     const address = addrOf('watchdog-not-cutting-backoff')
     let calls = 0
-    mailbox.subscribe(address, async () => {
+    await mailbox.subscribe(address, async () => {
       calls++
       if (calls < 2) {
         throw retriable()
@@ -443,7 +443,7 @@ describe('隐患4 [语义]：卡死的订阅回调必须有界', () => {
     await mailbox.start()
 
     const address = addrOf('watchdog-off')
-    mailbox.subscribe(address, () => new Promise<void>(() => undefined))
+    await mailbox.subscribe(address, () => new Promise<void>(() => undefined))
 
     await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await tick(100)
@@ -466,7 +466,7 @@ describe('隐患4 [语义]：卡死的订阅回调必须有界', () => {
     await mailbox.start()
 
     const address = addrOf('watchdog-closes-gap')
-    mailbox.subscribe(address, () => new Promise<void>(() => undefined))
+    await mailbox.subscribe(address, () => new Promise<void>(() => undefined))
 
     const sent = await mailbox.post({ from: 'mem://s@bus/u', to: address, body: { n: 1 } })
     await mailbox.stop() // 正在执行的投递不会被取消
@@ -501,7 +501,7 @@ describe('隐患5 [语义]：自己派发消息的 provider 也必须走基类�
     await mailbox.start()
 
     const address = addrOf('local-producer')
-    const sub = mailbox.subscribe(address, failing())
+    const sub = await mailbox.subscribe(address, failing())
 
     const reply: MailMessage = {
       id: 'reply-1',

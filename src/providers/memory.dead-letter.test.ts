@@ -47,7 +47,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
 
   it('[语义] 默认不开：被放弃的消息没有 DLQ（内核不保证留下什么）', async () => {
     const address = addrOf('default-off');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -63,7 +63,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[语义] 全部投递都不可重试 → 消息被丢弃，但开启后在 _dlq 里可取回', async () => {
     provider.enableDeadLetterQueue();
     const address = addrOf('all-fatal');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal('boom');
     });
 
@@ -84,7 +84,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[语义] 归档副本带上「为什么 / 第几次 / 原来在哪」，且不污染业务 meta', async () => {
     provider.enableDeadLetterQueue();
     const address = addrOf('record-headers');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal('schema mismatch');
     });
 
@@ -114,7 +114,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[语义] 回队不是放弃：全部失败且可重试时不进死信', async () => {
     provider.enableDeadLetterQueue();
     const address = addrOf('all-retriable');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
 
@@ -128,8 +128,8 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[语义] 部分失败：不回队（已有人处理过），失败的那次投递进死信', async () => {
     provider.enableDeadLetterQueue();
     const address = addrOf('partial');
-    mailbox.subscribe(address, () => undefined); // 成功
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => undefined); // 成功
+    await mailbox.subscribe(address, () => {
       throw retriable('billing down');
     });
 
@@ -147,8 +147,8 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[语义] 每次失败投递各留一条记录，带各自的尝试次数', async () => {
     provider.enableDeadLetterQueue();
     const address = addrOf('attempts-in-record');
-    mailbox.subscribe(address, () => undefined); // 成功，防止整条回队
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => undefined); // 成功，防止整条回队
+    await mailbox.subscribe(address, () => {
       throw retriable();
     });
 
@@ -164,7 +164,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[语义] 死信记录可被取回后重新投递：DLQ 不是只进不出', async () => {
     provider.enableDeadLetterQueue();
     const address = addrOf('repost');
-    const subscription = mailbox.subscribe(address, () => {
+    const subscription = await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -189,7 +189,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
   it('[事实] 死信 topic 在 status / snapshot / listAddresses 里可见，clear() 一并清掉', async () => {
     provider.enableDeadLetterQueue({ suffix: '.dlq' });
     const address = addrOf('visible');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -212,7 +212,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
     provider.enableDeadLetterQueue();
     provider.disableDeadLetterQueue();
     const address = addrOf('toggle');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 
@@ -267,7 +267,7 @@ describe('[语义] 死信队列是 opt-in 的 provider 行为', () => {
 
     mailbox.registerProvider(tracked);
     const address = addrOf('subclass-factory');
-    mailbox.subscribe(address, () => {
+    await mailbox.subscribe(address, () => {
       throw fatal();
     });
 

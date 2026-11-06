@@ -180,7 +180,7 @@ describe('死信封顶：停放不是重投', () => {
     const { mailbox, provider } = await setup()
     const address = addrOf('push-fatal')
     let seen = 0
-    mailbox.subscribe(address, (m: MailMessage) => {
+    await mailbox.subscribe(address, (m: MailMessage) => {
       seen++
       throw new Error('bad payload') // 不带 isRetriable = 不可重试（fatal）
     })
