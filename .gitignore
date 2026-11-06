@@ -19,6 +19,8 @@ dev.md
 *.db
 .npmrc
 .envrc
+*.bak
+*.back
 
 # Editor directories and files
 .vscode/*
