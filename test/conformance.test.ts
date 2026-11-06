@@ -10,11 +10,13 @@
  * 报告写到 `conformance/report/ts.md`（差异矩阵，可直接贴进论文 P2 与 issue 正文）。
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { describe, it, expect } from 'vitest'
+
+import { contractIdentityLine, runtimeStampLines } from './report-hygiene'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CASES_DIR = join(here, '../wiki/paper/conformance/cases')
@@ -67,4 +69,23 @@ describe.skipIf(!suitePresent)('conformance [投递语义用例]', () => {
       `语义偏差 ${failures.length} 条：\n  - ${failures.join('\n  - ')}`
     ).toEqual([])
   }, 180_000)
+
+  // 报告是**被跟踪的文档**：跑一次测试不该在 paper 仓库里留两条只改时间戳的 diff（issue 05）。
+  // 不拦这个，“结果变了”和“又跑了一遍”在 review 里就分不开，真实漂移会被 `git checkout --` 抖掉。
+  it('报告不写运行时刻，身份行是契约版本', () => {
+    const report = readFileSync(join(REPORT_DIR, 'ts.md'), 'utf8')
+    const json = JSON.parse(readFileSync(join(REPORT_DIR, 'ts.json'), 'utf8')) as { contractVersion?: string }
+    const version = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version
+
+    expect(runtimeStampLines(report), '报告里出现了运行时刻（该进 stdout，不该进被跟踪的文件）：').toEqual([])
+    expect(contractIdentityLine(report), '报告缺身份行「契约版本：…」').toContain(`@mboxlabs/mailbox@${version}`)
+    // 机器读的那份也要带同样的身份，不靠运行时刻
+    expect(json.contractVersion, 'ts.json 缺 contractVersion').toBe(version)
+  })
+
+  it('守卫自己有效：带运行时刻的样本必须被抓住', () => {
+    expect(runtimeStampLines(['# 矩阵', '生成' + '时间：2026-01-01' + 'T00:00:00.000Z'].join('\n'))).toHaveLength(1)
+    expect(runtimeStampLines('说明里混进 2026-01-01' + 'T00:00:00 也算')).toHaveLength(1)
+    expect(runtimeStampLines('契约版本：`@mboxlabs/mailbox@1.0.0`')).toEqual([])
+  })
 })

@@ -8,9 +8,11 @@
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { describe, it, expect } from 'vitest';
+
+import { contractIdentityLine, runtimeStampLines } from './report-hygiene';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const EXPERIMENTS = join(here, '../wiki/paper/conformance/experiments');
@@ -48,6 +50,14 @@ describe.skipIf(!paperPresent)('experiment E1 [不可逆传输上的重试门控
 
     mkdirSync(dirname(REPORT), { recursive: true });
     writeFileSync(REPORT, renderReport(cells));
+
+    // 报告是被跟踪的文档：写进去的东西不许带运行时刻，否则每跑一次内核测试都在 paper 仓库
+    // 留一条只改时间戳的 diff（issue 05）。身份靠契约版本。
+    const rendered = readFileSync(REPORT, 'utf8');
+    expect(runtimeStampLines(rendered), 'E1 报告里出现了运行时刻：').toEqual([]);
+    expect(contractIdentityLine(rendered)).toContain(
+      '@mboxlabs/mailbox@' + (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version,
+    );
 
     const at = (policy: string, persistence: string) =>
       cells.find((c) => c.policy === policy && c.persistence === persistence)!;
