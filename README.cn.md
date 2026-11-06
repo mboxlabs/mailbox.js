@@ -120,7 +120,7 @@ flowchart LR
    await mailbox.start()
 
    // 3. 订阅一个地址并定义消息处理方式
-   const subscription = mailbox.subscribe(
+   const subscription = await mailbox.subscribe(
      'mem:service@example.com/inbox',
      (message) => {
        console.log(`收到消息！来自: ${message.from}`)
@@ -227,6 +227,19 @@ flowchart LR
    | **取回** | `fetch()`                     | 消费者自己主动取下一条           |
    | **只读** | `fetch(addr, { peek: true })` | 观察者看一眼队列，不消耗任何东西 |
 
+   `subscribe()` 返回 Promise，而 **await 完成的那一刻才是「订阅已生效」**——与
+   [Python](https://github.com/mboxlabs/mailbox.py)（`async def subscribe`）和
+   [Rust](https://github.com/mboxlabs/mailbox.rust)（`async fn subscribe`）同形，那两个端口
+   一直是可 await 的。“这条订阅已生效”是一个**每订阅**粒度、需要 broker 回话确认的事实
+   （NATS 的 sub-ack、AMQP 的 `consume` 回包、MQTT 的 SUBACK），塞不进 provider 级的 `init()`。
+
+   **不 await 的 `subscribe()` 是一个静默的空操作。** 它能通过类型检查，但回调可能根本没
+   注册；provider 拒绝订阅只会变成一个没人接的 rejection，而不是你看得见的错误。发信前
+   要 await，清积压前也要 await：“先订阅、再 drain”这个顺序，只有把 `await` 写进代码里才算数。
+
+   错误时机是刻意分开的，为的是与 `post()` / `fetch()` 一致：地址解析不了、scheme 没注册、
+   以及 provider **同步**拒约，都仍然**同步 throw**；只有 broker 回话拒绝才是 rejection。
+
    发布只是写入。一条消息只会进两个入口的**其中一个**，在 `post()` 执行那一刻定：
 
    | `post()` 执行时地址的状态 | 消息的去向                                              |
@@ -245,7 +258,7 @@ flowchart LR
 
    ```ts
    // subscribe：消息到达时跑回调
-   const sub = mailbox.subscribe(addr, (message) => {
+   const sub = await mailbox.subscribe(addr, (message) => {
      console.log(message.body)
    })
 
@@ -304,11 +317,11 @@ flowchart LR
    回调抛出的错误决定消息的去向：
 
    ```ts
-   mailbox.subscribe(addr, async (message) => {
+   await mailbox.subscribe(addr, async (message) => {
      throw Object.assign(new Error('upstream down'), { isRetriable: true }) // → 回到队列
    })
 
-   mailbox.subscribe(addr, async (message) => {
+   await mailbox.subscribe(addr, async (message) => {
      throw new Error('bad payload') // → 丢弃，避免一条坏消息被无限重试
    })
    ```

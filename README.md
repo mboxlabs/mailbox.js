@@ -121,7 +121,7 @@ Get a taste of Mailbox's core power in just three steps:
    await mailbox.start()
 
    // 3. Subscribe to an address and define how to handle messages
-   const subscription = mailbox.subscribe(
+   const subscription = await mailbox.subscribe(
      'mem:service@example.com/inbox',
      (message) => {
        console.log(`Message received! From: ${message.from}`)
@@ -240,6 +240,23 @@ Four verbs, four APIs — use these words consistently:
 | fetch     | `fetch()`                     | the consumer asks for the next message itself                |
 | peek      | `fetch(addr, { peek: true })` | an observer looks at the queue without consuming anything    |
 
+`subscribe()` returns a promise, and the awaited moment is **when the subscription is
+established** — same shape as the [Python](https://github.com/mboxlabs/mailbox.py)
+(`async def subscribe`) and [Rust](https://github.com/mboxlabs/mailbox.rust)
+(`async fn subscribe`) ports, where it has always been awaitable. "Subscribed" is a
+per-subscription fact that a broker confirms (NATS' sub-ack, AMQP's `consume` reply, MQTT's
+SUBACK), so it cannot live in the provider-level `init()`.
+
+**An un-awaited `subscribe()` is a silent no-op.** It type-checks, the callback may never be
+registered, and a provider that refuses the subscription surfaces as an unhandled rejection
+instead of an error you can see. Await it before you post, and await it before you drain a
+backlog: "subscribe first, then drain" is only a real ordering once the `await` is in the code.
+
+Error timing is split on purpose, so that `subscribe()` stays consistent with `post()` and
+`fetch()`: an unparseable address, an unregistered scheme, and a provider that rejects
+_synchronously_ all still **throw synchronously**; only a broker that refuses the subscription
+over the wire rejects.
+
 Publishing only writes. A published message goes to **one** of the two receiving paths,
 decided at the moment `post()` runs:
 
@@ -260,7 +277,7 @@ the message, it goes back to the queue, where `fetch()` can pick it up — see b
 
 ```ts
 // subscribe: the callback runs when mail arrives
-const sub = mailbox.subscribe(addr, (message) => {
+const sub = await mailbox.subscribe(addr, (message) => {
   console.log(message.body)
 })
 
@@ -331,11 +348,11 @@ normally is `handled`, throwing a plain error is `discard`, throwing `{ isRetria
 The callback's error decides what happens to the message:
 
 ```ts
-mailbox.subscribe(addr, async (message) => {
+await mailbox.subscribe(addr, async (message) => {
   throw Object.assign(new Error('upstream down'), { isRetriable: true }) // → back to the queue
 })
 
-mailbox.subscribe(addr, async (message) => {
+await mailbox.subscribe(addr, async (message) => {
   throw new Error('bad payload') // → dropped, so one bad message is not retried forever
 })
 ```
