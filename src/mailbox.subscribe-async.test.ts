@@ -15,6 +15,12 @@
  *   5. handle 还没落地时，**不许**拿 `undefined` 去调 `_unsubscribe`：broker 会把它当成
  *      一个非法句柄（而不是「还没建立」）。
  *   6. provider 钩子不强推 async：v1 写的**同步** `_subscribe` 子类不改也能跑。
+ *   7. **关闭落在订阅建立的中途**（`close()` / provider 级 `stop()` 与在途 `subscribe()` 交错）：
+ *      这条订阅必须作废——登记先拆、迟到的句柄补拆、句柄报 `closed`（issue#11）。
+ *
+ * 「provider 已经关闭之后再订」这一格**故意没有用例**：规范（`wiki/delivery-semantics.md` §1）
+ * 把它标成不判，两端当前行为不一致且都没从契约推出。在这一格上钉任何一端都是把未收口的
+ * 行为当契约（差异矩阵同样不收），要钉就得两端同时翻、由规范先定翻哪边。
  */
 
 import { describe, it, expect, expectTypeOf, afterEach } from 'vitest'
@@ -330,4 +336,126 @@ describe('provider 钩子：不强推 async（v1 的同步 _subscribe 仍可用�
     await mailbox.stop()
   })
 
+})
+
+describe('关闭落在订阅建立的中途：这条必须作废（issue#11）', () => {
+  /*
+   * 已判的规范（`wiki/delivery-semantics.md` §1）：`close()` / provider 级 `stop()` 与在途
+   * `subscribe()` 交错时，这条订阅必须**作废**——登记先拆，迟到的句柄在 provider 答话那一刻
+   * 补拆，句柄报 `closed` 而不是报错。
+   *
+   * 断言全部落在**总线侧**（`subscriberCount`）与 `_unsubscribe` 实际收到的 handle：
+   * `subscriptions.size === 0` 看不见这条泄漏——它正是当前代码自己造出来的那个状态
+   * （登记被 `close()` 末尾的 `clear()` 抹掉，监听器还挂在总线上，而默认总线是进程级单例）。
+   */
+  let unhandled: unknown[] = []
+  const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+  afterEach(() => {
+    process.off('unhandledRejection', onUnhandled)
+    unhandled = []
+  })
+
+  it('[语义] 同步钩子：close 快照之后落地的订阅，句柄作废且监听器被拆掉', async () => {
+    process.on('unhandledRejection', onUnhandled)
+    const provider = new GateProvider()
+    provider.mode = 'sync' // 就是 issue#11 那份复现的形状：plain Memory 钩子，无测试替身
+    const mailbox = new Mailbox()
+    mailbox.registerProvider(provider)
+    const addrA = addrOf('midclose-a')
+    const addrB = addrOf('midclose-sync-b')
+
+    await mailbox.subscribe(addrA, () => {}) // 先正常建立一条，让 close 的快照里有东西可拆
+
+    const closing = mailbox.stop() // close 同步取快照：此刻表里只有 A
+    const pendingB = mailbox.subscribe(addrB, () => {}) // 同一 tick 里又插进来一条
+    const subB = await pendingB
+    await closing
+
+    expect(subB.status).toBe('closed') // 不能报 active：报 active 就是没人能拆它了
+    expect(provider.registered).toBe(0)
+    expect(provider.listenerCount(addrB)).toBe(0) // 总线侧：泄漏就在这条红
+    expect(provider.unsubscribed).not.toContain(undefined) // 补拆拿到的是真 handle
+    expect(unhandled).toEqual([])
+  }, 10_000)
+
+  it('[语义] 挂起的钩子：close 已在跑、handle 迟到 → 补拆，而不是挂到即将被 clear 的登记上', async () => {
+    const provider = new GateProvider()
+    const mailbox = new Mailbox()
+    mailbox.registerProvider(provider)
+    const addrA = addrOf('midclose2-a')
+    const addrB = addrOf('midclose2-b')
+    provider.mode = 'sync'
+    await mailbox.subscribe(addrA, () => {})
+    provider.mode = 'defer'
+
+    const closing = mailbox.stop()
+    const pendingB = mailbox.subscribe(addrB, () => {})
+    await tick(5) // B 还挂在 gate 上，close 已经走过去了
+    expect(provider.listenerCount(addrB)).toBe(0)
+
+    provider.release() // broker 迟到答话
+    await closing
+    const subB = await pendingB
+
+    expect(subB.status).toBe('closed')
+    expect(provider.registered).toBe(0)
+    expect(provider.listenerCount(addrB)).toBe(0)
+  }, 10_000)
+
+  it('[语义] close 的快照本来是空的：窗口里落地的订阅同样作废', async () => {
+    // 这一格不走 `clear()`（快照为空，那段整块跳过）：今天它会留下一条「在关闭进行中建立」
+    // 却报 active 的订阅。规范已判：关闭落在建立过程中 ⇒ 作废。
+    const provider = new GateProvider()
+    provider.mode = 'sync'
+    const mailbox = new Mailbox()
+    mailbox.registerProvider(provider)
+    const address = addrOf('midclose-empty')
+
+    const closing = mailbox.stop()
+    const pending = mailbox.subscribe(address, () => {})
+    const sub = await pending
+    await closing
+
+    expect(sub.status).toBe('closed')
+    expect(provider.registered).toBe(0)
+    expect(provider.listenerCount(address)).toBe(0)
+  }, 10_000)
+
+  it('[语义] stop() → start() 不是单向门：重新开放后必须还能订上并且收得到投递', async () => {
+    // 重写 `init()` 而**不调 super** 的 provider：`MemoryProvider.init()`（租约清扫定时器，
+    // 默认路径直接 return）与下游 `FileProvider` 就是这个写法。把「复位关闭标志」挂在
+    // `init()` 上的设计会在这一格红，而且症状是「新订阅自己拆掉自己，不报错」——
+    // 比它修的那个泄漏更难发现。
+    class ShadowInitProvider extends GateProvider {
+      public initCalls = 0
+      public async init(): Promise<void> {
+        this.initCalls++ // 故意不调 super.init()
+      }
+    }
+    const provider = new ShadowInitProvider()
+    provider.mode = 'sync'
+    const mailbox = new Mailbox()
+    mailbox.registerProvider(provider)
+    const address = addrOf('reopen-door')
+    const got: MailMessage[] = []
+
+    await mailbox.start()
+    expect(provider.initCalls).toBe(1)
+    await mailbox.stop()
+    await mailbox.start()
+
+    const sub = await mailbox.subscribe(address, (m) => { got.push(m) })
+    expect(sub.status).toBe('active')
+    expect(provider.listenerCount(address)).toBe(1)
+
+    await mailbox.post({ from: 'mem://s@gate/u', to: address, body: { n: 1 } })
+    await tick()
+    expect(got).toHaveLength(1)
+
+    await mailbox.stop()
+    expect(provider.listenerCount(address)).toBe(0)
+  }, 10_000)
+
+  // 「已经关闭的 provider 上再订」那一格留空白：见文件头。上面三条只钉已判的那一半
+  // （关闭**进行中**落地的订阅作废），不决定未收口的那一半。
 })

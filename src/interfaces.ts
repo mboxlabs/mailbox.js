@@ -470,6 +470,11 @@ export interface IMailboxProvider {
    * 实现提示：继承 {@link MailboxProvider} 时，`_subscribe` **不要求 async**（v1 的同步钩子不改
    * 也能跑），但基类会等它。直接实现本接口的 provider 请自己保证：`await subscribe()` 返回后
    * 投递就能开始，而且订阅在 await 窗口里被退订时不要把 `undefined` 当句柄拆。
+   *
+   * **关闭与建立交错时这条作废**（已判的语义，见 `wiki/delivery-semantics.md` §1）：登记必须在
+   * `await` **之前**落表，否则 `close()` / `stop()` 在窗口里看不见它、没人负责拆；handle 迟到时
+   * 必须在 provider 答话那一刻补拆，句柄报 `closed` 而不是抛异常；`close()` 必须**有界**，
+   * 不等一个永不落地的 `_subscribe`。
    */
   subscribe(address: URL, onReceive: (message: MailMessage) => void | Promise<void>): Promise<Subscription>;
 

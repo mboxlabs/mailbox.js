@@ -51,6 +51,18 @@ interface ManagedSubscription {
   // which is needed for unsubscribing.
   unsubscribeHandle?: any;
   /**
+   * 登记发生在 `close()` 进行中（登记那一刻 `closeInFlight > 0`）。
+   *
+   * 为什么在**登记那一刻**而不是 settle 那一刻读关闭状态：`close()` 先快照再拆，快照里没有这条；
+   * 而它的 `finally` 可能先于 settle 把计数落回 0——那时 settle 看见的是「表里有我、也没在关闭」，
+   * 于是把一个没人拆的 handle 挂到一条正被收尾的登记上（issue#11）。“在关闭中途出生”是一个
+   * 不会随调度漂的历史事实，不需要谁复位，也不依赖 settle 与 `close()` 谁先到。
+   *
+   * 它不是「在 await 之前查一下 provider 还开着吗」那种检查过去（规范明确排除的是“入口查完就
+   * 放行”）：**作废的决定仍在 settle 那一刻做**，只是这个事实要在出生时就留下来。
+   */
+  bornWhileClosing?: boolean;
+  /**
    * `_subscribe` 还没落定时的那颗 promise（handle 在路上）。
    *
    * 存在的唯一理由：**await 窗口里的拆除**。provider 还没答话就来了一次 `unsubscribe()` /
@@ -106,6 +118,26 @@ type DeliveryOutcome = 'ok' | 'retriable' | 'fatal' | 'cancelled';
 export abstract class MailboxProvider implements IMailboxProvider, CapabilityDeclaration {
   public readonly protocol: string;
   protected readonly subscriptions: Map<string, ManagedSubscription> = new Map();
+  /**
+   * 现在有几个 `close()` 正在跑（0 = 当前没在关闭）。只在 `subscribe()` 登记那一刻读它，
+   * 结果存进登记自身（{@link ManagedSubscription.bornWhileClosing}）。
+   *
+   * 订阅表只回答「这条登记还在不在」，回答不了「关闭已经走过去了」：`close()` 先快照再拆、
+   * 末尾还 `clear()` 一次，于是「快照之后才插进来的那条」在 settle 时看着表里有自己，就把
+   * handle 挂到一条马上要被抹掉的登记上——登记被抹、监听器没人拆，而句柄报 `closed`
+   * ⇒ 再没有任何东西能摘它（issue#11）。
+   *
+   * 两个设计点都不是顺手：
+   * - **复位由 `close()` 自己在 `finally` 里做，不挂在 `init()` 上**：`MemoryProvider.init()`
+   *   与下游 provider（如 tool-rpc 的 `FileProvider`）都重写 `init()` 而不调 `super.init()`，
+   *   把复位挂在 `init()` 上就把 `stop()` → `start()` 变成单向门，症状是「新订阅自己拆掉自己，
+   *   不报错」——比它修的那个泄漏更难发现。
+   * - **计数而不是布尔**：并发的两次 `close()`，先返的那个不该把后一个的「还在关闭」抹掉。
+   *
+   * 它只盖**关闭进行中**那一格，不判「已经关闭之后能不能再订」：那一格规范不判（三端当前
+   * 不一致），未收口前不得当成契约。
+   */
+  private closeInFlight = 0;
 
   /**
    * 订阅失败后的重试策略。`null` 表示不重试（默认）：可重试失败只把消息退回队列，
@@ -253,32 +285,42 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * 用 `Mailbox#stop({ purge: true })` 或 {@link MailboxProvider.clear}。
    */
   public async close(): Promise<void> {
-    // 1. 自动清理所有活跃订阅
-    const subscriptions = Array.from(this.subscriptions.values());
-    if (subscriptions.length > 0) {
-      await Promise.all(
-        subscriptions.map(async (sub) => {
-          try {
-            await this._teardownSubscription(sub);
-          } catch (e) {
-            console.error(`[${this.protocol}] Error unsubscribing ${sub.id} during close:`, e);
-          }
-        })
-      );
-      this.subscriptions.clear();
-    }
+    // 置位必须在拆表**之前**：`subscribe()` 在登记那一刻读它，置位晚了那条就会被记成
+    // 「出生时没在关闭」，而 close() 的快照里也没它——两边都看不见，就没人拆（issue#11）。
+    this.closeInFlight++;
+    try {
+      // 1. 自动清理所有活跃订阅
+      const subscriptions = Array.from(this.subscriptions.values());
+      if (subscriptions.length > 0) {
+        await Promise.all(
+          subscriptions.map(async (sub) => {
+            try {
+              await this._teardownSubscription(sub);
+            } catch (e) {
+              console.error(`[${this.protocol}] Error unsubscribing ${sub.id} during close:`, e);
+            }
+          })
+        );
+        // 兜底：拆的过程中插进来的登记在这里被抹掉。**它不是修复**——它抹登记、不拆监听器，
+        // 监听器得由 `subscribe()` 的 settle 那一脉自己拆（见 `closeInFlight`）。
+        this.subscriptions.clear();
+      }
 
-    // 关闭时取消所有「等待重投」的投递：进程都在收尾，不再把消息重新喂回回调。
-    // 取消不等于消息可以消失 —— 见 `_cancelPendingDeliveries`。
-    // 正在执行的回调不替它下结论（它可能马上就要成功）：由它自己结算，卡死的由看门狗兜。
-    for (const key of Array.from(this.pendingDeliveries.keys())) {
-      this._cancelPendingDeliveries(subscriptionIdOfDelivery(key));
-    }
-    this.attempts.clear();
-    this.settledCopies.clear();
+      // 关闭时取消所有「等待重投」的投递：进程都在收尾，不再把消息重新喂回回调。
+      // 取消不等于消息可以消失 —— 见 `_cancelPendingDeliveries`。
+      // 正在执行的回调不替它下结论（它可能马上就要成功）：由它自己结算，卡死的由看门狗兜。
+      for (const key of Array.from(this.pendingDeliveries.keys())) {
+        this._cancelPendingDeliveries(subscriptionIdOfDelivery(key));
+      }
+      this.attempts.clear();
+      this.settledCopies.clear();
 
-    // 2. 调用具体的清理逻辑
-    await this._close?.();
+      // 2. 调用具体的清理逻辑
+      await this._close?.();
+    } finally {
+      // 复位由 close() 自己做，不挂在 init() 上：见 closeInFlight 的注释。
+      this.closeInFlight--;
+    }
   }
 
   /**
@@ -351,6 +393,8 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       id: subId,
       address,
       onReceive,
+      // 这一场关闭看不见这条（它的快照在之前），所以拆它的责任归 settle 那一脉。
+      bornWhileClosing: this.closeInFlight > 0,
     };
     // **先登记，再等 handle**。顺序反过来（Python `MailboxProvider.subscribe` 现在就是那个顺序）
     // 会把 await 窗口里的 `unsubscribe()` / `close()` 变成空操作：记录还不存在 → 没人负责拆 →
@@ -380,8 +424,13 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * 1. **拆除先发生**（`unsubscribe()` / `stop()` 在 handle 落地前跑过）：迟到的 handle
    *    必须补拆，否则就是一个没人认领的订阅永久留在 broker / 总线上。这条路径**不 reject**：
    *    退订不是错误，调用方拿到的是一个 `status: 'closed'` 的 Subscription。
-   * 2. **broker 拒绝订阅**：删登记后把 rejection 交给调用方；若拆除已经发生则静默收尾
+   * 2. **provider 正在关闭**（`close()` 已在跑，这条是快照之后插进来的）：同样作废。
+   *    表里此刻有它，但 `close()` 的快照里没有它——拆它的人已经走过去了，末尾那次 `clear()`
+   *    只会抹登记、不拆监听器（issue#11）。判据在 {@link MailboxProvider.closeInFlight}。
+   * 3. **broker 拒绝订阅**：删登记后把 rejection 交给调用方；若拆除已经发生则静默收尾
    *    （没人在等这个结果，也不能让它变成 unhandledRejection）。
+   *
+   * 两种作废都走 {@link MailboxProvider._retireLateHandle}：抹登记与拆 handle 必须同一条路做完。
    *
    * 拆完仍然有界：`close()` 不等这颗 promise（见 {@link MailboxProvider._teardownSubscription}），
    * 所以一个永不落地的 `_subscribe` 卡不住关闭，代价是那条订阅归 broker 自己负。
@@ -409,21 +458,39 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       throw error;
     }
 
-    managedSub.unsubscribeHandle = handle;
-    managedSub.handlePromise = undefined;
-
-    if (!this.subscriptions.has(subId)) {
-      // 迟到的 handle：补拆。报错只能日志——已经没有调用方在听（拆它的人已经返了）。
-      try {
-        await this._unsubscribe(subId, handle);
-      } catch (error) {
-        console.error(
-          `[${this.protocol}] Error unsubscribing ${subId} after it was torn down mid-subscribe:`,
-          error,
-        );
-      }
+    // settle 之后重新问一遍世界：上面那个 await 里什么都可能发生。「世界已经变了」有两种：
+    // 登记已经被拆掉，或者这条是在一场关闭的中途出生的（close() 的快照里没有它，
+    // 拆它的人已经走过去了——issue#11）。
+    const registered = this.subscriptions.get(subId);
+    const tornDown = registered === undefined || managedSub.bornWhileClosing === true;
+    if (registered) {
+      registered.unsubscribeHandle = handle;
+      registered.handlePromise = undefined;
+    }
+    if (tornDown) {
+      await this._retireLateHandle(subId, handle);
     }
     return this._createSubscriptionObject(subId, managedSub.address);
+  }
+
+  /**
+   * 拆一条「窗口里已经被摘掉、或落在一场正在进行的关闭里」的迟到 handle。
+   *
+   * 抹登记与拆监听器必须同一条路做完：`close()` 末尾那次 `clear()` 只抹登记，于是两者分开的
+   * 下场就是一个报 `closed` 的句柄加一个永久留在 broker / 总线上的监听器。
+   *
+   * 报错只能日志：已经没有调用方在听（拆它的人早就返了）。
+   */
+  private async _retireLateHandle(subId: string, handle: any): Promise<void> {
+    this.subscriptions.delete(subId);
+    try {
+      await this._unsubscribe(subId, handle);
+    } catch (error) {
+      console.error(
+        `[${this.protocol}] Error unsubscribing ${subId} after it was torn down mid-subscribe:`,
+        error,
+      );
+    }
   }
 
   /**
