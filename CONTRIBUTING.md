@@ -55,6 +55,12 @@ Based on your interests and experience, you can start with any of the following:
    `tsconfig.release.json` is **not** a check surface (`noEmit: false`, no `outDir`: `tsc -p` writes JS
    into `src/`); the published surface is checked by `pnpm build`.
 
+   In the other direction: this package's `dist/index.d.ts` **is** the type-check surface of the packages
+   built on it (`@mboxlabs/input`, and through it `@mboxlabs/input-inquirer`; `@isdk/tool-rpc`). They link
+   it through `package.json` `types`, so an edited `src` with a stale `dist` means they type-check against
+   a contract this repo no longer has — green, and meaningless. Rebuild with `pnpm build` (which passes
+   `--dts --dts-resolve` to tsup); `build-fast` emits no `.d.ts`, so it does not refresh that surface.
+
 5. **Commit your code**: Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 6. **Open a Pull Request**: Push your branch to GitHub and create a Pull Request to the `main` branch of the main repository. Please clearly describe the changes you have made in the PR description.
 

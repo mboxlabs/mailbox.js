@@ -54,6 +54,12 @@
    把它改回 `vitest run`。`tsconfig.release.json` **不是检查面**（`noEmit: false` 且没有 `outDir`，
    `tsc -p` 会把 JS 吐进 `src/`）；发布面由 `pnpm build` 过。
 
+   反方向同理：本包的 `dist/index.d.ts` **就是**建在它上面的那些包的类型检查面（`@mboxlabs/input`，
+   以及通过它的 `@mboxlabs/input-inquirer`；还有 `@isdk/tool-rpc`）。它们靠 `package.json` 的 `types`
+   链到这里，所以 `src` 改过而 `dist` 没重出，它们就是在**本仓库已经不存在的契约**上做类型检查——
+   全绿，但无效。重出走 `pnpm build`（它给 tsup 传 `--dts --dts-resolve`）；`build-fast` 不出 d.ts，
+   不算重出这份界面。
+
 5. **提交代码**：遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范进行提交。
 6. **发起 Pull Request**：将您的分支推送到 GitHub，并创建一个 Pull Request 到主仓库的 `main` 分支。请在 PR 描述中清晰说明您所做的更改。
 
