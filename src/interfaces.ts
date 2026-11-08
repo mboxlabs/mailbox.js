@@ -405,7 +405,15 @@ export interface MailboxSnapshot {
 }
 
 /**
- * 定义了所有具体通信方式必须实现的接口。
+ * 内核调用 provider 的**结构面**——这不是「实现路径」。
+ *
+ * **规范：provider 必须继承 {@link MailboxProvider}**（`class SlackProvider extends MailboxProvider`）。
+ * 基类里那套记账不在接口上：关闭时拆订阅、发送边界发 `mbx-send-id` 与系统头、广播的结算 barrier、
+ * 处置与尝试记账、能力探测。**直接实现本接口不是受支持的写法**：那等于自己承担上面全部，而内核
+ * 既不检查也不代劳（`registerProvider()` 只读 `provider.protocol`，而本接口是结构型的——鸭子类型
+ * 对象过编译也过运行）。实测过漏掉「关闭时拆订阅」那一格：broker 侧监听器留着、句柄照报 `active`、
+ * `stop()` → `start()` 后一份信两次副作用，全程无声（规范：`wiki/delivery-semantics.md` §1）。
+ *
  * Provider 在发送时，有责任向 headers 中注入 `mbx-sent-at` 时间戳 (ISO 8601 格式)。
  */
 export interface IMailboxProvider {
@@ -417,7 +425,23 @@ export interface IMailboxProvider {
   init?(): Promise<void>;
 
   /**
-   * 关闭 Provider。用于释放资源、断开连接等。
+   * 关闭 Provider：释放资源、断开连接，**并把 `subscribe()` 注册过的订阅全部退掉**。
+   *
+   * **收尾写在 `_close()`，不写在 `close()`**：`close()` 是基类拥有的入口，那段真拆除（拆每条订阅、
+   * 取消等重投的投递、清台账、置关闭状态）住在它里面，跑完才调 `_close()`——而 `_close()` 就在
+   * `close()` 下面两行，重写错对象是这条契约上最容易犯的错。确实要重写 `close()`（赶在拆订阅之前
+   * 做事），重写内部**必须回基类**：`await super.close()`。**只调 `_close()` 不算**：上面那段仍然
+   * 一行都没跑。
+   *
+   * 漏掉的后果不是「订不上」而是**拆不掉**：`stop()` 之后 broker 侧监听器还在、句柄照报 `active`，
+   * `stop()` → `start()` 再订一次就是一份信两次副作用。
+   *
+   * 不继承基类的写法（上面的实现路径规范之外）没人代劳：`registerProvider()` 只读
+   * `provider.protocol`（`src/mailbox.ts:118`），登记表面就是你自己那个字段，内核连「现在挂了几条」
+   * 都问不出来，因此既不能代拆也不能报警（python 端口同形实测：`1 0` → `2 投递次数 2`，全程无声）。
+   * 自查面不依赖内核：`stop()` 之后自己的 `status()` 里挂着的订阅数必须为 0，拆过的句柄不得再报
+   * `active`（`mem:` 就是为此具名了 `mem.subscriberCount`）。规范：`wiki/delivery-semantics.md` §1。
+   *
    * 不会销毁积压消息（见 {@link IMailboxProvider.clear}）。
    */
   close?(): Promise<void>;
@@ -468,8 +492,8 @@ export interface IMailboxProvider {
    * - provider 回话拒绝（`_subscribe` reject）才是 rejection，与 `send()` 对称。
    *
    * 实现提示：继承 {@link MailboxProvider} 时，`_subscribe` **不要求 async**（v1 的同步钩子不改
-   * 也能跑），但基类会等它。直接实现本接口的 provider 请自己保证：`await subscribe()` 返回后
-   * 投递就能开始，而且订阅在 await 窗口里被退订时不要把 `undefined` 当句柄拆。
+   * 也能跑），但基类会等它。在基类之外自己实现的 provider（不符合接口顶部的实现路径）请自己保证：
+   * `await subscribe()` 返回后投递就能开始，而且订阅在 await 窗口里被退订时不要把 `undefined` 当句柄拆。
    *
    * **关闭与建立交错时这条作废**（已判的语义，见 `wiki/delivery-semantics.md` §1）：登记必须在
    * `await` **之前**落表，否则 `close()` / `stop()` 在窗口里看不见它、没人负责拆；handle 迟到时
@@ -487,7 +511,7 @@ export interface IMailboxProvider {
    *
    * 实现注意：不认识 `peek` 的 provider **不能默默把它当普通 fetch 跑**（那会把消息取走，
    * 而调用方以为自己在只读快照）。继承 {@link MailboxProvider} 基类的实现会在入口报错；
-   * 直接实现本接口的 provider 必须自己处理或拒绝 `peek`。
+   * 在基类之外自己实现的 provider（不符合接口顶部的实现路径）必须自己处理或拒绝 `peek`。
    */
   fetch(address: URL, options: PeekFetchOptions): Promise<MailMessage[]>;
   fetch(address: URL, options: ManualAckFetchOptions): Promise<AckableMailMessage | null>;

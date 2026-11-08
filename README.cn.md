@@ -525,7 +525,7 @@ failedDeliveries)`（继承 `MemoryProvider`）。
    ### 6. 结算兜底与 provider 契约（超时、竞态）
 
    一条广播只有当**每一次投递都结算**之后才算结算——§3 那套投递级回队规则止因此成立，隐患也正好藏
-   在这里。四道兜底：
+   在这里。六道兜底：
    - **卡死的回调不会让消息隐形。** 每次投递*尝试*都被 `provider.deliverySettleTimeout` 监控
      （默认 `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30 秒）。到期后该尝试按 `cancelled` 结算：消息回到
      `fetch()` 兜底（或死信钩子），并记一条告警。看门狗只对单次尝试计时，退避等待不计时，因此不会
@@ -549,6 +549,17 @@ failedDeliveries)`（继承 `MemoryProvider`）。
      barrier 没记到投递副本时（投递没走基类入口 / 同 id 并发广播的后一个 barrier / 副本表撞上
      `MAX_SETTLED_COPIES`）会退回不带计数的 `_send` 那份，所以读计数要容 `undefined`。
      详见 `wiki/delivery-semantics.md` §7.3。
+
+   - **Provider 必须继承 `MailboxProvider`，而 `close()` 归基类。** 继承基类是受支持的实现路径：那些手写
+     最容易做错的记账都在基类里——发送边界的 `mbx-send-id` 与系统头、投递级结算与重试、广播 barrier，
+     以及**关闭时拆掉全部订阅**。你自己的收尾写在 `_close()`，它就在 `close()` 下面两行（写错对象是这条
+     契约上最容易犯的错）。确实要赶在拆订阅**之前**做事，才重写 `close()`，而且重写内部必须
+     `await super.close()`——**只调 `this._close()` 不算**：那段真拆除住在基类的 `close()` 里，它跑完才换
+     `_close()`。直接实现 `IMailboxProvider` 不是受支持的写法：`registerProvider()` 不做 `instanceof`
+     检查，内核照样收下，看不见你的订阅表，既不代拆也不报警。后果不是“订不上”而是**拆不掉**：`stop()`
+     之后 broker 侧监听器还在、句柄照报 `active`，`stop()` → `start()` 再订一次就是一份信两次副作用。
+     自查不依赖内核：`stop()` 之后你自己的 `status()` 里挂着的订阅数必须为 0，拆过的句柄不得再报
+     `active`（`mem:` 就是为此具名了 `mem.subscriberCount`）。规范见 `wiki/delivery-semantics.md` §1。
 
    自己实现**广播型** provider（`broadcastDeliveries = true`）时，`_send` 必须挂上结算 barrier——而且
    是同步挂上（在任何 `await` 之前）：

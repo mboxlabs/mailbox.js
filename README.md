@@ -595,7 +595,7 @@ custom timeout, never expires.
 ### 6. Settlement Safety Nets (timeouts, races, provider contracts)
 
 A broadcast is only settled once **every** delivery of it settles — that is what makes the
-per-delivery requeue rule in §3 work, and it is also where the hazards hide. Four safety nets:
+per-delivery requeue rule in §3 work, and it is also where the hazards hide. Six safety nets:
 
 - **A stuck callback cannot make a message invisible.** Every delivery _attempt_ is watched by
   `provider.deliverySettleTimeout` (default `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30s). When it
@@ -630,6 +630,21 @@ per-delivery requeue rule in §3 work, and it is also where the hazards hide. Fo
   entry point, a second barrier for a concurrent same-`id` broadcast, or the copy table hitting
   `MAX_SETTLED_COPIES`) falls back to the unstamped `_send` object, so treat a missing counter as
   possible. Details: `wiki/delivery-semantics.md` §7.3.
+- **Providers extend `MailboxProvider`, and `close()` belongs to the base class.** Extending the base is
+  the supported implementation route: it owns the bookkeeping that is hardest to get right by hand — the
+  send boundary's `mbx-send-id` and system headers, delivery settlement and retries, the broadcast
+  barrier, and **tearing down every subscription when it closes**. Your cleanup goes in `_close()`, which
+  sits two lines below `close()` (overriding the wrong one is the easiest mistake in this contract).
+  Override `close()` only when you need work _before_ the teardown, and the override must
+  `await super.close()` — **`this._close()` on its own does not count**: the teardown lives in the base
+  `close()`, and it runs before `_close()`. Implementing `IMailboxProvider` directly is not a supported
+  route: `registerProvider()` does no `instanceof` check, so the kernel takes the object, cannot see your
+  subscription table, and neither repairs nor reports anything. The failure mode is not "cannot
+  subscribe" but **cannot unsubscribe** — after `stop()` the broker-side listener is still attached and
+  the handle still reports `active`, and after `stop()` → `start()` one letter produces two side effects.
+  The self-check does not depend on the kernel: after `stop()`, your own `status()` must report zero
+  attached subscriptions, and a torn-down handle must stop reporting `active` (`mem:` names one for
+  exactly this — `mem.subscriberCount`). Spec: `wiki/delivery-semantics.md` §1.
 
 If you implement your own **broadcast** provider (`broadcastDeliveries = true`), `_send` must
 attach the settlement barrier — synchronously, before any `await`:

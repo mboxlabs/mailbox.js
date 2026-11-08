@@ -115,6 +115,18 @@ const MAX_SETTLED_COPIES = 500;
 /** 投递结算原因。`ok` 表示回调成功。 */
 type DeliveryOutcome = 'ok' | 'retriable' | 'fatal' | 'cancelled';
 
+/**
+ * Provider 的基类——**实现新 provider 请从这里继承**（规范见 `wiki/delivery-semantics.md` §1）。
+ *
+ * 基类拥有那些第三方最容易做错、又最难自己做对的记账：发送边界发 `mbx-send-id` 与系统头、投递级
+ * 结算与重试、广播的 barrier、处置与尝试记账、能力探测，以及**关闭时拆掉全部订阅**。子类要填的是
+ * `_xxx()` 那一层钩子：`_send()` / `_subscribe()` / `_fetch()` / `_peek()` / `_ack()` / `_nack()` /
+ * `_init()` / `_close()` / `_status()`。
+ *
+ * 直接实现 {@link IMailboxProvider} 不是受支持的写法：接口只是内核调你的结构面，上面那些记账一分都
+ * 不在里面，而内核不会检查（`registerProvider()` 只读 `protocol`），也不会代劳。写错的形状实测过：
+ * 关闭时漏拆订阅 ⇒ 监听器留在 broker 上、句柄照报 `active`、`stop()` → `start()` 后一份信两次副作用。
+ */
 export abstract class MailboxProvider implements IMailboxProvider, CapabilityDeclaration {
   public readonly protocol: string;
   protected readonly subscriptions: Map<string, ManagedSubscription> = new Map();
@@ -280,6 +292,13 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
   /**
    * 关闭 Provider。
    * 此方法会自动取消该 Provider 下所有活跃的订阅，然后调用子类的 `_close` 进行具体清理。
+   *
+   * **给子类的收尾钩子是 `_close()`，不是这个 `close()`**：入口归基类，因为那段真拆除（拆每条订阅、
+   * 取消等重投的投递、清台账、置关闭状态）必须跑完。`_close()` 就在下面两行，重写错了对象是这条契约上
+   * 最容易犯的错，而后果是**拆不掉**：监听器留在 broker 上、句柄照报 `active`、`stop()` → `start()` 后
+   * 一份信两次副作用。确实要赶在拆订阅**之前**做事，就重写 `close()` 并 `await super.close()`——
+   * 不回到基类，上面这段一行都不跑；**只调 `this._close()` 也不算**，那段真拆除住在基类的 `close()` 里，
+   * 它跑完才换 `_close()`（规范：`wiki/delivery-semantics.md` §1）。
    *
    * 注意：`close()` **不**清消息队列——“关掉通道”不等于“销毁在途数据”。要一并清掉积压消息
    * 用 `Mailbox#stop({ purge: true })` 或 {@link MailboxProvider.clear}。
