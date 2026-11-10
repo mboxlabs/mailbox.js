@@ -141,6 +141,13 @@ export const MAX_PARKED_PER_TOPIC = 100;
  */
 export class MailMessageQueue<T extends { id: string }> {
   private queues: Map<string, T[]> = new Map();
+  /**
+   * 「省略 `requeue` 的 `nack`」只告警一次。
+   *
+   * 这条告警讲的是 3.0.0 的默认值翻转（见 {@link MailMessageQueue.warnNackDefault}），
+   * 说一次就够——它不是「这次处置没落定」那种需要逐次报告的事实。
+   */
+  private nackDefaultWarned = false;
   // Stores in-flight messages with their original topic for reliable requeueing.
   //
   // **键是「哪一份信」（{@link MailMessageQueue.copyKeyOf}），不是消息 id。**
@@ -313,7 +320,15 @@ export class MailMessageQueue<T extends { id: string }> {
     return {
       ...handedOff,
       ack: async () => this.ack(key, leaseId),
-      nack: async (requeue = false) => this.nack(key, requeue, leaseId),
+      // 句柄这一面也允许省略 `requeue`（今天 = 丢弃），所以它同样属于 3.0.0 会静默翻转的那一批：
+      // 省略时在这里告警（直接调用那一侧自己会告警，两边共用同一个实例旗标），行为不动
+      // （`requeue === true` 与旧的默认参数等价）。
+      nack: async (requeue?: boolean) => {
+        if (requeue === undefined) {
+          this.warnNackDefault();
+        }
+        return this.nack(key, requeue === true, leaseId)
+      },
     };
   }
 
@@ -513,10 +528,21 @@ export class MailMessageQueue<T extends { id: string }> {
    *
    * @param key 份号（见 {@link ack}）。
    * @param requeue If true, the copy is re-added to the front of its own queue.
+   *
+   *   **这个 flag 在 `3.0.0` 会被去掉**：那之后只有两个具名动作——
+   *   `ack(key)` 结束这份拷贝（不再回来），`nack(key)` 把这份拷贝退回它自己那条队列。
+   *   所以 `requeue` 省略时今天按「丢弃」处理（等价于 `ack(key)`），`3.0.0` 起同一个无参调用
+   *   会改判成「退回」。带参数的调用在类型层就会被挡住，**省略参数的那一批挡不住**，
+   *   故整个 2.x 对省略写法告警一次（行为不动）。要丢弃就写 `ack`，要退回就带上 flag。
    * @param leaseId 第几次交出去（见 {@link ack}）：迟到的旧句柄不能把别人手里的租约退回队列。
    * @returns `true` = 处置真的落定；`false` = 重复处置 / 已被重投 / 已被丢弃。
    */
   public nack(key: string, requeue: boolean, leaseId?: string): boolean {
+    // 类型上这个参数是必填的；这里接的是 JS 调用方 / `as any` 那一侧——正是编译挡不住、
+    // 到 3.0.0 会静默换语义的那一批。
+    if ((requeue as boolean | undefined) === undefined) {
+      this.warnNackDefault();
+    }
     const flight = this.inFlight.get(key);
     if (!flight) {
       return false;
@@ -529,6 +555,20 @@ export class MailMessageQueue<T extends { id: string }> {
       this.requeue(flight.topic, flight.message);
     }
     return true;
+  }
+
+  /** 队列句柄 / 直接调用省略了 `requeue`：把 3.0.0 的默认值翻转挑明，一次就够。 */
+  private warnNackDefault(): void {
+    if (this.nackDefaultWarned) {
+      return;
+    }
+    this.nackDefaultWarned = true;
+    console.warn(
+      '[MailMessageQueue] `nack()` was called without the `requeue` flag. Today an omitted flag means "discard" ' +
+        '— identical to `ack(key)`. In 3.0.0 the flag goes away and `nack(key)` will mean "put this copy back at ' +
+        'the head of the queue it came from", so this exact call silently flips from discard to requeue. ' +
+        'Write `ack(key)` if you mean discard; keep passing the `requeue` flag if you mean requeue.',
+    );
   }
 
   /**
