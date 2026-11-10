@@ -6,7 +6,7 @@
   "homepage": "https://github.com/mboxlabs/mailbox.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/mboxlabs/mailbox.js.git"
+    "url": "git+https://github.com/mboxlabs/mailbox.js.git"
   },
   "description": "A lightweight, pluggable mailbox kernel inspired by the Erlang Actor Model. It treats all communication as delivering a message to an address, enabling fault-tolerant, distributed, and human-computer collaborative systems.",
   "main": "./dist/index.js",
