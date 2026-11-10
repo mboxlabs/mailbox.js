@@ -644,7 +644,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    *
    * @deprecated 用 {@link settleDelivery}(message, 'unhandled' | 'discard')。布尔参数在
    *   `v1.0.0` 就发布了，直接去掉会让老代码里的 `nack(false)` 静默变成回队（从丢弃变无限
-   *   重投），所以它在 1.x 里必须是完整 alias，到 2.0 再删。
+   *   重投），所以它在 2.x 里必须是完整 alias，到拆包的 `3.0.0` 再删。
    */
   protected async nack(message: MailMessage, requeue: boolean) {
     await this.settleDelivery(message, requeue ? 'unhandled' : 'discard');
@@ -716,8 +716,8 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
    * For providers that don't support ACK (like in-memory), this can be an empty async function.
    *
-   * @deprecated 用 {@link _settle}(message, 'handled')。它在 `v1.0.0` 就发布了，所以 1.x 里
-   *   继续支持（基类会把 `handled` 转给它），2.0 删。
+   * @deprecated 用 {@link _settle}(message, 'handled')。它在 `v1.0.0` 就发布了，所以 2.x 里
+   *   继续支持（基类会把 `handled` 转给它），拆包的 `3.0.0` 删。
    *
    * `message` 是**本次投递的副本**（浅拷贝，带 `mbx-attempt` / `mbx-round`，开了重试还有
    * `mbx-max-attempts`），与交给订阅回调的是同一份；**不是** `_send` 那个对象，也不是 `post()`
@@ -737,7 +737,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * [Subclass Responsibility - Optional] Provides NACK capability.
    *
    * @deprecated 用 {@link _settle}(message, 'unhandled' | 'discard')。布尔参数在 `v1.0.0` 就发布了，
-   *   所以 1.x 里它仍是完整入口（`requeue = true` ≡ `unhandled`，`false` ≡ `discard`），2.0 删。
+   *   所以 2.x 里它仍是完整入口（`requeue = true` ≡ `unhandled`，`false` ≡ `discard`），拆包的 `3.0.0` 删。
    *
    * 这是 provider 表达「放弃」的**唯一**入口，两个参数合起来就是内核的全部判定：
    * - `requeue = true`：回队（回到哪个位置、重投几次，由 provider 定，内核不管）；

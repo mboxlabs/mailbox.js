@@ -29,7 +29,7 @@ function foldMailboxAddress(address: URL): string {
  *
  * @deprecated 内核不再调用它（`src/mailbox.ts` 一次都不用）。它随
  * {@link getCanonicalMailboxAddressIdentifier} 一起属于 `mem:` 形状的折叠规则；
- * 2.0.0 会从核心导出面移除，provider 需要就自带一份。
+ * 拆包那一版（`3.0.0`）会从核心导出面移除，provider 需要就自带一份。
  *
  * @param address 待校验的地址。
  * @param context 出错信息里带上的调用点名字（例如 `'peekParked()'`），便于定位。
@@ -108,7 +108,7 @@ export function parseMailboxAddress(input: string | URL, context = 'mailbox addr
  *
  * @deprecated 公开契约里不该有它（`MailboxAddressSnapshot.canonicalId` 已移除）。
  * `MemoryProvider` 内部仍用它给队列取键；第三方 provider 需要同款折叠就自带一份。
- * 2.0.0 会从核心导出面移除——`mailbox-input` 那类调用方届时改用自己的 helper。
+ * 拆包那一版（`3.0.0`）会从核心导出面移除——`mailbox-input` 已经不再调它（实测）。
  *
  * @param address The URL object representing the mailbox address.
  * @returns A canonical string identifier for the mailbox address.
