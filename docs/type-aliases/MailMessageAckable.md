@@ -8,7 +8,7 @@
 
 > **MailMessageAckable**\<`T`\> = `T` & `object`
 
-Defined in: [lib/MessageQueue.ts:7](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/MessageQueue.ts#L7)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:10](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L10)
 
 Represents a message that can be manually acknowledged or negatively acknowledged.
 
@@ -16,19 +16,21 @@ Represents a message that can be manually acknowledged or negatively acknowledge
 
 ### ack
 
-> **ack**: () => `Promise`\<`void`\>
+> **ack**: () => `Promise`\<`boolean` \| `void`\>
 
-Acknowledges the message, confirming successful processing.
+结束这次取信（= 处置值 `handled`）。
 
 #### Returns
 
-`Promise`\<`void`\>
+`Promise`\<`boolean` \| `void`\>
+
+有没有落定；`void` = 实现不报告（公开契约里的 `Ackable` 也是这个形状）。
 
 ### nack
 
-> **nack**: (`requeue?`) => `Promise`\<`void`\>
+> **nack**: (`requeue?`) => `Promise`\<`boolean` \| `void`\>
 
-Negatively acknowledges the message, indicating failure to process.
+处置这次取信：`requeue` = 回队（`unhandled`），省略 / `false` = 放弃（`discard`）。
 
 #### Parameters
 
@@ -36,11 +38,11 @@ Negatively acknowledges the message, indicating failure to process.
 
 `boolean`
 
-If true, the message will be added back to the front of the queue. Defaults to false.
-
 #### Returns
 
-`Promise`\<`void`\>
+`Promise`\<`boolean` \| `void`\>
+
+有没有落定。
 
 ## Type Parameters
 

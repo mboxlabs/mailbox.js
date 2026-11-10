@@ -6,11 +6,15 @@
 
 # Class: AttemptLedger
 
-Defined in: [lib/retry.ts:87](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L87)
+Defined in: [packages/mailbox/src/lib/retry.ts:91](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L91)
 
-按「订阅者 + 消息」维度记录已经尝试过几次。
+按**投递身份**记录已经尝试过几次：一个订阅者 × 一份信（`deliveryKey`）。
 
-键必须包含订阅者：订阅是广播，某个订阅者失败不代表其他订阅者也失败，重试次数不能混在一起算。
+两个维度都必须在键里：
+- 订阅者：订阅是广播，某个订阅者失败不代表其他订阅者也失败，次数不能混算。
+- 哪一份信：`id` 是发送方的名字，可以重复。只按 id 记，两封同名信就共用一本预算——
+  后到那封第一趟就被判「重试耗尽」，先到那封反倒多拿到一趟。
+
 条目带 TTL，避免长期运行的进程里台账无限增长。
 
 ## Constructors
@@ -19,7 +23,7 @@ Defined in: [lib/retry.ts:87](https://github.com/isdk/mailbox.js/blob/b2cd56b816
 
 > **new AttemptLedger**(`ttlMs?`): `AttemptLedger`
 
-Defined in: [lib/retry.ts:90](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L90)
+Defined in: [packages/mailbox/src/lib/retry.ts:94](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L94)
 
 #### Parameters
 
@@ -39,7 +43,7 @@ Defined in: [lib/retry.ts:90](https://github.com/isdk/mailbox.js/blob/b2cd56b816
 
 > **get** **size**(): `number`
 
-Defined in: [lib/retry.ts:120](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L120)
+Defined in: [packages/mailbox/src/lib/retry.ts:119](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L119)
 
 ##### Returns
 
@@ -51,7 +55,7 @@ Defined in: [lib/retry.ts:120](https://github.com/isdk/mailbox.js/blob/b2cd56b81
 
 > **clear**(): `void`
 
-Defined in: [lib/retry.ts:116](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L116)
+Defined in: [packages/mailbox/src/lib/retry.ts:115](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L115)
 
 #### Returns
 
@@ -61,19 +65,15 @@ Defined in: [lib/retry.ts:116](https://github.com/isdk/mailbox.js/blob/b2cd56b81
 
 ### count()
 
-> **count**(`subscriptionId`, `messageId`): `number`
+> **count**(`key`): `number`
 
-Defined in: [lib/retry.ts:107](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L107)
+Defined in: [packages/mailbox/src/lib/retry.ts:106](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L106)
 
 当前已尝试次数（未记录过则为 0）。
 
 #### Parameters
 
-##### subscriptionId
-
-`string`
-
-##### messageId
+##### key
 
 `string`
 
@@ -85,19 +85,15 @@ Defined in: [lib/retry.ts:107](https://github.com/isdk/mailbox.js/blob/b2cd56b81
 
 ### record()
 
-> **record**(`subscriptionId`, `messageId`): `number`
+> **record**(`key`): `number`
 
-Defined in: [lib/retry.ts:97](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L97)
+Defined in: [packages/mailbox/src/lib/retry.ts:97](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L97)
 
 记录一次尝试，返回这是第几次。
 
 #### Parameters
 
-##### subscriptionId
-
-`string`
-
-##### messageId
+##### key
 
 `string`
 
@@ -109,19 +105,15 @@ Defined in: [lib/retry.ts:97](https://github.com/isdk/mailbox.js/blob/b2cd56b816
 
 ### reset()
 
-> **reset**(`subscriptionId`, `messageId`): `void`
+> **reset**(`key`): `void`
 
-Defined in: [lib/retry.ts:112](https://github.com/isdk/mailbox.js/blob/b2cd56b816fefad5a76735a170d05ff4d9372952/src/lib/retry.ts#L112)
+Defined in: [packages/mailbox/src/lib/retry.ts:111](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L111)
 
-处理成功后清零，让同 id 的消息日后还能重试。
+处理成功后清零，让这一份日后还能重试。
 
 #### Parameters
 
-##### subscriptionId
-
-`string`
-
-##### messageId
+##### key
 
 `string`
 

@@ -17,34 +17,49 @@ Before you start, please ensure you have:
 
 Based on your interests and experience, you can start with any of the following:
 
-| Type | Suitable For | Entry Point |
-| :--- | :--- | :--- |
-| 🐞 **Bug Fixes** | All developers | [View Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
-| 📚 **Documentation** | Beginner-friendly | [View Documentation Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation) |
-| 🧩 **New Provider** | Experience with specific protocols | [Propose a Provider](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider) |
-| 💡 **New Feature** | Power users | [Propose a New Feature](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement) |
+| Type                 | Suitable For                       | Entry Point                                                                                                                   |
+| :------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| 🐞 **Bug Fixes**     | All developers                     | [View Good First Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
+| 📚 **Documentation** | Beginner-friendly                  | [View Documentation Issues](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Adocumentation)       |
+| 🧩 **New Provider**  | Experience with specific protocols | [Propose a Provider](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aprovider)                   |
+| 💡 **New Feature**   | Power users                        | [Propose a New Feature](https://github.com/mboxlabs/mailbox.js/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)             |
 
 ### 3. Development and Submission
 
 1. **Create a branch**: Create a descriptive branch from the `main` branch, such as `feat/add-new-provider` or `fix/login-bug`.
 
-    ```shell
-    git checkout -b feat/your-feature-name
-    ```
+   ```shell
+   git checkout -b feat/your-feature-name
+   ```
 
 2. **Implement your changes**: Make your code modifications. Please follow the coding standards below.
 3. **Write tests**: Add or update unit tests for your changes. All core logic, edge cases, and error handling should be covered.
 4. **Run checks**: Ensure all tests and style checks pass.
 
-    ```shell
-    pnpm test
-    pnpm style
+   ```shell
+   pnpm test
+   pnpm style
 
-    # The Python and Rust ports ship their own suites; run them too when you touch
-    # behaviour shared across the three implementations
-    (cd python && python3 -m pytest -q)
-    (cd rust && cargo test)
-    ```
+   # The Mailbox family is three repositories: mailbox.js (this one), mailbox.py and mailbox.rust.
+   # When a change touches behaviour shared across the three, clone the ports next to this repo
+   # (they are not tracked here) and run their suites too:
+   #   git clone git@github.com:mboxlabs/mailbox.py.git   python
+   #   git clone git@github.com:mboxlabs/mailbox.rust.git rust
+   (cd python && python3 -m pytest -q)
+   (cd rust && cargo test)
+   ```
+
+   `pnpm test` runs `pnpm run typecheck` first: `vitest` only transpiles, it does not type-check, so a
+   change the downstream code has not caught up with would otherwise sail through green. That wiring is
+   pinned by `test/typecheck-runs-before-tests.test.ts` — do not "speed it up" back to `vitest run`.
+   `tsconfig.release.json` is **not** a check surface (`noEmit: false`, no `outDir`: `tsc -p` writes JS
+   into `src/`); the published surface is checked by `pnpm build`.
+
+   In the other direction: this package's `dist/index.d.ts` **is** the type-check surface of the packages
+   built on it (`@mboxlabs/input`, and through it `@mboxlabs/input-inquirer`; `@isdk/tool-rpc`). They link
+   it through `package.json` `types`, so an edited `src` with a stale `dist` means they type-check against
+   a contract this repo no longer has — green, and meaningless. Rebuild with `pnpm build` (which passes
+   `--dts --dts-resolve` to tsup); `build-fast` emits no `.d.ts`, so it does not refresh that surface.
 
 5. **Commit your code**: Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 6. **Open a Pull Request**: Push your branch to GitHub and create a Pull Request to the `main` branch of the main repository. Please clearly describe the changes you have made in the PR description.
@@ -66,10 +81,10 @@ The project uses Prettier and ESLint to enforce a consistent code style. Before 
 
 We use [Vitest](https://vitest.dev/) for unit testing.
 
-This package ships three ports. The Python port is covered by `pytest` (`python3 -m pytest -q`
-inside `python/`) and the Rust port by `cargo test` (inside `rust/`). Delivery semantics —
+The Mailbox family ships three implementations in three repositories: this package, [mailbox.py](https://github.com/mboxlabs/mailbox.py) (covered by `pytest`) and [mailbox.rust](https://github.com/mboxlabs/mailbox.rust) (covered by `cargo test`). A `python/` or `rust/` directory next to this one is only a local development layout — it is not part of this repository. Delivery semantics —
 subscribe versus fetch, ack/nack and in-flight timeouts, requeue deduplication, and the opt-in
-retry policy — are specified in all three, so changing them requires matching tests in each.
+retry policy — are specified once (in `README.md`) and implemented in all three, so changing them
+requires matching tests in each.
 
 ### Required Coverage
 
@@ -95,15 +110,15 @@ We follow the Conventional Commits specification. The format is as follows:
 [optional body]
 ```
 
-| Type | Description |
-| :--- | :--- |
-| `feat` | A new feature |
-| `fix` | A bug fix |
-| `docs` | Documentation only changes |
-| `test` | Adding missing tests or correcting existing tests |
-| `refactor` | A code change that neither fixes a bug nor adds a feature |
-| `style` | Changes that do not affect the meaning of the code (white-space, formatting, etc) |
-| `chore` | Changes to the build process or auxiliary tools and libraries |
+| Type       | Description                                                                       |
+| :--------- | :-------------------------------------------------------------------------------- |
+| `feat`     | A new feature                                                                     |
+| `fix`      | A bug fix                                                                         |
+| `docs`     | Documentation only changes                                                        |
+| `test`     | Adding missing tests or correcting existing tests                                 |
+| `refactor` | A code change that neither fixes a bug nor adds a feature                         |
+| `style`    | Changes that do not affect the meaning of the code (white-space, formatting, etc) |
+| `chore`    | Changes to the build process or auxiliary tools and libraries                     |
 
 **Example**:
 
@@ -116,12 +131,30 @@ feat(mailbox): add xxx option to fetch
 
 ## 📦 Release Process (for Maintainers)
 
-The release process is automated by `standard-version`, which generates the `CHANGELOG.md` and tags the version based on Conventional Commits.
+The release process is automated by `commit-and-tag-version` (run through `pnpm dlx`), which generates the `CHANGELOG.md` and tags the version based on Conventional Commits. It neither publishes nor pushes: `pnpm publish` and `git push --follow-tags` stay manual.
+
+The tool is pinned to an exact version, `commit-and-tag-version@12.7.3`. `@12` would be a floating major range:
+every future 12.x patch would then get to decide how the changelog renders, with no lockfile in this repo to
+argue with. The `///` regression starts at `13.0.0` — its `hosted-git-info` can no longer read a repository whose
+name ends in `.js`, so host/user/project come out empty and the links collapse to
+`](///compare/v1.0.0...v2.0.0)`, with commit references degraded to bare SHAs. Measured on this history:
+`12.5.2` and `12.7.3` render correctly; `13.0.0`, `13.1.0`, `13.1.2` do not. Test a link before raising the pin.
 
 ```shell
-# Preview the upcoming version and changelog
-pnpm release -- --dry-run
+# Preview the version and the changelog without touching the repo
+pnpm dlx commit-and-tag-version@12.7.3 --dry-run
 
 # Official release
 pnpm release
 ```
+
+`pnpm release -- --dry-run` is **not** a read-only preview: pnpm appends the flag to the last command in the
+chain only, so `clean`, the docs rebuild, and the `docs` commit all still happen before anything is previewed.
+Preview with the command above instead.
+
+Publish with `pnpm publish`, from inside the `@isdk/ai-tools` workspace — not with `npm publish`. The package's
+one runtime dependency is declared as `"@isdk/hash": "workspace:^"`, and only pnpm rewrites that protocol into a
+real range (measured: `^0.1.1`). Outside the workspace, `pnpm pack` already fails with
+`ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL`; `npm publish` would put a range no consumer package manager can
+resolve in front of users. Expect `--no-git-checks` when the release commit has not been pushed yet, and publish
+the sibling package first if the version it points at is not on the registry.

@@ -12,12 +12,12 @@
 
 ## 🌟 Why Mailbox?
 
-| Traditional Way | Mailbox Way |
-|---|---|
-| ❌ Shared State + Locks | ✅ Isolated Mailboxes + Messages |
-| ❌ Callback Hell | ✅ Seamless `async/await` Integration |
-| ❌ Complex Human-Machine Collaboration | ✅ Human = A Mailbox Address |
-| ❌ Difficult Offline Scenarios | ✅ Automatic Message Buffering & Retry |
+| Traditional Way                        | Mailbox Way                            |
+| -------------------------------------- | -------------------------------------- |
+| ❌ Shared State + Locks                | ✅ Isolated Mailboxes + Messages       |
+| ❌ Callback Hell                       | ✅ Seamless `async/await` Integration  |
+| ❌ Complex Human-Machine Collaboration | ✅ Human = A Mailbox Address           |
+| ❌ Difficult Offline Scenarios         | ✅ Automatic Message Buffering & Retry |
 
 ### Erlang Inspiration
 
@@ -29,11 +29,11 @@
 
 Mailbox is **deeply inspired by the Erlang Actor Model**, but we've made key evolutions:
 
-| Erlang (1986) | Mailbox (Today) | Why It Matters |
-|---|---|---|
-| `Pid ! Message` | `send({ to: 'protocol://address' })` | **Address as Identity, Protocol as Route**: The `address` part is the mailbox's unique ID. The `protocol` (e.g., `mem`, `mailto`) is for routing. The same address can be reached via different protocols. |
-| In-process FIFO Mailbox | Pluggable Providers | **Transport Agnostic**: Seamlessly switch between memory/email/telegram/Mastodon |
-| Intra-node Communication | Cross-network, Cross-organization | **Truly Distributed**: Humans and machines participate as equals |
+| Erlang (1986)            | Mailbox (Today)                      | Why It Matters                                                                                                                                                                                             |
+| ------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Pid ! Message`          | `send({ to: 'protocol://address' })` | **Address as Identity, Protocol as Route**: The `address` part is the mailbox's unique ID. The `protocol` (e.g., `mem`, `mailto`) is for routing. The same address can be reached via different protocols. |
+| In-process FIFO Mailbox  | Pluggable Providers                  | **Transport Agnostic**: Seamlessly switch between memory/email/telegram/Mastodon                                                                                                                           |
+| Intra-node Communication | Cross-network, Cross-organization    | **Truly Distributed**: Humans and machines participate as equals                                                                                                                                           |
 
 > 💡 **Our Position**:
 > **Not a JavaScript clone of Erlang, but a modern expression of the Actor philosophy** —
@@ -43,12 +43,12 @@ Mailbox is **deeply inspired by the Erlang Actor Model**, but we've made key evo
 
 ### 📮 What Problems Do We Solve?
 
-| Traditional World | Mailbox World |
-|---|---|
-| ❌ "Service must be online to be called" | ✅ **Delivery is Success** — Don't care about the recipient's state |
-| ❌ "Humans must respond in real-time" | ✅ **Human = An Address** — Process at your own pace |
-| ❌ "Cross-org collaboration requires API integration" | ✅ **Email is the API** — Zero integration cost |
-| ❌ "Offline mobile app = Paralyzed functionality" | ✅ **Offline is the Norm** — Messages are automatically buffered |
+| Traditional World                                     | Mailbox World                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------- |
+| ❌ "Service must be online to be called"              | ✅ **Delivery is Success** — Don't care about the recipient's state |
+| ❌ "Humans must respond in real-time"                 | ✅ **Human = An Address** — Process at your own pace                |
+| ❌ "Cross-org collaboration requires API integration" | ✅ **Email is the API** — Zero integration cost                     |
+| ❌ "Offline mobile app = Paralyzed functionality"     | ✅ **Offline is the Norm** — Messages are automatically buffered    |
 
 ### 💡 Fusing Inspirations: Erlang's Wisdom + The Real World
 
@@ -94,47 +94,60 @@ A MailAddress is composed of three parts:
 - **`user@physical_address`**: The **Physical Mailbox Address**. This is the globally unique, protocol-independent ID for a logical mailbox or service. The same physical address can be accessed via different protocols (e.g., `mem:api@myservice.com` and `mailto:api@myservice.com` point to the same logical entity).
 - **`/logical_address`** (Optional): An optional path that can be used for internal routing. For example, when used with `tool-rpc`, this can route a message to a specific tool within a larger service, allowing one physical address to serve as a unified gateway for multiple logical functions.
 
+**Query strings and fragments are not part of an address.** An address is normalized to
+`protocol://user@host/path` before it becomes a topic, so anything after `?` or `#` would be
+dropped silently — `mem:sales@example.com/inbox?thread=1` and `mem:sales@example.com/inbox`
+would end up sharing one queue and one delivery path, invisibly. Instead of merging two logical
+addresses, Mailbox rejects such addresses at every entry point (`post()`, `subscribe()`,
+`fetch()`, `status()`) with an `InvalidMailboxAddressError`. Put what distinguishes the logical
+partitions in the path: `mem:sales@example.com/inbox/thread-1`.
+
 ## 🚀 Quick Start
 
 Get a taste of Mailbox's core power in just three steps:
 
 1. **Installation**
 
-    ```bash
-    npm install @mboxlabs/mailbox
-    ```
+   ```bash
+   npm install @mboxlabs/mailbox
+   ```
 
 2. **Write Code**
 
-    ```ts
-    import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox';
+   ```ts
+   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox'
 
-    // 1. Create a Mailbox instance and register a memory provider
-    const mailbox = new Mailbox();
-    mailbox.registerProvider(new MemoryProvider());
+   // 1. Create a Mailbox instance and register a memory provider
+   const mailbox = new Mailbox()
+   mailbox.registerProvider(new MemoryProvider())
 
-    // 2. Start the mailbox (initializes providers)
-    await mailbox.start();
+   // 2. Start the mailbox (initializes providers)
+   await mailbox.start()
 
-    // 3. Subscribe to an address and define how to handle messages
-    const subscription = mailbox.subscribe('mem:service@example.com/inbox', message => {
-      console.log(`Message received! From: ${message.from}`);
-      console.log(`Body:`, message.body);
-    });
+   // 3. Subscribe to an address and define how to handle messages
+   const subscription = await mailbox.subscribe(
+     'mem:service@example.com/inbox',
+     (message) => {
+       console.log(`Message received! From: ${message.from}`)
+       console.log(`Body:`, message.body)
+     }
+   )
 
-    console.log("Mailbox is set up, listening on 'mem:service@example.com/inbox'...");
+   console.log(
+     "Mailbox is set up, listening on 'mem:service@example.com/inbox'..."
+   )
 
-    // 4. Post a mail to that address
-    await mailbox.post({
-      from: 'mem:client@example.com/user-1',
-      to: 'mem:service@example.com/inbox',
-      body: { text: 'Hello, Mailbox!' },
-    });
+   // 4. Post a mail to that address
+   await mailbox.post({
+     from: 'mem:client@example.com/user-1',
+     to: 'mem:service@example.com/inbox',
+     body: { text: 'Hello, Mailbox!' },
+   })
 
-    // Clean up: Unsubscribe and Stop the mailbox (releases resources)
-    await subscription.unsubscribe();
-    await mailbox.stop();
-    ```
+   // Clean up: Unsubscribe and Stop the mailbox (releases resources)
+   await subscription.unsubscribe()
+   await mailbox.stop()
+   ```
 
 3. **Run It**
 
@@ -153,34 +166,117 @@ This example demonstrates the basic loop of Mailbox: **Initialize -> Start -> Su
 ### 1. Status Query
 
 ```ts
-const status = await mailbox.status('mem:service@example.com/inbox');
-console.log(`State: ${status.state}`);
-console.log(`Unread count: ${status.unreadCount}`);   // still waiting in the queue
-console.log(`In flight: ${status.inFlightCount}`);    // handed out, awaiting ack/nack
-console.log(`Subscribers: ${status.subscriberCount}`);
+const status = await mailbox.status('mem:service@example.com/inbox')
+console.log(`State: ${status.state}`) // 'online' | 'unknown' | 'degraded' | 'offline'
+console.log(`Exists: ${status.exists}`) // does the provider know this address at all?
+console.log(`Unread count: ${status.unreadCount}`) // still waiting in the queue
+console.log(`In flight: ${status.inFlightCount}`) // handed out, not yet settled
+console.log(`Last activity: ${status.lastActivityTime}`) // ISO 8601, or null
+
+// a provider's own bookkeeping lives in namespaced extension keys
+console.log(`Overdue: ${status['mem.overdueInFlightCount']}`) // in flight, lease expired, not yet reclaimed
+console.log(`Oldest overdue: ${status['mem.oldestOverdueMs']}ms`)
+console.log(`Parked: ${status['mem.parkedCount']}`) // written off: never delivered again, not silently dropped
+console.log(`Subscribers: ${status['mem.subscriberCount']}`)
 ```
+
+Only measurements a **core operation** produces get a named field: `state`, `exists`,
+`unreadCount`, `inFlightCount`, `lastActivityTime`. Anything that belongs to one delivery
+strategy — a parked-copies bin, a lease sweeper, dead-letter counters — goes into the open
+index signature that `1.0.0` already had, prefixed with the scheme (`mem.parkedCount`). A broker
+(AMQP / SQS) may not have those concepts at all, and a contract that names them would insist every
+provider is shaped like `MemoryProvider`. Ask a provider what it can actually answer via its
+capability declaration (`provider.supports` / `provider.can(op, address?)`) instead of guessing.
 
 `unreadCount` only counts messages still waiting in the queue. A message taken with
 `manualAck: true` has left the queue but is not yet processed — it is reported separately as
-`inFlightCount`, and it returns to the queue if it is never acknowledged.
+`inFlightCount`, and it returns to the queue once its lease expires. Reclaiming that lease is
+**lazy** (there is no background timer; the next `manualAck` fetch of that topic sweeps expired
+leases back), so a wedged consumer can park expired leases in-flight indefinitely. That is why
+the overdue count is reported separately (`mem:` exposes it as `['mem.overdueInFlightCount']`):
+`inFlightCount` is legitimately non-zero on a healthy system, so **alert on the overdue count**,
+not on it — or reclaim explicitly with `mailbox.recover()`.
+
+`['mem.parkedCount']` counts the third state: copies that were **written off** (a dead-letter chain that hit
+its nesting cap) and therefore must never be delivered again. They are in neither `unreadCount` nor
+`inFlightCount`, `fetch` will not hand them to anybody, and `peekParked()` / `purgeParked()` are the
+only ways to read them or get rid of them — §2 lists the three dispositions, §4 covers the dead-letter
+chain that parks them. Without that count, "0 unread" is indistinguishable from "a poison record is
+parked here".
+
+`state` describes the provider's view **of that address**. An address the provider has never
+seen (never posted to, never subscribed, no recorded activity) reports `state: 'unknown'` and
+`exists: false` — reporting `online` + 0 for it would make a dashboard unable to tell
+"this address does not exist" from "this address is idle". A drained but real address stays
+`online`; so does an address that only has subscribers. `exists` is left unset when the provider
+cannot answer status queries at all: "I cannot ask" is not "it does not exist".
+`lastActivityTime` is `null` when there is no record — never `undefined`, which would vanish
+entirely from `JSON.stringify`.
+
+Diagnostics pages and tests usually want the whole picture at once. Call `status()` with no
+arguments (or `snapshot()`, same view) to get every topic of every registered provider:
+
+```ts
+const snap = await mailbox.status()
+console.log(snap.state) // 'online' | 'degraded' | 'unknown'
+console.log(snap.addressCount) // topics known across the registered providers
+console.log(snap.unreadCount, snap.inFlightCount)
+for (const entry of snap.addresses) {
+  console.log(
+    entry.address,
+    entry.state,
+    entry.unreadCount,
+    entry['mem.parkedCount']
+  )
+}
+```
+
+`addresses` is sorted by the address string as the provider listed it (the kernel does not
+normalize addresses — see below), so snapshots are reproducible. The snapshot only aggregates the
+core fields; strategy-specific numbers are per-address extension keys. Providers whose messages do
+not live locally (AMQP / SQS style brokers) cannot enumerate their topics; they are listed in
+`unsupportedProviders` and the snapshot degrades to `state: 'degraded'` instead of pretending the
+queues are empty.
 
 ### 2. Receiving mail: `subscribe` vs `fetch`
 
-Three verbs, three APIs — use these words consistently:
+Four verbs, four APIs — use these words consistently:
 
-| Verb | API | Who acts |
-| --- | --- | --- |
-| publish | `post()` / `send()` | the producer writes a message to an address |
-| subscribe | `subscribe()` | the consumer registers a callback; it runs when mail arrives |
-| fetch | `fetch()` | the consumer asks for the next message itself |
+| Verb      | API                           | Who acts                                                     |
+| --------- | ----------------------------- | ------------------------------------------------------------ |
+| publish   | `post()` / `send()`           | the producer writes a message to an address                  |
+| subscribe | `subscribe()`                 | the consumer registers a callback; it runs when mail arrives |
+| fetch     | `fetch()`                     | the consumer asks for the next message itself                |
+| peek      | `fetch(addr, { peek: true })` | an observer looks at the queue without consuming anything    |
+
+`subscribe()` returns a promise, and the awaited moment is **when the subscription is
+established** — the same signature as the [Python](https://github.com/mboxlabs/mailbox.py)
+(`async def subscribe`) and [Rust](https://github.com/mboxlabs/mailbox.rust)
+(`async fn subscribe`) ports. "Subscribed" is a per-subscription fact, and only the provider that
+owns the scheme can answer it: for the in-process bus that is the moment the listener gets
+registered; for a provider talking to a peer, whatever moment that protocol lets it confirm.
+Some protocols offer no confirmation at all, and then the provider decides what honest answer to
+give — the kernel never invents one on its behalf. It waits for the provider's answer rather than
+guessing, which is why this belongs to each subscription and not to `init()`, where the only
+honest answer is "this provider started".
+
+**An un-awaited `subscribe()` is a silent no-op.** It type-checks, the callback may never be
+registered, and a provider that refuses the subscription surfaces as an unhandled rejection
+instead of an error you can see. Await it before you post, and await it before you drain a
+backlog: "subscribe first, then drain" is only a real ordering once the `await` is in the code.
+
+Error timing is split on purpose, so that `subscribe()` stays consistent with `post()` and
+`fetch()`: an unparseable address, an unregistered scheme, and a provider that refuses
+_synchronously_ all still **throw synchronously**; a refusal that arrives asynchronously — a
+`_subscribe` that rejects — is what becomes a rejection.
 
 Publishing only writes. A published message goes to **one** of the two receiving paths,
 decided at the moment `post()` runs:
 
-| State of the address when `post()` runs | Where the message goes |
-| --- | --- |
-| At least one active subscriber | handed to every subscriber's callback; **not** queued, so `fetch()` gets nothing |
-| No subscriber | queued; `fetch()` gets it, subscribers get nothing |
+| State of the address when `post()` runs | Where the message goes                                                           |
+| --------------------------------------- | -------------------------------------------------------------------------------- |
+| At least one active subscriber          | handed to every subscriber's callback; **not** queued, so `fetch()` gets nothing |
+| No subscriber                           | queued; `fetch()` gets it, subscribers get nothing                               |
 
 The two paths are mutually exclusive per message: a message that was handed to a subscriber
 can never be fetched, and a message that is already queued is never replayed to a subscriber
@@ -189,37 +285,177 @@ that appears later.
 Firing both paths would make `unreadCount` grow forever (subscribers never call `fetch`) and
 would hand an already-processed message to the next `fetch()` after an unsubscribe.
 
-The one exception is a failing callback: if it throws a retriable error, the message goes back
-to the queue, where `fetch()` can pick it up — see below.
+The one exception is a failing callback: if it throws a retriable error and nobody handled
+the message, it goes back to the queue, where `fetch()` can pick it up — see below.
 
 ```ts
 // subscribe: the callback runs when mail arrives
-const sub = mailbox.subscribe(addr, (message) => {
-  console.log(message.body);
-});
+const sub = await mailbox.subscribe(addr, (message) => {
+  console.log(message.body)
+})
 
 // fetch: you ask for the next message yourself
-const message = await mailbox.fetch(addr);
+const message = await mailbox.fetch(addr)
+
+// peek: read-only audit of the queue — never dequeue, never in-flight, never bumps activity
+const pending = await mailbox.fetch(addr, { peek: true, limit: 5 })
 ```
+
+`peek` returns **copies** of the queued messages as an array (`[]` when the queue is idle), and it
+changes nothing: `unreadCount` and `inFlightCount` stay put, `lastActivityTime` is not refreshed,
+and mutating what you got back cannot touch the queue. Before `peek` existed, the closest trick
+was `fetch(addr, { manualAck: true })` without acking — that parks the message in-flight (requeued
+after the 30s ack timeout by default), which is not read-only and distorts what real consumers
+see. `peek` never lists messages another consumer is holding; those only show up as
+`inFlightCount`. Combining `peek` with `manualAck` throws (`InvalidFetchOptionsError`), and a
+provider that cannot do read-only snapshots throws `UnsupportedCapabilityError` rather than
+silently falling back to a consuming fetch.
+
+**Settling a fetched message: three dispositions.** `fetch(addr, { manualAck: true })` hands you a
+handle, and settling is not "success / failure" — that reading costs people real downtime, because
+it suggests a message you decided to discard does not deserve `ack`, so drain scripts get written
+with `nack(false)` and then spin. The vocabulary is `ack(where)`, and the three core values answer
+two questions: _will this be handed to me again_, and _should the provider do something on its way
+out_:
+
+| Disposition | this copy | handed to anyone again | provider tidies up afterwards |
+| ----------- | --------- | ---------------------- | ----------------------------- |
+| `ack('handled')`   | removed | no | no |
+| `ack('discard')`   | removed | no | **yes** |
+| `ack('unhandled')` | back in the queue | yes | no |
+
+`handled` means "I am done with this copy, stop tracking it" — whatever you did with it, including
+deciding the letter is malformed and dropping it on the floor. That is the normal way to discard.
+
+`discard` adds exactly one thing: the provider gets to tidy up _by its own protocol's rules_. For
+`MemoryProvider` that means a copy into the dead-letter topic (and with `enableDeadLetterQueue()`
+off it degrades to a plain silent drop — identical to `handled`, because the provider declares no
+`dead-letter` capability, and the declaration is what the kernel believes). For SMTP it would be
+reject/bounce, for IMAP a `\Deleted` flag plus expunge, for MQTT there is no such thing. Never
+assume `discard` implies a DLQ — ask with `provider.can('dead-letter', address)`.
+
+`ack()` with no argument means `handled`. `nack(requeue?)` is kept as a deprecated alias of the
+same thing (`nack(true)` ≡ `unhandled`, `nack(false)` ≡ `discard`) and disappears in `3.0.0`, the
+release that unbundles the providers.
+
+Any other value is the provider's own vocabulary and must be declared
+(`disposition:<value>` in `provider.supports`); an undeclared value fails with
+`UnsupportedCapabilityError` **before** anything is mutated — it never quietly degrades into a
+built-in one.
+
+**One fetch = one disposition.** A handle represents one delivery attempt: a repeated disposition,
+or a late disposition from a handle whose lease was already reclaimed, does not take effect and
+returns `false` (no throw, no silent no-op, no configuration switch). If you want to hold a message
+while you decide, that is what the lease is for (`ackTimeout`, `ackTimeout: 0` for a permanent
+lease, and a `renewLease` capability on providers that support it).
+
+What every provider must guarantee: after `discard`, that copy is never handed to anyone again —
+including when a dead-letter chain hits `maxNesting`. There it is **parked**: not in `unreadCount`,
+invisible to `fetch`, readable via `peekParked()` / `status()['mem.parkedCount']`, removable only
+through `purgeParked()`. Push consumers get the same three dispositions without a handle: returning
+normally is `handled`, throwing a plain error is `discard`, throwing `{ isRetriable: true }` is
+`unhandled`.
 
 ### 3. When a subscriber fails
 
 The callback's error decides what happens to the message:
 
 ```ts
-mailbox.subscribe(addr, async (message) => {
-  throw Object.assign(new Error('upstream down'), { isRetriable: true }); // → back to the queue
-});
+await mailbox.subscribe(addr, async (message) => {
+  throw Object.assign(new Error('upstream down'), { isRetriable: true }) // → back to the queue
+})
 
-mailbox.subscribe(addr, async (message) => {
-  throw new Error('bad payload'); // → dropped, so one bad message is not retried forever
-});
+await mailbox.subscribe(addr, async (message) => {
+  throw new Error('bad payload') // → dropped, so one bad message is not retried forever
+})
 ```
 
 Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / ECONNRESET /
 ETIMEDOUT`. A retriable failure requeues the message (visible in `unreadCount`, retrievable
-with `fetch()`); anything else is discarded. The Python and Rust ports behave the same way —
-in Rust the callback returns `Result<()>` and `MailboxError::is_retriable()` makes the call.
+with `fetch()`); anything else is **given up** — on the shipped providers that means discarded
+(archived only if you turn on a dead-letter queue), and on a queue / transport provider the
+kernel first tells the transport to stop redelivering it (`nack(message, false)`). The [Rust
+port](https://github.com/mboxlabs/mailbox.rust) makes the same call on the `Result<()>` that a
+callback returns.
+
+One address can have several subscribers, and subscribing is a **broadcast**: one message
+becomes one _delivery_ per subscriber, and each delivery settles on its own
+(`deliveryId = subscriptionId + messageId`). That distinction decides what happens when
+subscribers disagree — A succeeds, B throws a retriable error:
+
+| Broadcast outcome                | What the mailbox does                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
+| Some delivery succeeded          | message stays handled — **not** requeued; failing deliveries go to `_onDeliveryDeadLettered` |
+| Every delivery failed, retriable | message goes back to the head of the queue, `fetch()` picks it up (one copy)                 |
+| Every delivery failed, fatal     | discarded, so one bad message is not retried forever                                         |
+
+Requeueing a message that somebody already handled would hand the same side effect to a
+`fetch()` consumer a second time, which is why partial failure is settled per delivery instead.
+
+Settlement happens once every delivery has finished, retry chain included. `post()` resolves at
+dispatch, not at settlement, so `status()` right after `post()` says nothing about the outcome —
+use `_onDeliveryDeadLettered(message, failedDeliveries)` (subclass `MemoryProvider`) to observe
+or dead-letter what was dropped.
+
+**What the kernel does not decide.** It decides _whether_ a delivery is handed back
+(`_nack(message, requeue)` + `shouldRequeueAfterBroadcast`). It does not decide how many times a
+message is redelivered, where it goes back in the queue, or what is left behind once it is given
+up — those belong to the provider. Consequences worth knowing:
+
+- On a queue / transport provider (`broadcastDeliveries = false`, the base-class default) a
+  non-retriable failure now emits the give-up signal: `nack(message, false)`. Without it a real
+  broker redelivers the same poison message forever after its visibility timeout.
+- A provider that does not implement `_nack` at all cannot receive either decision: the base
+  class warns once instead of dropping the decision silently.
+- Nothing lands in a dead-letter queue unless you wire one. `MemoryProvider#enableDeadLetterQueue()`
+  is the shipped reference wiring; the hook is called **after** the disposition (`nack`) so a
+  message never sits in the queue and the DLQ at the same time. A hook that throws (or rejects)
+  is logged and cannot swallow the disposition.
+- The pull side (`fetch()` consumers settling with their own `ack` / `nack`, invisible to the kernel)
+  follows the same two rules: one `fetch()` is one disposition (a second `ack` / `nack` on the same
+  handle is a no-op), and a disposition that did not land — the message was already requeued by the
+  stale sweep, dropped by `clear()`, or belongs to another consumer — is not a give-up. One give-up
+  therefore leaves exactly one dead-letter record, so a compensation script cannot compensate twice.
+- Each delivery carries `headers['mbx-attempt']` — the attempt number **inside that delivery's
+  retry chain** — plus `mbx-max-attempts` when a retry policy is set, and `DeliveryResult`
+  carries `attempts` and an `error` summary, so a DLQ record can answer "why did it die, and how
+  many times did we try". `mbx-attempt` is **not** a redelivery counter: it restarts at `'1'`
+  once the message goes back to the queue. The counter that accumulates across requeues is
+  `headers['mbx-round']` ("which delivery round is this") — whoever hands the message to a
+  consumer bumps it, and the copy the kernel puts back into the queue carries it. That is the
+  number a provider reads to implement its own `maxReceiveCount` cap: the kernel deliberately
+  leaves the cap to providers, and `mbx-round` is the input it owes them.
+- Queue bookkeeping keys on **which copy of a letter**, not on `messageId`. `id` is a name the
+  sender chose and it may repeat (content-hash ids, a sender retrying its own send, a hostile
+  sender colliding on purpose). Every letter gets one `headers['mbx-send-id']`, minted at the send
+  boundary — `MailboxProvider.send()`, the only way into `_send()` — and queueing, the in-flight
+  table, requeue dedup, the retry budget, and `ack` / `nack` all account per copy. Keying those on `id`
+  lets one letter overwrite another's slot: a requeue gets dismissed as a duplicate and the message
+  ends up nowhere — not queued, not dead-lettered — an id reused at one address can suppress a
+  requeue at a different one, and two same-named letters share one retry budget: the second is judged
+  "retries exhausted" on its very first failure (its own retries get swallowed) while the first keeps
+  going past the cap it declared, so the consumer sees `mbx-attempt: 3` on a `mbx-max-attempts: 2`
+  letter (conformance `retry-08`). Headers the system owns (`mbx-send-id`, `mbx-round`, `mbx-attempt`,
+  `mbx-max-attempts`, `mbx-sent-at`, `mbx-dead-letter*`) are stripped from anything handed to
+  `send()`: trusting
+  them would let the sender pick its own redelivery cap or stamp live mail as a dead-letter record.
+  Content-level idempotency is a separate, explicit, _loud_ policy at the send edge — the kernel
+  never drops a letter silently.
+
+**Search by their name, act by ours.** The pull-side settlement door takes our identity, not the
+sender's. `ack` / `nack` receive the copy key (plus the handout id, so a stale handle cannot close a
+newer lease): handing them a `messageId` returns `false` and touches nothing, because that name may
+legitimately exist in two mailboxes at once (a buyer's copy and a seller's copy of `order-42`). To
+find a letter, query first — `bus.locate('order-42')` is read-only and returns every matching copy
+with its `key`, `leaseId`, `topic` and state — then settle by the key you got back. The old shape
+(`nack(messageId, topic, requeue)`) is gone at compile time: it accepted a topic it never used while
+locating by a name that is not unique, so a repair script intending to touch one mailbox silently
+closed another one's case and re-queued a duplicate into it.
+
+> The [Python](https://github.com/mboxlabs/mailbox.py) and [Rust](https://github.com/mboxlabs/mailbox.rust)
+> ports settle a broadcast per delivery in exactly this way. Each port's README
+> ("Subscriber Failures and Retry") lists its own API names; the rule above is the specification
+> they all follow.
 
 ### 4. Retrying a failed subscriber (opt-in)
 
@@ -228,36 +464,91 @@ and a `fetch()` consumer decides what happens next. Opt into automatic redeliver
 want the library to retry the callback itself:
 
 ```ts
-import { MemoryProvider } from '@mboxlabs/mailbox';
+import { MemoryProvider } from '@mboxlabs/mailbox'
 
-const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }); // milliseconds
-mailbox.registerProvider(provider);
+const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }) // milliseconds
+mailbox.registerProvider(provider)
 ```
 
-| | Default (`retry` omitted) | With a policy |
-|---|---|---|
+|                   | Default (`retry` omitted)            | With a policy                                |
+| ----------------- | ------------------------------------ | -------------------------------------------- |
 | Retriable failure | requeued once; `fetch()` picks it up | callback re-invoked with exponential backoff |
-| Attempts | 1 | `maxAttempts`, first try included |
-| Budget exhausted | — | message requeued, `fetch()` picks it up |
+| Attempts          | 1                                    | `maxAttempts`, first try included            |
+| Budget exhausted  | —                                    | requeued when no delivery succeeded          |
 
-Two rules keep this safe:
+Three rules keep this safe:
 
 - **Only the failing subscriber is retried.** Subscribing is a broadcast; re-broadcasting
   would run the side effects of the subscribers that already succeeded a second time.
 - **A message is never queued twice.** `requeue()` skips a message that is already queued or
   in flight, so N failing subscribers leave exactly one copy in the queue.
+- **A handled message is never requeued.** If any delivery of the broadcast succeeded, the
+  failing ones are dead-lettered (`_onDeliveryDeadLettered`) instead of putting the whole
+  message back; requeue is reserved for "every subscriber failed".
 
 Retry is opt-in because AMQP / SQS style transports already redeliver and ship dead-letter
 queues — retrying on top of them would double-deliver. Providers that own redelivery should
-leave it off. `provider.setRetryPolicy(null)` returns to the default, and the
-`_onRetryExhausted` hook is where a subclass can dead-letter or alert.
+leave it off. `provider.setRetryPolicy(null)` returns to the default, `_onRetryExhausted` is
+where a subclass can alert (exhaustion is _not_ a give-up: the message still goes back to the
+queue), and `_onDeliveryDeadLettered` is where failed deliveries that will not be requeued can be
+persisted.
 
-The same policy exists in Python (`RetryPolicy(max_attempts=3, base_delay=1.0)`, seconds) and
-Rust (`MemoryProvider::with_retry(Some(RetryPolicy::new(3, Duration::from_millis(1000))))`).
+Turning "give up" into something you can act on, without writing your own hook:
+
+```ts
+const provider = MemoryProvider.createIsolated()
+provider.enableDeadLetterQueue() // default suffix '_dlq'; pass { suffix: '.dlq' } to change it
+mailbox.registerProvider(provider)
+
+// every delivery that was dropped instead of requeued is archived to <topic>_dlq:
+const dead = await mailbox.fetch(
+  provider.deadLetterTopic('mem://sales@bus/inbox')!
+)
+// dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-nack'
+// dead.headers['mbx-dead-letter-attempts'] -> '3'  // attempts in the chain that died
+// dead.headers['mbx-dead-letter-round']    -> '1'  // which delivery round this message was on
+// dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
+// dead.headers['mbx-dead-letter-topic']    -> the queue it came from
+// dead.headers['mbx-dead-letter-depth']    -> '1'  // how deep in the dead-letter chain this is
+```
+
+A dead-letter topic can itself be given up on — a compensation worker that crashes is the common
+case. The chain is capped: `enableDeadLetterQueue({ maxNesting })` defaults to **one** level, so a
+record fetched out of `X_dlq` and given up again is **parked** in `X_dlq` (marked
+`mbx-dead-letter-terminal: 'true'`, logged CRITICAL) instead of opening `X_dlq_dlq`, then
+`X_dlq_dlq_dlq`, forever. Parking is not losing, and it is **not re-queueing**: a parked record is
+not in `unreadCount`, no `fetch` will hand it to anyone (that is exactly the trap that made drain
+scripts spin forever, re-reading the same poison record), and it can only be read with
+`peekParked()` or dropped with `purgeParked()`; `status()['mem.parkedCount']` counts them. Pass a bigger
+`maxNesting` to get a real chain; `Number.POSITIVE_INFINITY` is the explicit "no limit" exit.
+`deadLetterTopic()` tells you where the give-up actually lands — at the cap it returns the topic
+itself rather than a deeper address that would never be written.
+
+The suffix is appended to the **end of the path**, and it must already be in canonical form. A
+suffix that address canonicalization would rewrite — non-ASCII, ``" < > ` { }``, `.` / `..` path
+segments — is rejected by `enableDeadLetterQueue()`: otherwise the dead letter lands in a topic
+no address can name it (or, worse, in somebody else's live queue). Use the percent-encoded
+spelling (`_死信` → `_%E6%AD%BB%E4%BF%A1`) or plain ASCII.
+
+It is opt-in because a dead-letter queue is an operational decision, not a kernel default: it
+writes a second copy of the message into a topic somebody has to consume. Off, the default stays
+what it always was — dropped. It covers both ways a message gets given up: a subscriber's failed
+delivery, and a `fetch()` consumer calling `nack(false)`. Archiving is keyed to **the queue the
+message was actually taken out of**, not to `message.to`: an archived copy keeps its original `to`
+(so it can be replayed into the business queue), and `mbx-dead-letter-topic` names the hop it came
+from. The pull side disposes **first** and
+archives afterwards, and one `fetch()` settles only once: repeating `nack(false)` does not add a
+second record, and `nack(false)` after an `ack()` does not dead-letter a message that succeeded.
+
+The same policy — same retriable check, same backoff formula, same "never queue twice" rule — is
+implemented in the [Python](https://github.com/mboxlabs/mailbox.py) and
+[Rust](https://github.com/mboxlabs/mailbox.rust) ports; their READMEs show the constructor spelling
+for each language.
 
 The policy math is exported as well — `RetryPolicy`, `isRetriableError`, `nextRetryDelay`,
 `AttemptLedger` — so another package (an RPC transport, say) can reuse the same retriable check
-and backoff instead of writing its own.
+and backoff instead of writing its own. So is the delivery bookkeeping: `DeliveryResult`,
+`shouldRequeueAfterBroadcast`.
 
 ### 5. Acknowledgement Timeouts
 
@@ -266,33 +557,132 @@ timeout a crashed consumer leaks the message forever, so an unacknowledged messa
 requeued after `DEFAULT_ACK_TIMEOUT` (30s) by default:
 
 ```ts
-import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox';
+import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
 
-await mailbox.fetch(addr, { manualAck: true });                    // 30s default
-await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }); // custom
-await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 });     // never requeue
+await mailbox.fetch(addr, { manualAck: true }) // 30s lease for *this* fetch
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // custom lease
+await mailbox.fetch(addr, { manualAck: true, ackTimeout: 0 }) // this lease never expires
 ```
 
-The same three-state semantics applies to the Python (`ack_timeout`, `0` = never requeue)
-and Rust (`ack_timeout: Option<Duration>`, `Some(Duration::ZERO)` = never requeue) ports.
+`ackTimeout` is the length of **the lease this fetch takes out**, fixed at handoff time and
+recorded on the lease — it is not the sweep threshold. Another consumer's `ackTimeout` can neither
+shorten a lease that has not expired (a 1ms fetch cannot steal someone else's in-flight message)
+nor stretch one that has (an expired lease is reclaimed no matter how long the next caller asks
+for), and it cannot void a `0` / `null` lease. Whether a lease has expired is decided by the lease
+itself, at the moment it was handed out — otherwise any consumer's single fetch could cancel
+another consumer's lease. What an expired-but-unreclaimed lease costs you is visibility, which is
+what the overdue count (§2, `mem:` exposes it as `['mem.overdueInFlightCount']`) exists to remove.
 
-### 6. Accessing Providers
+Reclaiming is triggered by the next `manualAck` fetch. That is fine for a polling consumer, but if
+the last consumer crashes — nobody fetches that address again — the expired lease sits in-flight
+forever. For that case there is an explicit, idempotent entry point:
+
+```ts
+const r = await mailbox.recover(addr) // { reclaimed: 1, supported: true }
+const all = await mailbox.recover() // every enumerable address: { reclaimed, byAddress, unreachableProviders }
+```
+
+`recover()` only touches **expired** leases: letters still inside their lease, and `ackTimeout: 0`
+/ `null` leases, are left alone. Calling it twice is harmless. A provider with no lease concept
+(push-style, or a broker that owns visibility timeouts itself, like AMQP / SQS) answers
+`supported: false` — do not read `reclaimed: 0` as "all clear". If you would rather have it happen
+on a clock, the sweeper is opt-in (default **off**, `unref()`ed so it cannot keep the process alive,
+cleared by `stop()`):
+
+```ts
+new MemoryProvider(null, new MemoryEventBus(), { leaseSweepIntervalMs: 1000 })
+```
+
+The [Python](https://github.com/mboxlabs/mailbox.py) and
+[Rust](https://github.com/mboxlabs/mailbox.rust) ports keep the same three states: default timeout,
+custom timeout, never expires.
+
+### 6. Settlement Safety Nets (timeouts, races, provider contracts)
+
+A broadcast is only settled once **every** delivery of it settles — that is what makes the
+per-delivery requeue rule in §3 work, and it is also where the hazards hide. Six safety nets:
+
+- **A stuck callback cannot make a message invisible.** Every delivery _attempt_ is watched by
+  `provider.deliverySettleTimeout` (default `DEFAULT_DELIVERY_SETTLE_TIMEOUT` = 30s). When it
+  fires the attempt is settled as `cancelled`: the message falls back to `fetch()` (or the
+  dead-letter hook) and a warning is logged. The watchdog covers one attempt only — a backoff
+  wait is never counted — so it cannot cut a healthy retry chain short. Setting
+  `provider.deliverySettleTimeout = 0` opts out: you then own the lifecycle, and a callback that
+  never returns keeps its message out of every queue.
+- **`unsubscribe()` and `stop()` never prejudge a running callback.** Only deliveries sitting in a
+  retry backoff are cancelled. A callback that is still running settles on its own; declaring it
+  failed would make the broadcast look like "nobody succeeded" and hand the same side effect to a
+  `fetch()` consumer a second time.
+- **Concurrent deliveries of the same `id` settle independently.** `post({ id })` accepts
+  caller-supplied ids, so two in-flight deliveries to one subscriber never share settlement
+  bookkeeping. Dedup still applies where it belongs: a message already queued or in flight is
+  never queued twice.
+- **A missing `_nack` is not silently fatal.** Every disposition (`requeue = true` back to the
+  queue, `requeue = false` give up) goes through `nack()`. A provider that never implements
+  `_nack` receives none of them, and the message stays wherever the transport left it; the base
+  class warns once per provider instead of pretending the decision was carried out.
+- **The `message` handed to `_ack` / `_nack` is a copy, not the one you sent.** Each delivery
+  attempt gets its own shallow copy stamped with `mbx-attempt` / `mbx-round` (plus
+  `mbx-max-attempts` under a retry policy). The callback, `_ack` and `_nack` of one attempt share
+  that single object, but it is never the object `_send` saw, and a retry chain makes a new copy
+  per attempt. So a provider must **not** key bookkeeping by object identity
+  (`Map<MailMessage, handle>`, `WeakMap`, `set.has(message)`): a miss throws nothing and warns
+  nothing, it just silently skips the ack and a real broker redelivers the message forever. Key by
+  `message.id`, by your own broker handle, or by `DeliveryResult.deliveryId` for delivery-level
+  identity (copies change, delivery ids do not). Shallow means: `headers` is a fresh object,
+  `body` / `meta` / `from` / `to` are still shared references. One escape hatch worth knowing — a
+  broadcast barrier that never recorded a delivery copy (deliveries not routed through the base
+  entry point, a second barrier for a concurrent same-`id` broadcast, or the copy table hitting
+  `MAX_SETTLED_COPIES`) falls back to the unstamped `_send` object, so treat a missing counter as
+  possible. Details: `wiki/delivery-semantics.md` §7.3.
+- **Providers extend `MailboxProvider`, and `close()` belongs to the base class.** Extending the base is
+  the supported implementation route: it owns the bookkeeping that is hardest to get right by hand — the
+  send boundary's `mbx-send-id` and system headers, delivery settlement and retries, the broadcast
+  barrier, and **tearing down every subscription when it closes**. Your cleanup goes in `_close()`, which
+  sits two lines below `close()` (overriding the wrong one is the easiest mistake in this contract).
+  Override `close()` only when you need work _before_ the teardown, and the override must
+  `await super.close()` — **`this._close()` on its own does not count**: the teardown lives in the base
+  `close()`, and it runs before `_close()`. Implementing `IMailboxProvider` directly is not a supported
+  route: `registerProvider()` does no `instanceof` check, so the kernel takes the object, cannot see your
+  subscription table, and neither repairs nor reports anything. The failure mode is not "cannot
+  subscribe" but **cannot unsubscribe** — after `stop()` the broker-side listener is still attached and
+  the handle still reports `active`, and after `stop()` → `start()` one letter produces two side effects.
+  The self-check does not depend on the kernel: after `stop()`, your own `status()` must report zero
+  attached subscriptions, and a torn-down handle must stop reporting `active` (`mem:` names one for
+  exactly this — `mem.subscriberCount`). Spec: `wiki/delivery-semantics.md` §1.
+
+If you implement your own **broadcast** provider (`broadcastDeliveries = true`), `_send` must
+attach the settlement barrier — synchronously, before any `await`:
+
+```ts
+protected async _send(message: MailMessage): Promise<void> {
+  const deliveries = this.bus.publish(topic, message) // one promise per delivery
+  this._trackBroadcastSettlement(message, deliveries)
+}
+```
+
+A provider that forgets it does not lose messages silently: the base class falls back to a
+whole-message requeue and warns you. Producer-style providers that build a message themselves and
+hand it to a local subscriber must use `_deliverToLocalSubscription(subscriptionId, message)`,
+otherwise that delivery is never accounted for.
+
+### 7. Accessing Providers
 
 You can gracefully access registered providers via the `providers` getter or `getProvider` method:
 
 ```ts
 // Get all providers (returns a ReadonlyMap)
-const allProviders = mailbox.providers;
+const allProviders = mailbox.providers
 if (allProviders.has('mem')) {
-  console.log('Memory provider is registered');
+  console.log('Memory provider is registered')
 }
 
 // Get a specific provider
 // protocol can be "mem" or "mem:"
-const provider = mailbox.getProvider('mem');
+const provider = mailbox.getProvider('mem')
 
 // Get provider or throw error if not found
-const slackProvider = mailbox.getProvider('slack', true);
+const slackProvider = mailbox.getProvider('slack', true)
 ```
 
 ## 🔄 Lifecycle Management
@@ -305,19 +695,65 @@ For robust production systems, explicit lifecycle management is crucial:
   - Releases underlying resources (TCP connections, file handles).
   - Ensures a graceful shutdown of your communication layer.
 
+  It never deletes messages: a provider that is closed and started again still sees the backlog
+  left behind. Use `mailbox.stop({ purge: true })` to drop it.
+
+## 🧵 Instance isolation and state reset (`mem:` provider)
+
+`MemoryProvider` simulates a broker on an in-memory event bus. By default every
+`MemoryProvider` shares one process-wide bus, so all `Mailbox` instances in the process see the
+same `mem:` queues and subscription tables, and that state outlives `stop()`. This is
+intentional — it is what lets two `Mailbox` instances talk to each other — but it means you have
+to choose the boundary explicitly when you want independence (host + plugin, kernel + provider,
+or tests that must not leak into each other):
+
+```ts
+// 1. Private bus — no one else in the process can see its queues or subscriptions.
+const isolated = MemoryProvider.createIsolated()
+
+// 2. Named namespace — shared within a scope, invisible across scopes.
+const tenant = MemoryProvider.forScope('tenant-a')
+
+// 3. Bring your own bus — e.g. two Mailboxes that are meant to share one "server".
+const shared = new MemoryProvider(null, new MemoryEventBus())
+```
+
+Reset state without tearing subscriptions down:
+
+```ts
+await mailbox.clear() // drop every provider's backlog (queued + in-flight)
+await mailbox.stop({ purge: true }) // close subscriptions, then drop the backlog
+provider.bus.clear('mem://inbox@example.com') // one topic only; returns how many messages were dropped
+```
+
+Caveats worth knowing:
+
+- `clear()` drops messages, never subscriptions. Closing a channel is `unsubscribe()` / `stop()`'s job.
+- On the default bus, `clear()` clears the whole `mem:` namespace of the process — that is what a
+  shared "server" means. Use `createIsolated()` / `forScope()` when that is not what you want.
+- One provider instance must not be registered on two Mailboxes: subscriptions live on the provider,
+  so `stop()` on one unsubscribes the other. The library warns once when it sees this.
+- The scope registry is never garbage-collected: a scope name generated per run (timestamp, random
+  id) pins its bus for the lifetime of the process. Use `createIsolated()` for throwaway state.
+
 ## 📦 Ecosystem
 
-| Package | Description |
-|---|---|
-| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js) | The core mailbox system |
-| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js) | Input Provider: An abstract class for human-computer interaction |
-| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js) | Mailbox Provider: Email (SMTP, IMAP/POP3) |
+| Package                                                                    | Description                                                                                  |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [`@mboxlabs/mailbox`](https://github.com/mboxlabs/mailbox.js)              | The core mailbox system                                                                      |
+| [`@mboxlabs/mailbox-input`](https://github.com/mboxlabs/mailbox-input.js)  | Input Provider: An abstract class for human-computer interaction                             |
+| [`@mboxlabs/mailbox-email`](https://github.com/mboxlabs/mailbox-email.js)  | Mailbox Provider: Email (SMTP, IMAP/POP3)                                                    |
+| [`mboxlabs-mailbox` (crates.io)](https://github.com/mboxlabs/mailbox.rust) | Rust port — `cargo add mboxlabs-mailbox` (v0.1.0, also builds to WASM)                       |
+| [`mailbox.py`](https://github.com/mboxlabs/mailbox.py)                     | Python port — `pip install git+https://github.com/mboxlabs/mailbox.py.git` (not on PyPI yet) |
+
+> **One specification, three implementations.** The address format, subscribe-versus-fetch,
+> per-delivery settlement, opt-in retry and ack timeouts are specified once — in this README — and
+> implemented identically in TypeScript, Python and Rust. Change the semantics and all three suites
+> (`vitest` / `pytest` / `cargo test`) have to agree.
 
 ## 📚 Learn More
 
-- [Erlang Inspiration Deep Dive](erlang-inspiration.md)
-- [5 Real-world Scenario Examples](examples.md)
-- [API Reference](_media/docs)
+- [API Reference](docs/)
 
 ## 🤝 Contributing
 
