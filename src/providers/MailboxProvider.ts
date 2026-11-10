@@ -629,7 +629,10 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
     return this._nack(message, where === 'unhandled');
   }
 
-  /** @deprecated 用 {@link settleDelivery}(message, 'handled')。本方法保留是因为 `v1.0.0` 就有它。 */
+  /**
+   * @deprecated 用 {@link settleDelivery}(message, 'handled')。本方法保留是因为 `v1.0.0` 就有它：
+   *   整个 2.x 里它都是 `settleDelivery(message, 'handled')` 的完整 alias，到拆包的 `3.0.0` 再删。
+   */
   protected async ack(message: MailMessage) {
     await this.settleDelivery(message, 'handled');
   }
