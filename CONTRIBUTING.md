@@ -133,6 +133,10 @@ feat(mailbox): add xxx option to fetch
 
 The release process is automated by `commit-and-tag-version` (run through `pnpm dlx`), which generates the `CHANGELOG.md` and tags the version based on Conventional Commits. It neither publishes nor pushes: `npm publish` and `git push --follow-tags` stay manual.
 
+The tool is pinned to `commit-and-tag-version@12`. From `13.0.0` its `hosted-git-info` can no longer read a
+repository whose name ends in `.js`, so the generated changelog comes out with links like
+`](///compare/v1.0.0...v2.0.0)` and bare commit SHAs instead of links. Test a link before raising the pin.
+
 ```shell
 # Preview the upcoming version and changelog
 pnpm release -- --dry-run

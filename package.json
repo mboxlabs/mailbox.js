@@ -35,7 +35,7 @@
     "lint:fix": "pnpm run lint --fix",
     "test": "pnpm run typecheck && vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "release": "pnpm run clean && pnpm run build && git add -f docs && git commit -m 'docs: update API docs' && pnpm dlx commit-and-tag-version -s",
+    "release": "pnpm run clean && pnpm run build && git add -f docs && (git diff --cached --quiet -- docs || git commit -m 'docs: update API docs' -- docs) && pnpm dlx commit-and-tag-version@12.7.3 -s",
     "release.alpha": "pnpm run release -- --prerelease alpha"
   },
   "dependencies": {

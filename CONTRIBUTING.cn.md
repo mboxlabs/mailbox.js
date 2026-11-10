@@ -131,6 +131,9 @@ feat(mailbox): add xxx option to fetch
 
 发布流程由 `commit-and-tag-version`（经 `pnpm dlx` 调用）自动完成，它会根据 Conventional Commits 生成 `CHANGELOG.md` 并打上版本标签。它既不发布也不推送：`npm publish` 与 `git push --follow-tags` 仍是手工步骤。
 
+工具钉在 `commit-and-tag-version@12`：从 `13.0.0` 起，它内置的 hosted-git-info 读不出以 `.js` 结尾的仓库名，
+生成的 CHANGELOG 链接会变成 `](///compare/v1.0.0...v2.0.0)`、commit 退化成裸 SHA。想升这个钉，先实测一次链接。
+
 ```shell
 # 预览将要生成的版本和变更日志
 pnpm release -- --dry-run
