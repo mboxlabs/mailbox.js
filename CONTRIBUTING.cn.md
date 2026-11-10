@@ -129,7 +129,7 @@ feat(mailbox): add xxx option to fetch
 
 ## 📦 发布流程 (维护者)
 
-发布流程由 `standard-version` 自动完成，它会根据 Conventional Commits 生成 `CHANGELOG.md` 并打上版本标签。
+发布流程由 `commit-and-tag-version`（经 `pnpm dlx` 调用）自动完成，它会根据 Conventional Commits 生成 `CHANGELOG.md` 并打上版本标签。它既不发布也不推送：`npm publish` 与 `git push --follow-tags` 仍是手工步骤。
 
 ```shell
 # 预览将要生成的版本和变更日志

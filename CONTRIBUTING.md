@@ -131,7 +131,7 @@ feat(mailbox): add xxx option to fetch
 
 ## 📦 Release Process (for Maintainers)
 
-The release process is automated by `standard-version`, which generates the `CHANGELOG.md` and tags the version based on Conventional Commits.
+The release process is automated by `commit-and-tag-version` (run through `pnpm dlx`), which generates the `CHANGELOG.md` and tags the version based on Conventional Commits. It neither publishes nor pushes: `npm publish` and `git push --follow-tags` stay manual.
 
 ```shell
 # Preview the upcoming version and changelog
