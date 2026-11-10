@@ -4,6 +4,9 @@
   "license": "MIT",
   "author": "Riceball LEE <snowyu.lee@gmail.com>",
   "homepage": "https://github.com/mboxlabs/mailbox.js",
+  "bugs": {
+    "url": "https://github.com/mboxlabs/mailbox.js/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mboxlabs/mailbox.js.git"
@@ -32,24 +35,17 @@
     "lint:fix": "pnpm run lint --fix",
     "test": "pnpm run typecheck && vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "release": "pnpm run clean && pnpm run build && git add -f docs && git ci -m 'docs: update API docs' && pnpm dlx commit-and-tag-version -s",
+    "release": "pnpm run clean && pnpm run build && git add -f docs && git commit -m 'docs: update API docs' && pnpm dlx commit-and-tag-version -s",
     "release.alpha": "pnpm run release -- --prerelease alpha"
   },
   "dependencies": {
-    "@isdk/common-error": "^0.2.0",
-    "@isdk/hash": "workspace:^",
-    "@isdk/util": "^0.3.9",
-    "@jsonforms/core": "^3.7.0",
-    "date-fns": "^4.1.0",
-    "lodash-es": "^4.18.1",
-    "util-ex": "^2.5.2"
+    "@isdk/hash": "workspace:^"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.10.1",
     "@fastify/formbody": "^8.0.2",
     "@types/inquirer": "^8.2.12",
     "@types/jsdom": "^27.0.0",
-    "@types/lodash-es": "^4.17.12",
     "@types/node": "^26.1.0",
     "@typescript-eslint/eslint-plugin": "~8.41.0",
     "eslint": "^9.34.0",
@@ -71,7 +67,9 @@
   },
   "files": [
     "docs",
-    "dist"
+    "dist",
+    "LICENSE-MIT",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "mailbox",
