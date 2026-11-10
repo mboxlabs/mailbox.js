@@ -308,7 +308,7 @@ flowchart LR
    别的处置值属于 provider 自己的词汇表，必须先声明（`provider.supports` 里的
    `disposition:<值>`）；没声明的值会抛 `UnsupportedCapabilityError`，**而且发生在任何状态改动
    之前**——绝不静默降级成某个内置值。`nack(requeue?)` 保留为 deprecated 别名
-   （`nack(true)` ≡ `unhandled`、`nack(false)` ≡ `discard`），`2.0.0` 删除。
+   （`nack(true)` ≡ `unhandled`、`nack(false)` ≡ `discard`），拆包那一版（`3.0.0`）删除。
 
    **一次取信 = 一次处置。** 句柄代表一次交付：重复处置、或租约已被收回的旧句柄迟到处置，都
    **不生效**并返回 `false`（不抛错、不静默、也不给开关）。想“先占着再定”用的是租约

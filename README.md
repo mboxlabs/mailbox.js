@@ -331,7 +331,8 @@ reject/bounce, for IMAP a `\Deleted` flag plus expunge, for MQTT there is no suc
 assume `discard` implies a DLQ — ask with `provider.can('dead-letter', address)`.
 
 `ack()` with no argument means `handled`. `nack(requeue?)` is kept as a deprecated alias of the
-same thing (`nack(true)` ≡ `unhandled`, `nack(false)` ≡ `discard`) and disappears in `2.0.0`.
+same thing (`nack(true)` ≡ `unhandled`, `nack(false)` ≡ `discard`) and disappears in `3.0.0`, the
+release that unbundles the providers.
 
 Any other value is the provider's own vocabulary and must be declared
 (`disposition:<value>` in `provider.supports`); an undeclared value fails with
