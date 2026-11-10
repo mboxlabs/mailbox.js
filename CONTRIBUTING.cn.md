@@ -129,15 +129,25 @@ feat(mailbox): add xxx option to fetch
 
 ## 📦 发布流程 (维护者)
 
-发布流程由 `commit-and-tag-version`（经 `pnpm dlx` 调用）自动完成，它会根据 Conventional Commits 生成 `CHANGELOG.md` 并打上版本标签。它既不发布也不推送：`npm publish` 与 `git push --follow-tags` 仍是手工步骤。
+发布流程由 `commit-and-tag-version`（经 `pnpm dlx` 调用）自动完成，它会根据 Conventional Commits 生成 `CHANGELOG.md` 并打上版本标签。它既不发布也不推送：`pnpm publish` 与 `git push --follow-tags` 仍是手工步骤。
 
-工具钉在 `commit-and-tag-version@12`：从 `13.0.0` 起，它内置的 hosted-git-info 读不出以 `.js` 结尾的仓库名，
-生成的 CHANGELOG 链接会变成 `](///compare/v1.0.0...v2.0.0)`、commit 退化成裸 SHA。想升这个钉，先实测一次链接。
+工具钉到精确版本 `commit-and-tag-version@12.7.3`。写 `@12` 是浮动 major 区间：以后任何一个 12.x 补丁都能决定
+CHANGELOG 长什么样，而本仓没有 lockfile 可拦。`///` 这个退化从 `13.0.0` 开始——它内置的 hosted-git-info 读不出
+以 `.js` 结尾的仓库名，host/user/project 三段全空，链接塌成 `](///compare/v1.0.0...v2.0.0)`、commit 引用退化成裸 SHA。
+同一份历史上实测：`12.5.2` 与 `12.7.3` 正常，`13.0.0`、`13.1.0`、`13.1.2` 不正常。想升这个钉，先实测一次链接。
 
 ```shell
-# 预览将要生成的版本和变更日志
-pnpm release -- --dry-run
+# 预览版本和变更日志，不动仓库
+pnpm dlx commit-and-tag-version@12.7.3 --dry-run
 
 # 正式发布
 pnpm release
 ```
+
+`pnpm release -- --dry-run` **不是**只读预览：pnpm 只把参数追加到链上最后一条命令，所以 `clean`、重建 docs、
+以及提交 docs 都会在“预览”之前真跑一遍。要预览就用上面那条。
+
+发布用 `pnpm publish`，并且必须在 `@isdk/ai-tools` workspace 里跑，不是 `npm publish`。本包唯一的运行时依赖写的是
+`"@isdk/hash": "workspace:^"`，只有 pnpm 会把它改写成真实版本区间（实测：`^0.1.1`）。在 workspace 外，`pnpm pack` 已经会
+报 `ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL`；`npm publish` 则会把一个任何包管理器都解析不了的版本区间推到用户面前。
+发版提交还没 push 时预计需要 `--no-git-checks`；如果它指向的兄弟包版本不在 registry 上，先发那个。

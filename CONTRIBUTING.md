@@ -131,16 +131,30 @@ feat(mailbox): add xxx option to fetch
 
 ## 📦 Release Process (for Maintainers)
 
-The release process is automated by `commit-and-tag-version` (run through `pnpm dlx`), which generates the `CHANGELOG.md` and tags the version based on Conventional Commits. It neither publishes nor pushes: `npm publish` and `git push --follow-tags` stay manual.
+The release process is automated by `commit-and-tag-version` (run through `pnpm dlx`), which generates the `CHANGELOG.md` and tags the version based on Conventional Commits. It neither publishes nor pushes: `pnpm publish` and `git push --follow-tags` stay manual.
 
-The tool is pinned to `commit-and-tag-version@12`. From `13.0.0` its `hosted-git-info` can no longer read a
-repository whose name ends in `.js`, so the generated changelog comes out with links like
-`](///compare/v1.0.0...v2.0.0)` and bare commit SHAs instead of links. Test a link before raising the pin.
+The tool is pinned to an exact version, `commit-and-tag-version@12.7.3`. `@12` would be a floating major range:
+every future 12.x patch would then get to decide how the changelog renders, with no lockfile in this repo to
+argue with. The `///` regression starts at `13.0.0` — its `hosted-git-info` can no longer read a repository whose
+name ends in `.js`, so host/user/project come out empty and the links collapse to
+`](///compare/v1.0.0...v2.0.0)`, with commit references degraded to bare SHAs. Measured on this history:
+`12.5.2` and `12.7.3` render correctly; `13.0.0`, `13.1.0`, `13.1.2` do not. Test a link before raising the pin.
 
 ```shell
-# Preview the upcoming version and changelog
-pnpm release -- --dry-run
+# Preview the version and the changelog without touching the repo
+pnpm dlx commit-and-tag-version@12.7.3 --dry-run
 
 # Official release
 pnpm release
 ```
+
+`pnpm release -- --dry-run` is **not** a read-only preview: pnpm appends the flag to the last command in the
+chain only, so `clean`, the docs rebuild, and the `docs` commit all still happen before anything is previewed.
+Preview with the command above instead.
+
+Publish with `pnpm publish`, from inside the `@isdk/ai-tools` workspace — not with `npm publish`. The package's
+one runtime dependency is declared as `"@isdk/hash": "workspace:^"`, and only pnpm rewrites that protocol into a
+real range (measured: `^0.1.1`). Outside the workspace, `pnpm pack` already fails with
+`ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL`; `npm publish` would put a range no consumer package manager can
+resolve in front of users. Expect `--no-git-checks` when the release commit has not been pushed yet, and publish
+the sibling package first if the version it points at is not on the registry.
