@@ -655,6 +655,35 @@ failedDeliveries)`（继承 `MemoryProvider`）。
 > README 里定义一次，TypeScript、Python、Rust 三端等价实现；改动语义时三套测试（`vitest` / `pytest`
 > / `cargo test`）必须同时通过。
 
+## 🧪 自己写 provider：`@mboxlabs/mailbox/testing`
+
+`TestProvider` 是踩满内核**投递交接**（论文里的 L0）的最小 provider：广播投递、发送边界发
+`mbx-send-id` 并剥掉伪造的系统头、`fetch` 的三种形态（auto-ack / `manualAck` / `peek`）、
+一次取信 = 一次处置、`ack('unhandled')` 把**这一份**放回队头。用它确认你的代码不是只会跟
+`MemoryProvider` 配合；如果你发布 provider，也拿它当地基验一遍。
+
+```ts
+import { Mailbox } from '@mboxlabs/mailbox'
+import { createTestProvider } from '@mboxlabs/mailbox/testing'
+
+const mailbox = new Mailbox()
+mailbox.registerProvider(createTestProvider()) // 协议：`test:`
+await mailbox.start()
+
+await mailbox.post({
+  from: 'test://bus/sender',
+  to: 'test://bus/inbox',
+  body: 'A',
+})
+const handle = await mailbox.fetch('test://bus/inbox', { manualAck: true })
+await handle?.ack('unhandled') // 这一份回到队头
+```
+
+它故意**不主张**：租约到期与回收、停放 / 死信留痕、按份去重、重试耗尽的终态、`mem:` 那套地址折叠。
+这些是 provider 自己的投递策略，不属于交接语义；依赖它们的代码要另外拿 `MemoryProvider`（或真
+broker）测。它的能力声明就是这条边界（只有 `status` / `peek` / `clear` / `settle` / `listAddresses`），
+所以诊断面会老实说「这笔没做」，而不是报成「队列是空的」。
+
 ## 📚 深入学习
 
 - [API 速查手册](docs/)
