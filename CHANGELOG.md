@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.1.0](https://github.com/mboxlabs/mailbox.js/compare/v2.0.0...v2.1.0) (2026-11-11)
+
+
+### Features
+
+* **queue:** 省略 requeue 的 nack() 先警告一次 — 3.0.0 它要从「丢弃」翻成「退回」 ([f55d67a](https://github.com/mboxlabs/mailbox.js/commit/f55d67a131531dcdc92453d47e3740f9ccda8b79))
+* **testing:** @mboxlabs/mailbox/testing — 最小合法 provider（L0 基座）对外可取 ([479ec4e](https://github.com/mboxlabs/mailbox.js/commit/479ec4e13599a357efeb1cf8cf23b2179b1ac216))
+
 ## [2.0.0](https://github.com/mboxlabs/mailbox.js/compare/v1.0.0...v2.0.0) (2026-11-10)
 
 
