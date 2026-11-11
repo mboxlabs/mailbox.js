@@ -75,7 +75,8 @@
     "docs",
     "dist",
     "LICENSE-MIT",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "!docs/_media/docs"
   ],
   "keywords": [
     "mailbox",
