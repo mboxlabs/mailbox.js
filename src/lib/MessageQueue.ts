@@ -327,7 +327,7 @@ export class MailMessageQueue<T extends { id: string }> {
         if (requeue === undefined) {
           this.warnNackDefault();
         }
-        return this.nack(key, requeue === true, leaseId)
+        return this.nack(key, requeue === true, leaseId);
       },
     };
   }
