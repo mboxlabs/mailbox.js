@@ -8,7 +8,7 @@
 
 > **withAttemptHeaders**\<`T`\>(`message`, `attempt`, `maxAttempts?`, `round?`): `T`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:316](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L316)
+Defined in: [packages/mailbox/src/lib/delivery.ts:316](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L316)
 
 给投递副本打上尝试次数（不改动原对象）。
 

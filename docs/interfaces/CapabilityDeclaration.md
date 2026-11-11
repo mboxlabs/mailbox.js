@@ -6,7 +6,7 @@
 
 # Interface: CapabilityDeclaration
 
-Defined in: [packages/mailbox/src/lib/capability.ts:56](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/capability.ts#L56)
+Defined in: [packages/mailbox/src/lib/capability.ts:56](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/capability.ts#L56)
 
 能力声明的形状（D6）。
 
@@ -23,7 +23,7 @@ provider 的能力会被运行期改变——包装 / 注入（AoP）、配置�
 
 > `readonly` **supports**: `Set`\<`string`\>
 
-Defined in: [packages/mailbox/src/lib/capability.ts:58](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/capability.ts#L58)
+Defined in: [packages/mailbox/src/lib/capability.ts:58](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/capability.ts#L58)
 
 可变的能力集合。读它 = 看这个 provider 现在能做什么；改它 = 声明变了。
 
@@ -33,7 +33,7 @@ Defined in: [packages/mailbox/src/lib/capability.ts:58](https://github.com/isdk/
 
 > **can**(`operation`, `address?`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/capability.ts:65](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/capability.ts#L65)
+Defined in: [packages/mailbox/src/lib/capability.ts:65](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/capability.ts#L65)
 
 这个 provider 现在能不能做 `operation`。
 

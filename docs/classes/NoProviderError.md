@@ -6,7 +6,7 @@
 
 # Class: NoProviderError
 
-Defined in: [packages/mailbox/src/error.ts:109](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L109)
+Defined in: [packages/mailbox/src/error.ts:109](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L109)
 
 没有 provider 认领这个协议（对齐 Python `ProviderNotFound` / Rust `ProviderNotFound`）。
 
@@ -20,7 +20,7 @@ Defined in: [packages/mailbox/src/error.ts:109](https://github.com/isdk/mailbox.
 
 > **new NoProviderError**(`protocol`): `NoProviderError`
 
-Defined in: [packages/mailbox/src/error.ts:112](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L112)
+Defined in: [packages/mailbox/src/error.ts:112](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L112)
 
 #### Parameters
 
@@ -54,7 +54,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 #### Inherited from
 
@@ -90,7 +90,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **protocol**: `string`
 
-Defined in: [packages/mailbox/src/error.ts:110](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L110)
+Defined in: [packages/mailbox/src/error.ts:110](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L110)
 
 ***
 

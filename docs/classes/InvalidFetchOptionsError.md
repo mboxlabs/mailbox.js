@@ -6,7 +6,7 @@
 
 # Class: InvalidFetchOptionsError
 
-Defined in: [packages/mailbox/src/error.ts:45](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L45)
+Defined in: [packages/mailbox/src/error.ts:45](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L45)
 
 `fetch()` 的选项自相矛盾或取值非法（例如 `peek: true` 与 `manualAck: true` 同时出现、
 `limit` 为负数）。这类错误是调用方的代码问题，必须在调用点炸出来，不能被忽略。
@@ -21,7 +21,7 @@ Defined in: [packages/mailbox/src/error.ts:45](https://github.com/isdk/mailbox.j
 
 > **new InvalidFetchOptionsError**(`message`, `options?`): `InvalidFetchOptionsError`
 
-Defined in: [packages/mailbox/src/error.ts:46](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L46)
+Defined in: [packages/mailbox/src/error.ts:46](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L46)
 
 #### Parameters
 
@@ -59,7 +59,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 #### Inherited from
 

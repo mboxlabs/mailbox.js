@@ -8,7 +8,7 @@
 
 > **toDeliveryResults**(`settled`): [`DeliveryResult`](../interfaces/DeliveryResult.md)[]
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:390](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L390)
+Defined in: [packages/mailbox/src/lib/delivery.ts:390](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L390)
 
 把广播监听器的结算值归一化成 `DeliveryResult`。
 

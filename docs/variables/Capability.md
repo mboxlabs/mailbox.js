@@ -8,7 +8,7 @@
 
 > `const` **Capability**: `object`
 
-Defined in: [packages/mailbox/src/lib/capability.ts:9](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/capability.ts#L9)
+Defined in: [packages/mailbox/src/lib/capability.ts:9](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/capability.ts#L9)
 
 能力名（capability id）。**内核只认这个名字，不认方法存在性。**
 

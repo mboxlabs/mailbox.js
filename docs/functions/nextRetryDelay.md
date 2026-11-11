@@ -8,7 +8,7 @@
 
 > **nextRetryDelay**(`policy`, `attempt`): `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:74](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L74)
+Defined in: [packages/mailbox/src/lib/retry.ts:74](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L74)
 
 第 `attempt` 次尝试失败之后，下一次重试要等多久（毫秒）。
 

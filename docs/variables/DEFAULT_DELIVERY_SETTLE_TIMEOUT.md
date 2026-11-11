@@ -8,7 +8,7 @@
 
 > `const` **DEFAULT\_DELIVERY\_SETTLE\_TIMEOUT**: `30000` = `30_000`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:18](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L18)
+Defined in: [packages/mailbox/src/lib/delivery.ts:18](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L18)
 
 单次投递**尝试**的默认结算超时（毫秒）。`0` 关闭。
 

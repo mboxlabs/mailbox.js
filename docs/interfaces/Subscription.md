@@ -6,7 +6,7 @@
 
 # Interface: Subscription
 
-Defined in: [packages/mailbox/src/interfaces.ts:7](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L7)
+Defined in: [packages/mailbox/src/interfaces.ts:7](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L7)
 
 代表一个活跃的订阅会话。
 
@@ -19,7 +19,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:7](https://github.com/isdk/mailb
 
 > `readonly` **address**: `URL`
 
-Defined in: [packages/mailbox/src/interfaces.ts:9](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L9)
+Defined in: [packages/mailbox/src/interfaces.ts:9](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L9)
 
 ***
 
@@ -27,7 +27,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:9](https://github.com/isdk/mailb
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/mailbox/src/interfaces.ts:8](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L8)
+Defined in: [packages/mailbox/src/interfaces.ts:8](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L8)
 
 ***
 
@@ -35,7 +35,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:8](https://github.com/isdk/mailb
 
 > **status**: `"active"` \| `"paused"` \| `"closed"`
 
-Defined in: [packages/mailbox/src/interfaces.ts:21](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L21)
+Defined in: [packages/mailbox/src/interfaces.ts:21](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L21)
 
 订阅状态。
 
@@ -53,7 +53,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:21](https://github.com/isdk/mail
 
 > **unsubscribe**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:29](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L29)
+Defined in: [packages/mailbox/src/interfaces.ts:29](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L29)
 
 退订。
 

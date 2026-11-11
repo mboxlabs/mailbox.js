@@ -6,7 +6,7 @@
 
 # Class: AttemptLedger
 
-Defined in: [packages/mailbox/src/lib/retry.ts:91](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L91)
+Defined in: [packages/mailbox/src/lib/retry.ts:91](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L91)
 
 按**投递身份**记录已经尝试过几次：一个订阅者 × 一份信（`deliveryKey`）。
 
@@ -23,7 +23,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:91](https://github.com/isdk/mailb
 
 > **new AttemptLedger**(`ttlMs?`): `AttemptLedger`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:94](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L94)
+Defined in: [packages/mailbox/src/lib/retry.ts:94](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L94)
 
 #### Parameters
 
@@ -43,7 +43,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:94](https://github.com/isdk/mailb
 
 > **get** **size**(): `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:119](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L119)
+Defined in: [packages/mailbox/src/lib/retry.ts:119](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L119)
 
 ##### Returns
 
@@ -55,7 +55,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:119](https://github.com/isdk/mail
 
 > **clear**(): `void`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:115](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L115)
+Defined in: [packages/mailbox/src/lib/retry.ts:115](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L115)
 
 #### Returns
 
@@ -67,7 +67,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:115](https://github.com/isdk/mail
 
 > **count**(`key`): `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:106](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L106)
+Defined in: [packages/mailbox/src/lib/retry.ts:106](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L106)
 
 当前已尝试次数（未记录过则为 0）。
 
@@ -87,7 +87,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:106](https://github.com/isdk/mail
 
 > **record**(`key`): `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:97](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L97)
+Defined in: [packages/mailbox/src/lib/retry.ts:97](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L97)
 
 记录一次尝试，返回这是第几次。
 
@@ -107,7 +107,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:97](https://github.com/isdk/mailb
 
 > **reset**(`key`): `void`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:111](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L111)
+Defined in: [packages/mailbox/src/lib/retry.ts:111](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L111)
 
 处理成功后清零，让这一份日后还能重试。
 

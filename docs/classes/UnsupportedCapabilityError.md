@@ -6,7 +6,7 @@
 
 # Class: UnsupportedCapabilityError
 
-Defined in: [packages/mailbox/src/error.ts:58](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L58)
+Defined in: [packages/mailbox/src/error.ts:58](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L58)
 
 provider 不具备被请求的能力（例如对不支持只读 `peek` 的传输强要 peek）。
 
@@ -23,7 +23,7 @@ provider 不具备被请求的能力（例如对不支持只读 `peek` 的传输
 
 > **new UnsupportedCapabilityError**(`protocol`, `capability`): `UnsupportedCapabilityError`
 
-Defined in: [packages/mailbox/src/error.ts:63](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L63)
+Defined in: [packages/mailbox/src/error.ts:63](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L63)
 
 #### Parameters
 
@@ -49,7 +49,7 @@ Defined in: [packages/mailbox/src/error.ts:63](https://github.com/isdk/mailbox.j
 
 > `readonly` **capability**: `string`
 
-Defined in: [packages/mailbox/src/error.ts:61](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L61)
+Defined in: [packages/mailbox/src/error.ts:61](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L61)
 
 缺失的能力名，例如 `'peek'` / `'status'`。
 
@@ -71,7 +71,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 #### Inherited from
 
@@ -107,7 +107,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **protocol**: `string`
 
-Defined in: [packages/mailbox/src/error.ts:59](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L59)
+Defined in: [packages/mailbox/src/error.ts:59](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L59)
 
 ***
 

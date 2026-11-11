@@ -685,6 +685,39 @@ const provider = mailbox.getProvider('mem')
 const slackProvider = mailbox.getProvider('slack', true)
 ```
 
+### 8. Testing a provider you wrote (`@mboxlabs/mailbox/testing`)
+
+`TestProvider` is the smallest provider that satisfies the kernel's delivery hand-off (L0 in the
+paper): broadcast delivery, the send boundary that issues `mbx-send-id` and strips forged system
+headers, the three shapes of `fetch` (auto-ack / `manualAck` / `peek`), one disposition per fetch,
+and `ack('unhandled')` putting **that copy** back at the head of the queue. Use it to check that your
+code is not just co-operating with `MemoryProvider`, and — if you publish a provider — to check that
+provider against the same baseline.
+
+```ts
+import { Mailbox } from '@mboxlabs/mailbox'
+import { createTestProvider } from '@mboxlabs/mailbox/testing'
+
+const mailbox = new Mailbox()
+mailbox.registerProvider(createTestProvider()) // protocol: `test:`
+await mailbox.start()
+
+await mailbox.post({
+  from: 'test://bus/sender',
+  to: 'test://bus/inbox',
+  body: 'A',
+})
+const handle = await mailbox.fetch('test://bus/inbox', { manualAck: true })
+await handle?.ack('unhandled') // this copy is back at the head of the queue
+```
+
+What it deliberately does **not** claim: lease expiry and recovery, parking / dead-letter storage,
+per-copy requeue deduplication, terminal retry-exhaustion behaviour, or `mem:`-style address folding.
+Those are delivery policies a provider owns, not part of the hand-off — code that depends on them has
+to be tested against `MemoryProvider` (or a real broker) as well. Its capability declaration states
+that boundary (`status` / `peek` / `clear` / `settle` / `listAddresses`, nothing else), so diagnostics
+say “this one was not done” instead of pretending the queue is empty.
+
 ## 🔄 Lifecycle Management
 
 For robust production systems, explicit lifecycle management is crucial:

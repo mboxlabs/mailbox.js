@@ -6,7 +6,7 @@
 
 # Class: MailMessageQueue\<T\>
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:142](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L142)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:142](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L142)
 
 A generic, in-memory message queue that supports topic-based queuing and manual acknowledgement.
 
@@ -45,7 +45,7 @@ The type of messages in the queue. Must have an `id` property of type string.
 
 > **ack**(`key`, `leaseId?`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:492](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L492)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:507](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L507)
 
 Acknowledges a **copy**, permanently removing it from the in-flight state.
 
@@ -81,7 +81,7 @@ Acknowledges a **copy**, permanently removing it from the in-flight state.
 
 > **clear**(`topic?`): `number`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:709](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L709)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:749](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L749)
 
 清空队列状态：不传 `topic` 则清空所有 topic。
 
@@ -109,7 +109,7 @@ in-flight 的消息**也**会被丢弃：它同样是队列状态的一部分，
 
 > **clearParked**(`topic`, `predicate?`): `number`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:602](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L602)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:642](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L642)
 
 排空停放区：把判死的记录真正丢掉。返回丢掉的份数。
 
@@ -139,7 +139,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:602](https://github.com/is
 
 > **dequeue**(`topic`, `options`): [`SettlingAckable`](../type-aliases/SettlingAckable.md)\<`T`\> \| `null`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:257](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L257)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:264](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L264)
 
 Dequeues a message from the front of a specific topic's queue.
 
@@ -196,7 +196,7 @@ An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or 
 
 > **dequeue**(`topic`, `options?`): `T` \| `null`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:261](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L261)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:268](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L268)
 
 Dequeues a message from the front of a specific topic's queue.
 
@@ -244,7 +244,7 @@ An `Ackable` message in manual-ack mode, a regular message in auto-ack mode, or 
 
 > **drop**(`topic`, `message`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:640](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L640)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:680](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L680)
 
 把**这一份**从队列里移除（`discard` 的落点）：不在队列里就返回 `false`，不谎报。
 
@@ -280,7 +280,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:640](https://github.com/is
 
 > **enqueue**(`topic`, `message`): `void`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:215](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L215)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:222](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L222)
 
 Adds a message to the end of a specific topic's queue.
 
@@ -312,7 +312,7 @@ The message to enqueue.
 
 > **getStatus**(`topic`): [`TopicQueueStatus`](../type-aliases/TopicQueueStatus.md)
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:546](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L546)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:586](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L586)
 
 Gets the current status of a topic's queue.
 
@@ -343,7 +343,7 @@ The topic to query.
 
 > **has**(`messageId`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:687](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L687)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:727](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L727)
 
 判断某个消息是否已在队列中等待或已被取走（in-flight）。按 id 问：同 id 有几份都算存在。
 
@@ -363,7 +363,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:687](https://github.com/is
 
 > **hasTopic**(`topic`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:354](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L354)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:369](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L369)
 
 这个 topic 在队列里有没有痕迹（等待中的消息或 in-flight）。
 与 [has](#has)（按消息 id）不同：这是按 topic 的「存不存在」，用于 status 的 `exists`。
@@ -384,7 +384,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:354](https://github.com/is
 
 > **listParked**(`topic`, `limit?`): `T`[]
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:622](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L622)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:662](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L662)
 
 只读：停放的那些记录（最新的在末尾）。读它不改任何状态。
 
@@ -408,7 +408,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:622](https://github.com/is
 
 > **locate**(`messageId`): [`LocatedCopy`](../type-aliases/LocatedCopy.md)[]
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:449](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L449)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:464](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L464)
 
 按发送方给的名字**查**账（只读）：这个名字可以重复，所以返回的是候选清单。
 
@@ -431,7 +431,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:449](https://github.com/is
 
 > **nack**(`key`, `requeue`, `leaseId?`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:519](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L519)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:540](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L540)
 
 Negatively acknowledges a **copy**, removing it from the in-flight state.
 If `requeue` is true, the copy goes back to the front of **the queue it came from**
@@ -455,6 +455,12 @@ If `requeue` is true, the copy goes back to the front of **the queue it came fro
 
 If true, the copy is re-added to the front of its own queue.
 
+  **这个 flag 在 `3.0.0` 会被去掉**：那之后只有两个具名动作——
+  `ack(key)` 结束这份拷贝（不再回来），`nack(key)` 把这份拷贝退回它自己那条队列。
+  所以 `requeue` 省略时今天按「丢弃」处理（等价于 `ack(key)`），`3.0.0` 起同一个无参调用
+  会改判成「退回」。带参数的调用在类型层就会被挡住，**省略参数的那一批挡不住**，
+  故整个 2.x 对省略写法告警一次（行为不动）。要丢弃就写 `ack`，要退回就带上 flag。
+
 ##### leaseId?
 
 `string`
@@ -473,7 +479,7 @@ If true, the copy is re-added to the front of its own queue.
 
 > **park**(`topic`, `message`, `reason`): `void`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:581](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L581)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:621](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L621)
 
 停放一份**判死**的记录：不进队列、不会被 `dequeue` 交出来，只在 `getStatus` 里数得出来、
 在 [listParked](#listparked) 里读得出来。
@@ -505,7 +511,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:581](https://github.com/is
 
 > **peek**(`topic`, `limit?`): `T`[]
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:338](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L338)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:353](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L353)
 
 【只读】看一眼队列头部最多 `limit` 条消息，**不**改动任何投递状态。
 
@@ -549,7 +555,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:338](https://github.com/is
 
 > **requeue**(`topic`, `message`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:668](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L668)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:708](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L708)
 
 Adds a message back to the front of its queue. Used for requeueing.
 
@@ -586,7 +592,7 @@ true 如果消息确实回到队列；false 如果因为**这一份已在队列 
 
 > **sweepExpired**(`topic`): `number`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:771](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L771)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:811](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L811)
 
 把该 topic 上**租约已到期**的在飞收回队列。这是回收机制，用来在消费者崩掉时不丢消息。
 
@@ -616,7 +622,7 @@ provider 的 opt-in 定时器）——后者就是为了“再没人来取信”
 
 > **topics**(): `string`[]
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:370](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L370)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:385](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L385)
 
 当前有消息（等待中或 in-flight）的 topic 列表，按字典序排序（快照与测试断言需要确定性）。
 

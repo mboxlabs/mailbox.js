@@ -8,7 +8,7 @@
 
 > **parseMailboxAddress**(`input`, `context?`): `URL`
 
-Defined in: [packages/mailbox/src/lib/utils.ts:80](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/utils.ts#L80)
+Defined in: [packages/mailbox/src/lib/utils.ts:80](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/utils.ts#L80)
 
 把地址解析成 URL。**内核对地址只做这一件事**（D5）。
 

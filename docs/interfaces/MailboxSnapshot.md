@@ -6,7 +6,7 @@
 
 # Interface: MailboxSnapshot
 
-Defined in: [packages/mailbox/src/interfaces.ts:377](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L377)
+Defined in: [packages/mailbox/src/interfaces.ts:377](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L377)
 
 全量快照：一时刻整个 `Mailbox`（所有 provider、所有 topic）的诊断视图。
 
@@ -20,7 +20,7 @@ broker）列在 [MailboxSnapshot.unsupportedProviders](#unsupportedproviders) �
 
 > **addressCount**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:388](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L388)
+Defined in: [packages/mailbox/src/interfaces.ts:388](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L388)
 
 快照里的地址总数。
 
@@ -30,7 +30,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:388](https://github.com/isdk/mai
 
 > **addresses**: [`MailboxAddressSnapshot`](MailboxAddressSnapshot.md)[]
 
-Defined in: [packages/mailbox/src/interfaces.ts:400](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L400)
+Defined in: [packages/mailbox/src/interfaces.ts:400](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L400)
 
 按 `address` 排序的地址状态，保证快照可重复、断言可写死。
 
@@ -44,7 +44,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:400](https://github.com/isdk/mai
 
 > **inFlightCount**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:392](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L392)
+Defined in: [packages/mailbox/src/interfaces.ts:392](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L392)
 
 所有地址的 `inFlightCount` 之和。
 
@@ -54,7 +54,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:392](https://github.com/isdk/mai
 
 > **protocols**: `string`[]
 
-Defined in: [packages/mailbox/src/interfaces.ts:386](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L386)
+Defined in: [packages/mailbox/src/interfaces.ts:386](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L386)
 
 已注册的协议名（排序后）。
 
@@ -64,7 +64,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:386](https://github.com/isdk/mai
 
 > **state**: `"unknown"` \| `"online"` \| `"offline"` \| `"degraded"`
 
-Defined in: [packages/mailbox/src/interfaces.ts:384](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L384)
+Defined in: [packages/mailbox/src/interfaces.ts:384](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L384)
 
 快照的完整度：
 - `online`：所有 provider 都能枚举，且所有地址都是 `online`；
@@ -77,7 +77,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:384](https://github.com/isdk/mai
 
 > **takenAt**: `string`
 
-Defined in: [packages/mailbox/src/interfaces.ts:404](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L404)
+Defined in: [packages/mailbox/src/interfaces.ts:404](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L404)
 
 快照生成的时间（ISO 8601）。
 
@@ -87,7 +87,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:404](https://github.com/isdk/mai
 
 > **unreadCount**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:390](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L390)
+Defined in: [packages/mailbox/src/interfaces.ts:390](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L390)
 
 所有地址的 `unreadCount` 之和。
 
@@ -97,6 +97,6 @@ Defined in: [packages/mailbox/src/interfaces.ts:390](https://github.com/isdk/mai
 
 > **unsupportedProviders**: `string`[]
 
-Defined in: [packages/mailbox/src/interfaces.ts:402](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L402)
+Defined in: [packages/mailbox/src/interfaces.ts:402](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L402)
 
 不支持枚举自身地址的 provider（它们的队列不在本次快照里）。

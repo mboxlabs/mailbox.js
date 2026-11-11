@@ -6,7 +6,7 @@
 
 # Class: InvalidDeadLetterNestingError
 
-Defined in: [packages/mailbox/src/error.ts:95](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L95)
+Defined in: [packages/mailbox/src/error.ts:95](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L95)
 
 死信链深度上限（`maxNesting`）非法。小于 1 的上限等于「死信无处可去」，
 非整数 / NaN 等于「比较永远不成立，链永远不会封顶」——两者都是配置错误，
@@ -22,7 +22,7 @@ Defined in: [packages/mailbox/src/error.ts:95](https://github.com/isdk/mailbox.j
 
 > **new InvalidDeadLetterNestingError**(`maxNesting`, `message`, `options?`): `InvalidDeadLetterNestingError`
 
-Defined in: [packages/mailbox/src/error.ts:99](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L99)
+Defined in: [packages/mailbox/src/error.ts:99](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L99)
 
 #### Parameters
 
@@ -64,7 +64,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 #### Inherited from
 
@@ -76,7 +76,7 @@ Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.j
 
 > `readonly` **maxNesting**: `unknown`
 
-Defined in: [packages/mailbox/src/error.ts:97](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L97)
+Defined in: [packages/mailbox/src/error.ts:97](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L97)
 
 被拒绝的 `maxNesting` 原值。
 

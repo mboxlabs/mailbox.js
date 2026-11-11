@@ -8,7 +8,7 @@
 
 > **assertLosslessMailboxAddress**(`address`, `context?`): `void`
 
-Defined in: [packages/mailbox/src/lib/utils.ts:38](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/utils.ts#L38)
+Defined in: [packages/mailbox/src/lib/utils.ts:38](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/utils.ts#L38)
 
 校验一个地址在规范化时不会**静默丢掉**信息——**这是 scheme 可以采用的策略，不是内核规则**。
 

@@ -8,7 +8,7 @@
 
 > **SettlingAckable**\<`T`\> = `T` & `object`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:34](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L34)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:34](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L34)
 
 队列自己交给消费者的那个 ackable：与 [MailMessageAckable](MailMessageAckable.md) 同一个形状，但 `ack` / `nack`
 **报告这次处置有没有落定**。

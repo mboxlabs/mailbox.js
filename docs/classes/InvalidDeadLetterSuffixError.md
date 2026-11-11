@@ -6,7 +6,7 @@
 
 # Class: InvalidDeadLetterSuffixError
 
-Defined in: [packages/mailbox/src/error.ts:79](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L79)
+Defined in: [packages/mailbox/src/error.ts:79](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L79)
 
 死信队列后缀非法。空后缀会让死信写回**原队列**（被放弃的消息重新变得可消费，
 等于无限重试），带 query / hash 的后缀会在地址规范化时被静默丢掉——两者都是配置错误，
@@ -22,7 +22,7 @@ Defined in: [packages/mailbox/src/error.ts:79](https://github.com/isdk/mailbox.j
 
 > **new InvalidDeadLetterSuffixError**(`suffix`, `message`, `options?`): `InvalidDeadLetterSuffixError`
 
-Defined in: [packages/mailbox/src/error.ts:83](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L83)
+Defined in: [packages/mailbox/src/error.ts:83](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L83)
 
 #### Parameters
 
@@ -64,7 +64,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 #### Inherited from
 
@@ -112,7 +112,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **suffix**: `unknown`
 
-Defined in: [packages/mailbox/src/error.ts:81](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L81)
+Defined in: [packages/mailbox/src/error.ts:81](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L81)
 
 被拒绝的后缀原值。
 

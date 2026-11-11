@@ -8,7 +8,7 @@
 
 > **describeDeliveryError**(`error`): `string`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:76](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L76)
+Defined in: [packages/mailbox/src/lib/delivery.ts:76](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L76)
 
 把任意抛出的值归一成一句可落库的摘要：`Error: bad payload`、`Error: flaky (code=503)`。
 

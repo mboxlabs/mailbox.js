@@ -8,7 +8,7 @@
 
 > **isCustomDisposition**(`where`): `boolean`
 
-Defined in: [packages/mailbox/src/lib/disposition.ts:65](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/disposition.ts#L65)
+Defined in: [packages/mailbox/src/lib/disposition.ts:65](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/disposition.ts#L65)
 
 自定义处置（既不是 `handled` 也不是 `unhandled` / `discard`）。
 

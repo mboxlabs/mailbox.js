@@ -6,7 +6,7 @@
 
 # Interface: IMailboxProvider
 
-Defined in: [packages/mailbox/src/interfaces.ts:419](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L419)
+Defined in: [packages/mailbox/src/interfaces.ts:419](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L419)
 
 内核调用 provider 的**结构面**——这不是「实现路径」。
 
@@ -25,7 +25,7 @@ Provider 在发送时，有责任向 headers 中注入 `mbx-sent-at` 时间戳 (
 
 > `readonly` `optional` **addressGrammar?**: [`MailboxAddressGrammar`](MailboxAddressGrammar.md)
 
-Defined in: [packages/mailbox/src/interfaces.ts:546](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L546)
+Defined in: [packages/mailbox/src/interfaces.ts:546](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L546)
 
 [Optional] 这个 scheme 的地址语法（见 [MailboxAddressGrammar](MailboxAddressGrammar.md)）。
 
@@ -39,7 +39,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:546](https://github.com/isdk/mai
 
 > **protocol**: `string`
 
-Defined in: [packages/mailbox/src/interfaces.ts:420](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L420)
+Defined in: [packages/mailbox/src/interfaces.ts:420](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L420)
 
 ## Methods
 
@@ -47,7 +47,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:420](https://github.com/isdk/mai
 
 > `optional` **clear**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:456](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L456)
+Defined in: [packages/mailbox/src/interfaces.ts:456](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L456)
 
 丢弃本 provider 持有的积压消息（含 in-flight），不动订阅。可选实现。
 
@@ -65,7 +65,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:456](https://github.com/isdk/mai
 
 > `optional` **close**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:447](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L447)
+Defined in: [packages/mailbox/src/interfaces.ts:447](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L447)
 
 关闭 Provider：释放资源、断开连接，**并把 `subscribe()` 注册过的订阅全部退掉**。
 
@@ -98,7 +98,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:447](https://github.com/isdk/mai
 
 > **fetch**(`address`, `options`): `Promise`\<[`MailMessage`](MailMessage.md)[]\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:516](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L516)
+Defined in: [packages/mailbox/src/interfaces.ts:516](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L516)
 
 【拉取模式】从指定地址主动拉取一封信件。
 支持自动ACK (默认) 和手动ACK两种模式。
@@ -128,7 +128,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:516](https://github.com/isdk/mai
 
 > **fetch**(`address`, `options`): `Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:517](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L517)
+Defined in: [packages/mailbox/src/interfaces.ts:517](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L517)
 
 ##### Parameters
 
@@ -148,7 +148,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:517](https://github.com/isdk/mai
 
 > **fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](MailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:518](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L518)
+Defined in: [packages/mailbox/src/interfaces.ts:518](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L518)
 
 ##### Parameters
 
@@ -168,7 +168,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:518](https://github.com/isdk/mai
 
 > **fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](MailMessage.md) \| [`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| [`MailMessage`](MailMessage.md)[] \| `null`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:519](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L519)
+Defined in: [packages/mailbox/src/interfaces.ts:519](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L519)
 
 ##### Parameters
 
@@ -190,7 +190,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:519](https://github.com/isdk/mai
 
 > **generateId**(): `string`
 
-Defined in: [packages/mailbox/src/interfaces.ts:564](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L564)
+Defined in: [packages/mailbox/src/interfaces.ts:564](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L564)
 
 创建一个唯一标识符。主要是用于生成邮件的 ID。
 
@@ -204,7 +204,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:564](https://github.com/isdk/mai
 
 > `optional` **init**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:425](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L425)
+Defined in: [packages/mailbox/src/interfaces.ts:425](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L425)
 
 初始化 Provider。用于建立连接、验证配置等。
 
@@ -218,7 +218,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:425](https://github.com/isdk/mai
 
 > `optional` **listAddresses**(): `Promise`\<`string`[]\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:559](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L559)
+Defined in: [packages/mailbox/src/interfaces.ts:559](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L559)
 
 [Optional] 列出本 provider 当前认得的地址。
 
@@ -240,7 +240,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:559](https://github.com/isdk/mai
 
 > `optional` **recoverLeases**(`address`): `Promise`\<`number`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:537](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L537)
+Defined in: [packages/mailbox/src/interfaces.ts:537](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L537)
 
 [Optional] 把该地址上**租约已到期**的在飞消息收回队列，返回收回了几份（幂等）。
 
@@ -264,7 +264,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:537](https://github.com/isdk/mai
 
 > **send**(`message`): `Promise`\<[`MailMessage`](MailMessage.md)\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:458](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L458)
+Defined in: [packages/mailbox/src/interfaces.ts:458](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L458)
 
 #### Parameters
 
@@ -282,7 +282,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:458](https://github.com/isdk/mai
 
 > `optional` **status**(`address`): `Promise`\<[`MailboxStatus`](MailboxStatus.md)\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:528](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L528)
+Defined in: [packages/mailbox/src/interfaces.ts:528](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L528)
 
 查询指定地址的状态。
 这是一个可选实现的方法。如果 Provider 不支持，可以抛出 "Not Implemented" 错误或返回一个默认状态。
@@ -308,7 +308,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:528](https://github.com/isdk/mai
 
 > **subscribe**(`address`, `onReceive`): `Promise`\<[`Subscription`](Subscription.md)\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:503](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L503)
+Defined in: [packages/mailbox/src/interfaces.ts:503](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L503)
 
 【订阅模式】订阅一个地址，当有信件到达时触发回调。
 确认机制为隐式ACK：当 onReceive 函数成功执行，消息被自动确认。

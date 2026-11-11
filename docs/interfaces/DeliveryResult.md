@@ -6,7 +6,7 @@
 
 # Interface: DeliveryResult
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:27](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L27)
+Defined in: [packages/mailbox/src/lib/delivery.ts:27](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L27)
 
 一次投递的最终结算结果。
 
@@ -20,7 +20,7 @@ Defined in: [packages/mailbox/src/lib/delivery.ts:27](https://github.com/isdk/ma
 
 > `readonly` `optional` **attempts?**: `number`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:51](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L51)
+Defined in: [packages/mailbox/src/lib/delivery.ts:51](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L51)
 
 这条投递一共跑过几次尝试（含首次；未开启重试时是 1）。
 
@@ -33,7 +33,7 @@ Defined in: [packages/mailbox/src/lib/delivery.ts:51](https://github.com/isdk/ma
 
 > `readonly` **deliveryId**: `string`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:33](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L33)
+Defined in: [packages/mailbox/src/lib/delivery.ts:33](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L33)
 
 投递身份：`订阅者 × 一份信`（`deliveryKey(subscriptionId, copyIdentity(message))`）。
 第三段是系统发的份号（无号副本退到对象身份），不是发送方写的 `id`——重试预算按这个粒度记，
@@ -45,7 +45,7 @@ Defined in: [packages/mailbox/src/lib/delivery.ts:33](https://github.com/isdk/ma
 
 > `readonly` `optional` **error?**: `string`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:58](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L58)
+Defined in: [packages/mailbox/src/lib/delivery.ts:58](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L58)
 
 失败原因摘要（`Name: message`，必要时带 `code=`），截断到 [MAX\_DELIVERY\_ERROR\_LENGTH](../variables/MAX_DELIVERY_ERROR_LENGTH.md)。
 
@@ -58,7 +58,7 @@ Defined in: [packages/mailbox/src/lib/delivery.ts:58](https://github.com/isdk/ma
 
 > `readonly` **messageId**: `string`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:35](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L35)
+Defined in: [packages/mailbox/src/lib/delivery.ts:35](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L35)
 
 ***
 
@@ -66,7 +66,7 @@ Defined in: [packages/mailbox/src/lib/delivery.ts:35](https://github.com/isdk/ma
 
 > `readonly` **ok**: `boolean`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:37](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L37)
+Defined in: [packages/mailbox/src/lib/delivery.ts:37](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L37)
 
 true = 回调成功结算；false = 这次投递最终失败。
 
@@ -76,7 +76,7 @@ true = 回调成功结算；false = 这次投递最终失败。
 
 > `readonly` `optional` **reason?**: `"retriable"` \| `"fatal"` \| `"cancelled"`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:44](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L44)
+Defined in: [packages/mailbox/src/lib/delivery.ts:44](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L44)
 
 失败分类（`ok === false` 时才有意义）：
 - `retriable`：可重试错误，但重试预算已用尽 —— 值得让 `fetch()` 兜底。
@@ -89,4 +89,4 @@ Defined in: [packages/mailbox/src/lib/delivery.ts:44](https://github.com/isdk/ma
 
 > `readonly` **subscriptionId**: `string`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:34](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L34)
+Defined in: [packages/mailbox/src/lib/delivery.ts:34](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L34)

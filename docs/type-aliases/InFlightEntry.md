@@ -8,7 +8,7 @@
 
 > **InFlightEntry**\<`T`\> = `object`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:65](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L65)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:65](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L65)
 
 一条租约（manualAck 取信）：一次 manualAck 取信 = 一份信借出去一段时间（见 [MailMessageQueue](../classes/MailMessageQueue.md) 的 `inFlight`）。
 
@@ -26,7 +26,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:65](https://github.com/isd
 
 > **expiresAt**: `number`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:71](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L71)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:71](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L71)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:71](https://github.com/isd
 
 > **leaseId**: `string`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:70](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L70)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:70](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L70)
 
 这一份的第几次交出去（`<份号>#<次序>`）：同一份被收回重投后就是新的一个。
 
@@ -44,7 +44,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:70](https://github.com/isd
 
 > **message**: `T`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:66](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L66)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:66](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L66)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:66](https://github.com/isd
 
 > **timestamp**: `number`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:67](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L67)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:67](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L67)
 
 ***
 
@@ -60,4 +60,4 @@ Defined in: [packages/mailbox/src/lib/MessageQueue.ts:67](https://github.com/isd
 
 > **topic**: `string`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:68](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L68)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:68](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L68)

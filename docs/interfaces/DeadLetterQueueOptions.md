@@ -6,7 +6,7 @@
 
 # Interface: DeadLetterQueueOptions
 
-Defined in: [packages/mailbox/src/providers/memory.ts:73](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L73)
+Defined in: [packages/mailbox/src/providers/memory.ts:73](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L73)
 
 [MemoryProvider.enableDeadLetterQueue](../classes/MemoryProvider.md#enabledeadletterqueue) 的选项。
 
@@ -16,7 +16,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:73](https://github.com/isd
 
 > `optional` **maxNesting?**: `number`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:95](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L95)
+Defined in: [packages/mailbox/src/providers/memory.ts:95](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L95)
 
 死信链的深度上限（一条消息最多能被归档进几层 `<suffix>`）。默认
 [DEFAULT\_MAX\_DEAD\_LETTER\_NESTING](../variables/DEFAULT_MAX_DEAD_LETTER_NESTING.md)。
@@ -32,7 +32,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:95](https://github.com/isd
 
 > `optional` **suffix?**: `string`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:84](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L84)
+Defined in: [packages/mailbox/src/providers/memory.ts:84](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L84)
 
 死信 topic 的后缀（接在原始地址 path 的末尾）。默认 [DEFAULT\_DEAD\_LETTER\_SUFFIX](../variables/DEFAULT_DEAD_LETTER_SUFFIX.md)。
 

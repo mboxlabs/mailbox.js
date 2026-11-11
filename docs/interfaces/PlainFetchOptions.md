@@ -6,7 +6,7 @@
 
 # Interface: PlainFetchOptions
 
-Defined in: [packages/mailbox/src/interfaces.ts:225](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L225)
+Defined in: [packages/mailbox/src/interfaces.ts:225](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L225)
 
 `fetch()` 的默认（隐式 ACK）形式：取到即出队。
 
@@ -20,4 +20,4 @@ Defined in: [packages/mailbox/src/interfaces.ts:225](https://github.com/isdk/mai
 
 > `optional` **manualAck?**: `false`
 
-Defined in: [packages/mailbox/src/interfaces.ts:226](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L226)
+Defined in: [packages/mailbox/src/interfaces.ts:226](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L226)

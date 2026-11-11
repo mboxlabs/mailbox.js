@@ -6,7 +6,7 @@
 
 # Class: MemoryEventBus
 
-Defined in: [packages/mailbox/src/providers/memory.ts:115](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L115)
+Defined in: [packages/mailbox/src/providers/memory.ts:115](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L115)
 
 模拟消息传递的内存总线（一个“服务端”）：每个实例持有一份 topic 队列 + 订阅表。
 
@@ -25,7 +25,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:115](https://github.com/is
 
 > **new MemoryEventBus**(`scope?`): `MemoryEventBus`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:126](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L126)
+Defined in: [packages/mailbox/src/providers/memory.ts:126](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L126)
 
 #### Parameters
 
@@ -45,7 +45,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:126](https://github.com/is
 
 > `readonly` **scope**: `string` = `DEFAULT_MEMORY_SCOPE`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:126](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L126)
+Defined in: [packages/mailbox/src/providers/memory.ts:126](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L126)
 
 所属 scope。仅用于诊断（`status()` / 日志里能看出这份状态是谁的）。
 
@@ -55,7 +55,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:126](https://github.com/is
 
 > **ack**(`key`, `leaseId?`): `boolean`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:251](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L251)
+Defined in: [packages/mailbox/src/providers/memory.ts:251](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L251)
 
 结算**一份**在飞的副本（确认完成）。
 
@@ -87,7 +87,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:251](https://github.com/is
 
 > **clear**(`topic?`): `number`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:301](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L301)
+Defined in: [packages/mailbox/src/providers/memory.ts:301](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L301)
 
 丢弃队列里的消息（含 in-flight）并抹掉对应的活动时间；不传 `topic` 则清掉全部。
 
@@ -115,7 +115,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:301](https://github.com/is
 
 > **clearParked**(`topic`, `predicate?`): `number`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:419](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L419)
+Defined in: [packages/mailbox/src/providers/memory.ts:419](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L419)
 
 排空停放区（永久丢弃）。返回丢掉的份数。
 
@@ -139,7 +139,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:419](https://github.com/is
 
 > **enqueue**(`topic`, `message`): `void`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:328](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L328)
+Defined in: [packages/mailbox/src/providers/memory.ts:328](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L328)
 
 追加到队尾（**不是**回队）：回队（`requeue`）把消息放回队头重新参与投递，
 归档（死信）是把已经判死刑的消息放到另一条队列里等人工 / 补偿处理，
@@ -165,7 +165,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:328](https://github.com/is
 
 > **fetchAndForget**(`topic`): [`MailMessage`](../interfaces/MailMessage.md) \| `undefined`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:213](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L213)
+Defined in: [packages/mailbox/src/providers/memory.ts:213](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L213)
 
 Fetches and removes a message from the queue (for auto-acknowledgment).
 交出去也算一轮：用 `handoff` 给 `mbx-round` +1（与基类在订阅侧的 +1 同一套语义）。
@@ -190,7 +190,7 @@ The message, or undefined if the queue is empty.
 
 > **fetchForAck**(`topic`, `options?`): [`SettlingAckable`](../type-aliases/SettlingAckable.md)\<[`MailMessage`](../interfaces/MailMessage.md)\> \| `undefined`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:228](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L228)
+Defined in: [packages/mailbox/src/providers/memory.ts:228](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L228)
 
 Fetches a message for manual acknowledgment, moving it to the in-flight state.
 顺手把这个 topic 上**已到期**的租约收回队头（扫的是每条租约自己的到期时刻，不是本次传的时长）。
@@ -226,7 +226,7 @@ The message, or undefined if the queue is empty.
 
 > **getStatus**(`topic`): `object`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:372](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L372)
+Defined in: [packages/mailbox/src/providers/memory.ts:372](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L372)
 
 Gets the current status of a topic.
 
@@ -287,7 +287,7 @@ An object containing status information. `exists` 区分「不存在」与「空
 
 > **knows**(`topic`): `boolean`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:339](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L339)
+Defined in: [packages/mailbox/src/providers/memory.ts:339](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L339)
 
 这份总线认不认这个 topic：有过订阅、有过活动记录，或现在/曾有未结算的消息。
 
@@ -310,7 +310,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:339](https://github.com/is
 
 > **listParked**(`topic`, `limit?`): [`MailMessage`](../interfaces/MailMessage.md)[]
 
-Defined in: [packages/mailbox/src/providers/memory.ts:414](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L414)
+Defined in: [packages/mailbox/src/providers/memory.ts:414](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L414)
 
 只读：某条队列上停放着的记录。
 
@@ -334,7 +334,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:414](https://github.com/is
 
 > **listTopics**(): `string`[]
 
-Defined in: [packages/mailbox/src/providers/memory.ts:349](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L349)
+Defined in: [packages/mailbox/src/providers/memory.ts:349](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L349)
 
 这份总线上所有“认得”的 topic（订阅过 / 有过活动 / 有消息），按字典序排序。
 供 `Mailbox#status()`（无参）做全量快照。
@@ -349,7 +349,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:349](https://github.com/is
 
 > **locate**(`messageId`): [`LocatedCopy`](../type-aliases/LocatedCopy.md)[]
 
-Defined in: [packages/mailbox/src/providers/memory.ts:273](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L273)
+Defined in: [packages/mailbox/src/providers/memory.ts:273](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L273)
 
 按发送方给的名字**查**账（只读）：同名的几份全部列出来，各自带着份号与现在状态。
 
@@ -372,7 +372,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:273](https://github.com/is
 
 > **nack**(`key`, `requeue`, `leaseId?`): `boolean`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:263](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L263)
+Defined in: [packages/mailbox/src/providers/memory.ts:263](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L263)
 
 结算**一份**在飞的副本（否定处置），可选回队。
 
@@ -407,7 +407,7 @@ If true, the copy goes back to the front of **the queue it came from**
 
 > **park**(`topic`, `message`, `reason`): `void`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:409](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L409)
+Defined in: [packages/mailbox/src/providers/memory.ts:409](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L409)
 
 停放一份判死记录（不进交付流）。见 `MailMessageQueue.park`。
 
@@ -435,7 +435,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:409](https://github.com/is
 
 > **peek**(`topic`, `limit?`): [`MailMessage`](../interfaces/MailMessage.md)[]
 
-Defined in: [packages/mailbox/src/providers/memory.ts:317](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L317)
+Defined in: [packages/mailbox/src/providers/memory.ts:317](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L317)
 
 【只读】取一份队列快照（副本），不出队、不建 in-flight、不刷活动时间。
 
@@ -463,7 +463,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:317](https://github.com/is
 
 > **publish**(`topic`, `message`): `Promise`\<`void` \| [`DeliveryResult`](../interfaces/DeliveryResult.md)\>[] \| `null`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:181](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L181)
+Defined in: [packages/mailbox/src/providers/memory.ts:181](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L181)
 
 发布一条消息：有订阅者时交给订阅回调，否则入队等待 fetch 取回。
 
@@ -495,7 +495,7 @@ The message to publish.
 
 > **reclaimExpired**(`topic`): `number`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:362](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L362)
+Defined in: [packages/mailbox/src/providers/memory.ts:362](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L362)
 
 显式回收这个 topic 上已到期的租约（`Mailbox#recover()` 往下走的那条路）。
 
@@ -517,7 +517,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:362](https://github.com/is
 
 > **requeue**(`topic`, `message`): `boolean`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:286](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L286)
+Defined in: [packages/mailbox/src/providers/memory.ts:286](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L286)
 
 Puts a message back at the front of a topic's queue without going through the
 in-flight state. Used when a subscriber callback fails with a retriable error.
@@ -549,7 +549,7 @@ The message to requeue.
 
 > **subscribe**(`topic`, `listener`): () => `void`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:155](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L155)
+Defined in: [packages/mailbox/src/providers/memory.ts:155](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L155)
 
 Subscribes a listener to a specific topic.
 
@@ -583,7 +583,7 @@ A function that, when called, unsubscribes the listener.
 
 > `static` **getInstance**(`scope?`): `MemoryEventBus`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:136](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L136)
+Defined in: [packages/mailbox/src/providers/memory.ts:136](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L136)
 
 取（或创建）某个 scope 的共享总线。不带参数 = 历史行为：进程级唯一单例。
 

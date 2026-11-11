@@ -8,7 +8,7 @@
 
 > **stripSenderForgedSystemHeaders**(`headers`): `Record`\<`string`, `any`\>
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:261](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L261)
+Defined in: [packages/mailbox/src/lib/delivery.ts:261](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L261)
 
 剥掉发送方自带的系统头（返回新对象，不改调用方那份）。
 

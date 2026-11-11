@@ -6,7 +6,7 @@
 
 # Abstract Class: MailboxProvider
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:130](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L130)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:130](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L130)
 
 Provider 的基类——**实现新 provider 请从这里继承**（规范见 `wiki/delivery-semantics.md` §1）。
 
@@ -34,7 +34,7 @@ Provider 的基类——**实现新 provider 请从这里继承**（规范见 `w
 
 > **new MailboxProvider**(`protocol`, `retry?`): `MailboxProvider`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:210](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L210)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:210](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L210)
 
 #### Parameters
 
@@ -56,7 +56,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:210](https://gith
 
 > `protected` `readonly` **broadcastDeliveries**: `boolean` = `false`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:171](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L171)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:171](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L171)
 
 这个 provider 的 `subscribe` 是不是广播（一条消息投递给 N 个订阅者）。
 
@@ -73,7 +73,7 @@ per-delivery `nack` 行为，交给传输层重投或死信。
 
 > **deliverySettleTimeout**: `number` = `DEFAULT_DELIVERY_SETTLE_TIMEOUT`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:195](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L195)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:195](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L195)
 
 单次投递尝试的结算超时（毫秒）。`0` / 负数关闭（调用方自己负责长任务）。
 见 [DEFAULT\_DELIVERY\_SETTLE\_TIMEOUT](../variables/DEFAULT_DELIVERY_SETTLE_TIMEOUT.md)。
@@ -84,7 +84,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:195](https://gith
 
 > `readonly` **protocol**: `string`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:131](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L131)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:131](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L131)
 
 #### Implementation of
 
@@ -96,7 +96,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:131](https://gith
 
 > `protected` **retry**: `Required`\<[`RetryPolicy`](../interfaces/RetryPolicy.md)\> \| `null` = `null`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:159](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L159)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:159](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L159)
 
 订阅失败后的重试策略。`null` 表示不重试（默认）：可重试失败只把消息退回队列，
 由 `fetch()` 兜底。重试是 opt-in 的，因为 AMQP / SQS 这类传输自带重投与死信，
@@ -108,7 +108,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:159](https://gith
 
 > `protected` `readonly` **subscriptions**: `Map`\<`string`, `ManagedSubscription`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:132](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L132)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:132](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L132)
 
 ## Accessors
 
@@ -118,7 +118,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:132](https://gith
 
 > **get** `protected` **pendingDeliveryCount**(): `number`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1383](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L1383)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1383](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L1383)
 
 当前尚未结算的投递数量（诊断 / 测试用）。
 
@@ -134,7 +134,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1383](https://git
 
 > **get** **supports**(): `Set`\<`string`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:240](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L240)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:240](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L240)
 
 这个 provider 现在会做什么（**运行期可变的数据**，见 D6）。
 
@@ -165,7 +165,7 @@ provider.supports.delete('peek');               // 这个实例现在不让人�
 
 > `protected` `optional` **\_ack**(`message`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:737](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L737)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:737](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L737)
 
 [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
 For providers that don't support ACK (like in-memory), this can be an empty async function.
@@ -203,7 +203,7 @@ For providers that don't support ACK (like in-memory), this can be an empty asyn
 
 > `protected` `optional` **\_close**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:699](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L699)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:699](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L699)
 
 [Subclass Responsibility - Optional] Specific closing logic.
 
@@ -217,7 +217,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:699](https://gith
 
 > `protected` **\_deliverToLocalSubscription**(`subscriptionId`, `message`): `Promise`\<[`DeliveryResult`](../interfaces/DeliveryResult.md)\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:846](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L846)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:846](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L846)
 
 把一条消息投递给本 provider 的某个**本地订阅者**，走与 `subscribe` 完全相同的投递记账
 （隐式 ack、错误处理、重试、结算）。生产者型 provider（自己组装消息再分发）必须走这里，
@@ -243,7 +243,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:846](https://gith
 
 > `abstract` `protected` **\_fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| [`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:682](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L682)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:682](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L682)
 
 [Subclass Responsibility] Performs the actual message fetching logic.
 基类不会把 `peek: true` 送进这里（只读快照走 `_peek`），实现无需考虑只读分支。
@@ -268,7 +268,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:682](https://gith
 
 > `protected` **\_handleDeliveryError**(`subscriptionId`, `message`, `key`, `error`): `void`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:919](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L919)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:919](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L919)
 
 订阅回调抛错时的统一处理（投递级）。
 
@@ -312,7 +312,7 @@ visibility timeout 后把同一条坏消息无限重投（见 \_giveUpDelivery�
 
 > `protected` **\_isRetriable**(`error`): `boolean`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1387](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L1387)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1387](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L1387)
 
 #### Parameters
 
@@ -330,7 +330,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1387](https://git
 
 > `protected` `optional` **\_nack**(`message`, `requeue`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:765](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L765)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:765](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L765)
 
 [Subclass Responsibility - Optional] Provides NACK capability.
 
@@ -379,7 +379,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:765](https://gith
 
 > `protected` `optional` **\_onDeliveryDeadLettered**(`message`, `failed`): `void` \| `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1004](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L1004)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1004](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L1004)
 
 [Subclass Responsibility - Optional] 死信钩子：投递被**放弃**（不回队）时用。
 
@@ -417,7 +417,7 @@ readonly [`DeliveryResult`](../interfaces/DeliveryResult.md)[]
 
 > `protected` `optional` **\_onRetryExhausted**(`message`, `attempts`): `void` \| `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:985](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L985)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:985](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L985)
 
 [Subclass Responsibility - Optional] 重试次数耗尽时的钩子（例如告警）。
 若这次广播没有任何订阅者成功，消息随后仍会退回队列，由 `fetch()` 兜底——耗尽 ≠ 放弃。
@@ -443,7 +443,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:985](https://gith
 
 > `protected` `optional` **\_peek**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)[]\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:694](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L694)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:694](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L694)
 
 [Subclass Responsibility - Optional] 只读快照：返回队列头部消息的**副本**，
 不出队、不建 in-flight、不改活动时间。不实现的 provider 在 `fetch({ peek: true })` 时
@@ -471,7 +471,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:694](https://gith
 
 > `abstract` `protected` **\_send**(`message`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:661](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L661)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:661](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L661)
 
 [Subclass Responsibility] Performs the actual sending logic.
 
@@ -491,7 +491,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:661](https://gith
 
 > `protected` `optional` **\_settle**(`message`, `where`): `Promise`\<`boolean` \| `void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:716](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L716)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:716](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L716)
 
 [Subclass Responsibility - Optional] 处置一次交付（新入口，取代 [\_ack](#_ack) / [\_nack](#_nack)）。
 
@@ -527,7 +527,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:716](https://gith
 
 > `protected` `optional` **\_status**(`address`): `Promise`\<[`MailboxStatus`](../interfaces/MailboxStatus.md)\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:770](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L770)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:770](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L770)
 
 [Subclass Responsibility - Optional] Performs the actual status query logic.
 
@@ -547,7 +547,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:770](https://gith
 
 > `abstract` `protected` **\_subscribe**(`address`, `onReceive`): `any`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:668](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L668)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:668](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L668)
 
 [Subclass Responsibility] Performs the actual subscription logic.
 
@@ -575,7 +575,7 @@ A handle that can be used later to unsubscribe (e.g., a listener function, a sub
 
 > `protected` **\_trackBroadcastSettlement**(`message`, `deliveries`): `void`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1093](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L1093)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:1093](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L1093)
 
 广播的结算 barrier：把 `publish` 返回的每次投递绑成一个后台任务，全部投递
 （含重试链）落定后统一判定要不要 `nack(requeue)`。给广播型 provider 的 `_send` 用。
@@ -610,7 +610,7 @@ readonly (`void` \| [`DeliveryResult`](../interfaces/DeliveryResult.md) \| `Prom
 
 > `abstract` `protected` **\_unsubscribe**(`subscriptionId`, `unsubscribeHandle`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:676](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L676)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:676](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L676)
 
 [Subclass Responsibility] Performs the actual un-subscription logic.
 
@@ -634,7 +634,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:676](https://gith
 
 > `protected` **ack**(`message`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:636](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L636)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:636](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L636)
 
 #### Parameters
 
@@ -657,7 +657,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:636](https://gith
 
 > **can**(`operation`, `address?`): `boolean`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:249](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L249)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:249](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L249)
 
 能不能做 `operation`。子类可按地址而异（`can('peek', addr)`）。
 
@@ -687,7 +687,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:249](https://gith
 
 > **clear**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:351](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L351)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:351](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L351)
 
 丢弃本 provider 持有的积压消息（含 in-flight），不动订阅。
 
@@ -708,7 +708,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:351](https://gith
 
 > **close**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:306](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L306)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:306](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L306)
 
 关闭 Provider。
 此方法会自动取消该 Provider 下所有活跃的订阅，然后调用子类的 `_close` 进行具体清理。
@@ -737,7 +737,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:306](https://gith
 
 > `protected` **declareCapabilities**(`declared`): `Set`\<`string`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:260](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L260)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:260](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L260)
 
 子类扩能力的入口（想按地址而异就重写 [can](#can)）。
 
@@ -763,7 +763,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:260](https://gith
 
 > **fetch**(`address`, `options`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)[]\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:543](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L543)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:543](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L543)
 
 Fetches a message.
 Delegates directly to the concrete provider's implementation.
@@ -794,7 +794,7 @@ Delegates directly to the concrete provider's implementation.
 
 > **fetch**(`address`, `options`): `Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:544](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L544)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:544](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L544)
 
 Fetches a message.
 Delegates directly to the concrete provider's implementation.
@@ -825,7 +825,7 @@ Delegates directly to the concrete provider's implementation.
 
 > **fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:545](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L545)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:545](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L545)
 
 Fetches a message.
 Delegates directly to the concrete provider's implementation.
@@ -858,7 +858,7 @@ Delegates directly to the concrete provider's implementation.
 
 > **generateId**(): `string`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:599](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L599)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:599](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L599)
 
 创建一个唯一标识符。主要是用于生成邮件的 ID。
 
@@ -876,7 +876,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:599](https://gith
 
 > **init**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:288](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L288)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:288](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L288)
 
 初始化 Provider。子类可重写此方法以建立真实的连接。
 
@@ -894,7 +894,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:288](https://gith
 
 > `protected` **nack**(`message`, `requeue`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:652](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L652)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:652](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L652)
 
 向 provider 发出处置决定：`requeue = true` 回队（`unhandled`），`requeue = false` **放弃**
 （`discard`：丢弃或落死信，由 provider 定）。
@@ -929,7 +929,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:652](https://gith
 
 > **send**(`message`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:360](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L360)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:360](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L360)
 
 Sends a mail message.
 This method handles common logic (like adding a timestamp and injecting x-req-sent-at for replies)
@@ -955,7 +955,7 @@ and then calls the concrete `_send` method for protocol-specific delivery.
 
 > **setRetryPolicy**(`policy`): `void`
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:279](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L279)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:279](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L279)
 
 开启 / 关闭订阅重试。传 `null` 回到默认行为（失败只回队、不自动重投）。
 
@@ -975,7 +975,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:279](https://gith
 
 > `protected` **settleDelivery**(`message`, `where`): `Promise`\<`boolean` \| `void`\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:615](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L615)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:615](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L615)
 
 向 provider 发出处置：这一次交付按 `where` 收尾（内核词汇：`handled` / `unhandled` /
 `discard`，见 `CORE_DISPOSITIONS`）。
@@ -1008,7 +1008,7 @@ Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:615](https://gith
 
 > **status**(`address`): `Promise`\<[`MailboxStatus`](../interfaces/MailboxStatus.md)\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:589](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L589)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:589](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L589)
 
 Queries the status of an address.
 If the concrete provider implements `_status`, it will be called;
@@ -1034,7 +1034,7 @@ otherwise, a default "unknown" status is returned.
 
 > **subscribe**(`address`, `onReceive`): `Promise`\<[`Subscription`](../interfaces/Subscription.md)\>
 
-Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:405](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/MailboxProvider.ts#L405)
+Defined in: [packages/mailbox/src/providers/MailboxProvider.ts:405](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/MailboxProvider.ts#L405)
 
 Subscribes to an address.
 This method manages the creation of the subscription object, centralizing the

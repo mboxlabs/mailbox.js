@@ -8,7 +8,7 @@
 
 > `const` **DEFAULT\_MAX\_DEAD\_LETTER\_NESTING**: `1` = `1`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:33](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L33)
+Defined in: [packages/mailbox/src/providers/memory.ts:33](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L33)
 
 死信链的深度上限默认值：**只允许一层** `<topic><suffix>`。
 

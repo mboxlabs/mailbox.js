@@ -6,7 +6,7 @@
 
 # Class: Mailbox
 
-Defined in: [packages/mailbox/src/mailbox.ts:50](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L50)
+Defined in: [packages/mailbox/src/mailbox.ts:50](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L50)
 
 ## Constructors
 
@@ -26,7 +26,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:50](https://github.com/isdk/mailbox
 
 > **get** **providers**(): `ReadonlyMap`\<`string`, [`IMailboxProvider`](../interfaces/IMailboxProvider.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:56](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L56)
+Defined in: [packages/mailbox/src/mailbox.ts:56](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L56)
 
 获取所有已注册的 Provider。返回只读 Map 以确保安全性。
 
@@ -40,7 +40,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:56](https://github.com/isdk/mailbox
 
 > **clear**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:110](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L110)
+Defined in: [packages/mailbox/src/mailbox.ts:110](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L110)
 
 丢弃各 provider 持有的积压消息（含 in-flight），**不**拆订阅。
 
@@ -61,7 +61,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:110](https://github.com/isdk/mailbo
 
 > **fetch**(`address`, `options`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)[]\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:189](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L189)
+Defined in: [packages/mailbox/src/mailbox.ts:189](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L189)
 
 取信 / 只读快照。
 
@@ -96,7 +96,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:189](https://github.com/isdk/mailbo
 
 > **fetch**(`address`, `options`): `Promise`\<[`AckableMailMessage`](../type-aliases/AckableMailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:190](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L190)
+Defined in: [packages/mailbox/src/mailbox.ts:190](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L190)
 
 取信 / 只读快照。
 
@@ -131,7 +131,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:190](https://github.com/isdk/mailbo
 
 > **fetch**(`address`, `options?`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md) \| `null`\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:191](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L191)
+Defined in: [packages/mailbox/src/mailbox.ts:191](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L191)
 
 取信 / 只读快照。
 
@@ -170,7 +170,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:191](https://github.com/isdk/mailbo
 
 > **getProvider**(`protocol`, `raiseErrorIfFailed`): [`IMailboxProvider`](../interfaces/IMailboxProvider.md)
 
-Defined in: [packages/mailbox/src/mailbox.ts:65](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L65)
+Defined in: [packages/mailbox/src/mailbox.ts:65](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L65)
 
 根据协议名获取指定的 Provider。
 
@@ -196,7 +196,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:65](https://github.com/isdk/mailbox
 
 > **getProvider**(`protocol`, `raiseErrorIfFailed?`): [`IMailboxProvider`](../interfaces/IMailboxProvider.md) \| `undefined`
 
-Defined in: [packages/mailbox/src/mailbox.ts:66](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L66)
+Defined in: [packages/mailbox/src/mailbox.ts:66](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L66)
 
 根据协议名获取指定的 Provider。
 
@@ -224,7 +224,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:66](https://github.com/isdk/mailbox
 
 > **post**(`mail`): `Promise`\<[`MailMessage`](../interfaces/MailMessage.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:123](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L123)
+Defined in: [packages/mailbox/src/mailbox.ts:123](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L123)
 
 #### Parameters
 
@@ -244,7 +244,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:123](https://github.com/isdk/mailbo
 
 > **recover**(`address`): `Promise`\<[`LeaseRecoveryReport`](../interfaces/LeaseRecoveryReport.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:255](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L255)
+Defined in: [packages/mailbox/src/mailbox.ts:255](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L255)
 
 显式回收：把该地址上**租约已到期**的信收回队列。
 
@@ -275,7 +275,7 @@ in-flight：`unreadCount` 0、`inFlightCount` 1（`mem:` 还会给出 `['mem.ove
 
 > **recover**(): `Promise`\<[`LeaseRecoveryReport`](../interfaces/LeaseRecoveryReport.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:256](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L256)
+Defined in: [packages/mailbox/src/mailbox.ts:256](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L256)
 
 显式回收：把该地址上**租约已到期**的信收回队列。
 
@@ -300,7 +300,7 @@ in-flight：`unreadCount` 0、`inFlightCount` 1（`mem:` 还会给出 `['mem.ove
 
 > **registerProvider**(`provider`): `void`
 
-Defined in: [packages/mailbox/src/mailbox.ts:118](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L118)
+Defined in: [packages/mailbox/src/mailbox.ts:118](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L118)
 
 #### Parameters
 
@@ -318,7 +318,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:118](https://github.com/isdk/mailbo
 
 > **snapshot**(): `Promise`\<[`MailboxSnapshot`](../interfaces/MailboxSnapshot.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:301](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L301)
+Defined in: [packages/mailbox/src/mailbox.ts:301](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L301)
 
 全量快照：把所有能枚举自身地址的 provider 的 topic 状态汇成一个可断言的结构。
 
@@ -336,7 +336,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:301](https://github.com/isdk/mailbo
 
 > **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:80](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L80)
+Defined in: [packages/mailbox/src/mailbox.ts:80](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L80)
 
 启动所有注册的 Provider。
 建议在应用初始化阶段调用此方法，以确保所有通信通道准备就绪。
@@ -353,7 +353,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:80](https://github.com/isdk/mailbox
 
 > **status**(`address`): `Promise`\<[`MailboxStatus`](../interfaces/MailboxStatus.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:213](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L213)
+Defined in: [packages/mailbox/src/mailbox.ts:213](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L213)
 
 查询指定地址的状态信息。
 
@@ -379,7 +379,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:213](https://github.com/isdk/mailbo
 
 > **status**(): `Promise`\<[`MailboxSnapshot`](../interfaces/MailboxSnapshot.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:217](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L217)
+Defined in: [packages/mailbox/src/mailbox.ts:217](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L217)
 
 不带地址 = 全量快照：所有 provider、所有 topic 的一时刻诊断视图（见 [snapshot](#snapshot)）。
 
@@ -393,7 +393,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:217](https://github.com/isdk/mailbo
 
 > **stop**(`options?`): `Promise`\<`void`\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:93](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L93)
+Defined in: [packages/mailbox/src/mailbox.ts:93](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L93)
 
 关闭所有注册的 Provider，并释放资源。
 建议在应用关闭阶段调用此方法。
@@ -418,7 +418,7 @@ Defined in: [packages/mailbox/src/mailbox.ts:93](https://github.com/isdk/mailbox
 
 > **subscribe**(`address`, `onReceive`): `Promise`\<[`Subscription`](../interfaces/Subscription.md)\>
 
-Defined in: [packages/mailbox/src/mailbox.ts:162](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/mailbox.ts#L162)
+Defined in: [packages/mailbox/src/mailbox.ts:162](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/mailbox.ts#L162)
 
 订阅一个地址（推送模式）。隐式 ACK：回调正常返回即确认，抛错即 nack。
 

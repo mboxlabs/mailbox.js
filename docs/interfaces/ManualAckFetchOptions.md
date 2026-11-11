@@ -6,7 +6,7 @@
 
 # Interface: ManualAckFetchOptions
 
-Defined in: [packages/mailbox/src/interfaces.ts:207](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L207)
+Defined in: [packages/mailbox/src/interfaces.ts:207](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L207)
 
 `fetch()` 的手动 ACK 形式：消息进 in-flight，直到 ack / nack 或超时重投。
 
@@ -20,7 +20,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:207](https://github.com/isdk/mai
 
 > `optional` **ackTimeout?**: `number` \| `null`
 
-Defined in: [packages/mailbox/src/interfaces.ts:220](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L220)
+Defined in: [packages/mailbox/src/interfaces.ts:220](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L220)
 
 **这份租约**的时长（ms）：取走那一刻就定下并记在租约上，之后不由别人改。
 
@@ -38,4 +38,4 @@ provider 的扩展键里可见（`mem:` 是 `status()['mem.overdueInFlightCount'
 
 > **manualAck**: `true`
 
-Defined in: [packages/mailbox/src/interfaces.ts:208](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L208)
+Defined in: [packages/mailbox/src/interfaces.ts:208](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L208)

@@ -6,7 +6,7 @@
 
 # Class: InvalidMailboxAddressError
 
-Defined in: [packages/mailbox/src/error.ts:30](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L30)
+Defined in: [packages/mailbox/src/error.ts:30](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L30)
 
 地址不合法：无法解析成 URL，或者带着规范化会**静默丢掉**的部件（query / hash）。
 
@@ -22,7 +22,7 @@ Defined in: [packages/mailbox/src/error.ts:30](https://github.com/isdk/mailbox.j
 
 > **new InvalidMailboxAddressError**(`address`, `message`, `options?`): `InvalidMailboxAddressError`
 
-Defined in: [packages/mailbox/src/error.ts:34](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L34)
+Defined in: [packages/mailbox/src/error.ts:34](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L34)
 
 #### Parameters
 
@@ -52,7 +52,7 @@ Defined in: [packages/mailbox/src/error.ts:34](https://github.com/isdk/mailbox.j
 
 > `readonly` **address**: `string`
 
-Defined in: [packages/mailbox/src/error.ts:32](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L32)
+Defined in: [packages/mailbox/src/error.ts:32](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L32)
 
 出错时正在处理的地址（字符串形式，便于诊断页直接展示）。
 
@@ -74,7 +74,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 #### Inherited from
 

@@ -8,7 +8,7 @@
 
 > `const` **MBX\_SEND\_ID\_HEADER**: `"mbx-send-id"` = `'mbx-send-id'`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:228](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L228)
+Defined in: [packages/mailbox/src/lib/delivery.ts:228](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L228)
 
 「这一份信」的编号（控制平面）：每次 `post()` 一个，由系统发，随副本一路带着走。
 

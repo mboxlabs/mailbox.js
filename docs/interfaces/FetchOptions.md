@@ -6,7 +6,7 @@
 
 # Interface: FetchOptions
 
-Defined in: [packages/mailbox/src/interfaces.ts:231](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L231)
+Defined in: [packages/mailbox/src/interfaces.ts:231](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L231)
 
 `fetch()` 的全量选项形状（实现侧签名用）。
 
@@ -20,7 +20,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:231](https://github.com/isdk/mai
 
 > `optional` **ackTimeout?**: `number` \| `null`
 
-Defined in: [packages/mailbox/src/interfaces.ts:235](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L235)
+Defined in: [packages/mailbox/src/interfaces.ts:235](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L235)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:235](https://github.com/isdk/mai
 
 > `optional` **limit?**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:234](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L234)
+Defined in: [packages/mailbox/src/interfaces.ts:234](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L234)
 
 ***
 
@@ -36,7 +36,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:234](https://github.com/isdk/mai
 
 > `optional` **manualAck?**: `boolean`
 
-Defined in: [packages/mailbox/src/interfaces.ts:232](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L232)
+Defined in: [packages/mailbox/src/interfaces.ts:232](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L232)
 
 ***
 
@@ -44,4 +44,4 @@ Defined in: [packages/mailbox/src/interfaces.ts:232](https://github.com/isdk/mai
 
 > `optional` **peek?**: `boolean`
 
-Defined in: [packages/mailbox/src/interfaces.ts:233](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L233)
+Defined in: [packages/mailbox/src/interfaces.ts:233](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L233)

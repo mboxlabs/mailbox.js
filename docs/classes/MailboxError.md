@@ -6,7 +6,7 @@
 
 # Class: MailboxError
 
-Defined in: [packages/mailbox/src/error.ts:16](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L16)
+Defined in: [packages/mailbox/src/error.ts:16](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L16)
 
 Mailbox 错误的公共基类（对齐 Python 端 `MailboxError` / Rust 端 `MailboxError`）。
 
@@ -29,7 +29,7 @@ Mailbox 错误的公共基类（对齐 Python 端 `MailboxError` / Rust 端 `Mai
 
 > **new MailboxError**(`code`, `message`, `options?`): `MailboxError`
 
-Defined in: [packages/mailbox/src/error.ts:19](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L19)
+Defined in: [packages/mailbox/src/error.ts:19](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L19)
 
 #### Parameters
 
@@ -71,7 +71,7 @@ Defined in: node\_modules/.pnpm/typescript@5.7.3/node\_modules/typescript/lib/li
 
 > `readonly` **code**: [`MailboxErrorCode`](../type-aliases/MailboxErrorCode.md)
 
-Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/error.ts#L17)
+Defined in: [packages/mailbox/src/error.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/error.ts#L17)
 
 ***
 

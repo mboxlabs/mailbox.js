@@ -8,7 +8,7 @@
 
 > `const` **DEFAULT\_ACK\_TIMEOUT**: `30000` = `30_000`
 
-Defined in: [packages/mailbox/src/lib/MessageQueue.ts:51](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/MessageQueue.ts#L51)
+Defined in: [packages/mailbox/src/lib/MessageQueue.ts:51](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/MessageQueue.ts#L51)
 
 手动 ACK 模式下未显式指定 `ackTimeout` 时使用的默认超时（毫秒）。
 

@@ -8,7 +8,7 @@
 
 > **bindConsumerHandle**(`message`, `provider`, `address`): [`AckableMailMessage`](../type-aliases/AckableMailMessage.md)
 
-Defined in: [packages/mailbox/src/lib/handle.ts:57](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/handle.ts#L57)
+Defined in: [packages/mailbox/src/lib/handle.ts:57](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/handle.ts#L57)
 
 把 provider 交回来的句柄套成**内核句柄**（D3 + D4 的执行点）。
 

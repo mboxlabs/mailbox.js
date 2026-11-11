@@ -6,7 +6,7 @@
 
 # Interface: MemoryProviderOptions
 
-Defined in: [packages/mailbox/src/providers/memory.ts:429](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L429)
+Defined in: [packages/mailbox/src/providers/memory.ts:429](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L429)
 
 `MemoryProvider` 的可选行为。
 
@@ -16,7 +16,7 @@ Defined in: [packages/mailbox/src/providers/memory.ts:429](https://github.com/is
 
 > `optional` **leaseSweepIntervalMs?**: `number`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:439](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L439)
+Defined in: [packages/mailbox/src/providers/memory.ts:439](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L439)
 
 **opt-in** 的租约清扫周期（ms）。不传 / `<= 0` / 非法 = 关（默认就是关）。
 

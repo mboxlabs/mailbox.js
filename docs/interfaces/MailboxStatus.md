@@ -6,7 +6,7 @@
 
 # Interface: MailboxStatus
 
-Defined in: [packages/mailbox/src/interfaces.ts:242](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L242)
+Defined in: [packages/mailbox/src/interfaces.ts:242](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L242)
 
 代表一个邮箱地址的状态信息。
 
@@ -41,7 +41,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:242](https://github.com/isdk/mai
 
 > `optional` **exists?**: `boolean`
 
-Defined in: [packages/mailbox/src/interfaces.ts:261](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L261)
+Defined in: [packages/mailbox/src/interfaces.ts:261](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L261)
 
 provider 是否认得这个地址（有过消息 / 订阅 / 活动记录）。
 
@@ -54,7 +54,7 @@ provider 是否认得这个地址（有过消息 / 订阅 / 活动记录）。
 
 > `optional` **inFlightCount?**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:275](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L275)
+Defined in: [packages/mailbox/src/interfaces.ts:275](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L275)
 
 已交给消费者、尚未 ack/nack 的消息数量。
 
@@ -69,7 +69,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:275](https://github.com/isdk/mai
 
 > `optional` **lastActivityTime?**: `string` \| `null`
 
-Defined in: [packages/mailbox/src/interfaces.ts:282](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L282)
+Defined in: [packages/mailbox/src/interfaces.ts:282](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L282)
 
 最后一次有消息活动（发送或接收）的时间 (ISO 8601 格式)；没有活动记录时为 `null`。
 
@@ -82,7 +82,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:282](https://github.com/isdk/mai
 
 > **state**: `"unknown"` \| `"online"` \| `"offline"` \| `"degraded"`
 
-Defined in: [packages/mailbox/src/interfaces.ts:254](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L254)
+Defined in: [packages/mailbox/src/interfaces.ts:254](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L254)
 
 provider 对**这个地址**的可观测状态：
 
@@ -100,6 +100,6 @@ provider 对**这个地址**的可观测状态：
 
 > `optional` **unreadCount?**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:265](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L265)
+Defined in: [packages/mailbox/src/interfaces.ts:265](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L265)
 
 队列中未被消费的消息数量（不包含 in-flight）。

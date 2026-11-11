@@ -6,7 +6,7 @@
 
 # Interface: Ackable
 
-Defined in: [packages/mailbox/src/interfaces.ts:158](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L158)
+Defined in: [packages/mailbox/src/interfaces.ts:158](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L158)
 
 代表一个可被处置的信件句柄——它代表**这一次交付**，不是这封信。
 
@@ -23,7 +23,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:158](https://github.com/isdk/mai
 
 > **ack**(`where?`): `Promise`\<`boolean` \| `void`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:174](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L174)
+Defined in: [packages/mailbox/src/interfaces.ts:174](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L174)
 
 结束这次交付，并说明怎么结束它（见 [CORE\_DISPOSITIONS](../variables/CORE_DISPOSITIONS.md)）。
 
@@ -56,7 +56,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:174](https://github.com/isdk/mai
 
 > **nack**(`requeue?`): `Promise`\<`boolean` \| `void`\>
 
-Defined in: [packages/mailbox/src/interfaces.ts:189](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L189)
+Defined in: [packages/mailbox/src/interfaces.ts:189](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L189)
 
 #### Parameters
 

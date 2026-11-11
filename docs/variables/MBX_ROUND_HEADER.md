@@ -8,7 +8,7 @@
 
 > `const` **MBX\_ROUND\_HEADER**: `"mbx-round"` = `'mbx-round'`
 
-Defined in: [packages/mailbox/src/lib/delivery.ts:212](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/delivery.ts#L212)
+Defined in: [packages/mailbox/src/lib/delivery.ts:212](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/delivery.ts#L212)
 
 投递**轮次**的 header 名（控制平面）：这条消息是第几轮被交到消费者手里（1 起算，字符串）。
 

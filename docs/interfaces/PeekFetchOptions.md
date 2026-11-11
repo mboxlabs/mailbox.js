@@ -6,7 +6,7 @@
 
 # Interface: PeekFetchOptions
 
-Defined in: [packages/mailbox/src/interfaces.ts:199](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L199)
+Defined in: [packages/mailbox/src/interfaces.ts:199](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L199)
 
 `fetch()` 的只读快照形式（issue#4）：返回副本，不出队、不建 in-flight、不动活动时间。
 
@@ -23,7 +23,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:199](https://github.com/isdk/mai
 
 > `optional` **limit?**: `number`
 
-Defined in: [packages/mailbox/src/interfaces.ts:202](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L202)
+Defined in: [packages/mailbox/src/interfaces.ts:202](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L202)
 
 最多看几条；省略（或 `Infinity`）看整个队列。必须是非负整数。
 
@@ -33,4 +33,4 @@ Defined in: [packages/mailbox/src/interfaces.ts:202](https://github.com/isdk/mai
 
 > **peek**: `true`
 
-Defined in: [packages/mailbox/src/interfaces.ts:200](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L200)
+Defined in: [packages/mailbox/src/interfaces.ts:200](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L200)

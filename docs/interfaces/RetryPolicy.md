@@ -6,7 +6,7 @@
 
 # Interface: RetryPolicy
 
-Defined in: [packages/mailbox/src/lib/retry.ts:17](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L17)
+Defined in: [packages/mailbox/src/lib/retry.ts:17](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L17)
 
 订阅失败后的重试策略。
 
@@ -19,7 +19,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:17](https://github.com/isdk/mailb
 
 > **baseDelay**: `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:21](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L21)
+Defined in: [packages/mailbox/src/lib/retry.ts:21](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L21)
 
 首次重试前的等待毫秒数。
 
@@ -29,7 +29,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:21](https://github.com/isdk/mailb
 
 > `optional` **factor?**: `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:23](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L23)
+Defined in: [packages/mailbox/src/lib/retry.ts:23](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L23)
 
 退避倍数，默认 2。
 
@@ -39,7 +39,7 @@ Defined in: [packages/mailbox/src/lib/retry.ts:23](https://github.com/isdk/mailb
 
 > **maxAttempts**: `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:19](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L19)
+Defined in: [packages/mailbox/src/lib/retry.ts:19](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L19)
 
 总尝试次数，含首次。必须 >= 1；1 等价于不重试。
 
@@ -49,6 +49,6 @@ Defined in: [packages/mailbox/src/lib/retry.ts:19](https://github.com/isdk/mailb
 
 > `optional` **maxDelay?**: `number`
 
-Defined in: [packages/mailbox/src/lib/retry.ts:25](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/retry.ts#L25)
+Defined in: [packages/mailbox/src/lib/retry.ts:25](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/retry.ts#L25)
 
 单次等待上限（毫秒），默认 30_000。

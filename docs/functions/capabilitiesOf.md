@@ -8,7 +8,7 @@
 
 > **capabilitiesOf**(`provider`): `Set`\<`string`\>
 
-Defined in: [packages/mailbox/src/lib/capability.ts:88](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/lib/capability.ts#L88)
+Defined in: [packages/mailbox/src/lib/capability.ts:88](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/lib/capability.ts#L88)
 
 这个 provider 现在能做什么（**读**的唯一入口）。
 

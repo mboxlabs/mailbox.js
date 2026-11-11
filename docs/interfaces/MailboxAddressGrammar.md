@@ -6,7 +6,7 @@
 
 # Interface: MailboxAddressGrammar
 
-Defined in: [packages/mailbox/src/interfaces.ts:321](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L321)
+Defined in: [packages/mailbox/src/interfaces.ts:321](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L321)
 
 一个 scheme 的地址语法声明（D5）。
 
@@ -29,7 +29,7 @@ provider 源码就知道 `mem:` 会拒绝 query。声明与行为是否一致由
 
 > **authority**: `"required"` \| `"optional"` \| `"forbidden"`
 
-Defined in: [packages/mailbox/src/interfaces.ts:325](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L325)
+Defined in: [packages/mailbox/src/interfaces.ts:325](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L325)
 
 `//host` 那一段在这个 scheme 里有没有意义。
 
@@ -39,7 +39,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:325](https://github.com/isdk/mai
 
 > **equivalences**: `string`[]
 
-Defined in: [packages/mailbox/src/interfaces.ts:336](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L336)
+Defined in: [packages/mailbox/src/interfaces.ts:336](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L336)
 
 这个 scheme 认为「同一个信箱」的等价写法（由 provider 实现，并保证所有入口一致）。
 例：`mem:` 声明 `mem:a@h/i` ≡ `mem://a@h/i`——多写的 `//` 是容错写法，不是另一个信箱。
@@ -50,7 +50,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:336](https://github.com/isdk/mai
 
 > **fragment**: `"rejected"` \| `"addressing"` \| `"ignored"`
 
-Defined in: [packages/mailbox/src/interfaces.ts:331](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L331)
+Defined in: [packages/mailbox/src/interfaces.ts:331](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L331)
 
 fragment 同上。
 
@@ -60,7 +60,7 @@ fragment 同上。
 
 > **identity**: `string`
 
-Defined in: [packages/mailbox/src/interfaces.ts:327](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L327)
+Defined in: [packages/mailbox/src/interfaces.ts:327](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L327)
 
 信箱身份在哪一段，一句人话（诊断页直接读）。
 
@@ -70,7 +70,7 @@ Defined in: [packages/mailbox/src/interfaces.ts:327](https://github.com/isdk/mai
 
 > **query**: `"rejected"` \| `"addressing"` \| `"ignored"`
 
-Defined in: [packages/mailbox/src/interfaces.ts:329](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L329)
+Defined in: [packages/mailbox/src/interfaces.ts:329](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L329)
 
 query 参与不参与寻址；`rejected` = 带 query 的地址在该 scheme 的入口直接报错（不静默合并）。
 
@@ -80,6 +80,6 @@ query 参与不参与寻址；`rejected` = 带 query 的地址在该 scheme 的�
 
 > **scheme**: `string`
 
-Defined in: [packages/mailbox/src/interfaces.ts:323](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/interfaces.ts#L323)
+Defined in: [packages/mailbox/src/interfaces.ts:323](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/interfaces.ts#L323)
 
 这个语法属于哪个 scheme（`mem:` / `amqp:` / `input:`…）。

@@ -8,7 +8,7 @@
 
 > `const` **MBX\_DEAD\_LETTER\_TERMINAL\_HEADER**: `"mbx-dead-letter-terminal"` = `'mbx-dead-letter-terminal'`
 
-Defined in: [packages/mailbox/src/providers/memory.ts:47](https://github.com/isdk/mailbox.js/blob/9a9ab648c6685904ec3d46d73ed38e14ca1b5eef/src/providers/memory.ts#L47)
+Defined in: [packages/mailbox/src/providers/memory.ts:47](https://github.com/isdk/mailbox.js/blob/8da5b2e09b0f63b7665c7c5ca124fbb072ddc9a7/src/providers/memory.ts#L47)
 
 「到顶了，原地停放」的标记（控制平面，`'true'`）。
 
