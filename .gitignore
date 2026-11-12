@@ -32,3 +32,13 @@ dev.md
 *.njsproj
 *.sln
 *.sw?
+
+# 本地实验目录与工具状态：不属于 npm 包内容，也不该被 `git add -A` 顺手捡进来
+# （拆包时真出过事：`git add -A` 把 python/ rust/ wiki/ 三个内嵌仓记成了 gitlink）
+python/
+rust/
+scratch/
+.pi/
+
+# 论文与用例：独立仓（挂在 wiki/），核心只读它的文件，不把它记成 gitlink
+wiki/
