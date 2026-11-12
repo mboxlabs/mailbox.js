@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  assertLosslessMailboxAddress,
   copyForPeek,
-  getCanonicalMailboxAddressIdentifier,
   normalizePeekLimit,
   parseMailboxAddress,
 } from './utils';
+import { assertLosslessMailboxAddress, getCanonicalMailboxAddressIdentifier } from './scheme-address';
 import { InvalidFetchOptionsError, InvalidMailboxAddressError } from '../error';
 
 /**

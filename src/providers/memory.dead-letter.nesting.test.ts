@@ -29,7 +29,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Mailbox } from '../mailbox';
 import { MemoryProvider, DEFAULT_DEAD_LETTER_SUFFIX, DEFAULT_MAX_DEAD_LETTER_NESTING } from './memory';
 import { InvalidDeadLetterNestingError } from '../error';
-import { getCanonicalMailboxAddressIdentifier } from '../lib/utils';
+import { getCanonicalMailboxAddressIdentifier } from '../lib/scheme-address';
 
 const fatal = (message = 'bad payload') => new Error(message);
 const tick = (ms = 50) => new Promise<void>((resolve) => setTimeout(resolve, ms));

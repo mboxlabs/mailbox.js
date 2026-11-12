@@ -23,9 +23,11 @@ export class MailboxError extends Error {
 }
 
 /**
- * 地址不合法：无法解析成 URL，或者带着规范化会**静默丢掉**的部件（query / hash）。
+ * 地址不合法：无法解析成 URL，或者带着该 scheme 寻址时会**静默丢掉**的部件（query / hash）。
  *
- * 见 {@link getCanonicalMailboxAddressIdentifier}：地址语义必须留在 path 里。
+ * 前者由内核判（它只 `parseMailboxAddress`），后者由该 scheme 的 provider 在自己的入口判——
+ * 策略本身在 {@link MailboxAddressGrammar} 里声明。以 `mem:` 为例：折叠会把 query / hash 丢掉，
+ * 于是两个逻辑地址共用一条队列（issue#4），所以它选择**拒绝**：地址语义必须留在 path 里。
  */
 export class InvalidMailboxAddressError extends MailboxError {
   /** 出错时正在处理的地址（字符串形式，便于诊断页直接展示）。 */

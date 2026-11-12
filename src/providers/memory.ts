@@ -8,7 +8,8 @@ import {
 import { MailMessageQueue, MailMessageAckable, SettlingAckable, type LocatedCopy } from '../lib/MessageQueue';
 import { RetryPolicy } from '../lib/retry';
 import { DeliveryResult, MBX_ATTEMPT_HEADER, nextRoundCopy, readRound } from '../lib/delivery';
-import { getCanonicalMailboxAddressIdentifier, parseMailboxAddress } from '../lib/utils';
+import { parseMailboxAddress } from '../lib/utils';
+import { getCanonicalMailboxAddressIdentifier } from '../lib/scheme-address';
 import { Capability } from '../lib/capability';
 import { InvalidDeadLetterNestingError, InvalidDeadLetterSuffixError } from '../error';
 
