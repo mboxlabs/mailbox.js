@@ -292,6 +292,46 @@ describe('TestProvider：L0 投递交接', () => {
   })
 })
 
+describe('TestProvider：status 里的三种「没有」', () => {
+  /**
+   * 定稿的规则：**不答 = 键缺席；答「没有」= 显式 `null` / `false`**。
+   *
+   * 为什么钉在参照实现身上：`./testing` 是第三方作者拄的那一个，它怎么写就会被怎么拄。
+   * 参考实现 `mem:` 已经按这条答（`memory.ts:403` 的 `?? null`，另见
+   * `mailbox.status-diagnostics.test.ts`），参照实现不能教另一种。
+   */
+  it('① 地址不存在：答过这句话 ⇒ exists false，且「没有活动」是 null 不是键消失', async () => {
+    const { mailbox } = await harness()
+    const st = await mailbox.status(address())
+
+    expect(st.state).toBe('unknown')
+    expect(st.exists).toBe(false)
+    expect(st.lastActivityTime).toBeNull()
+    // `undefined` 过 `JSON.stringify` 会整键消失，诊断页拿到的是 undefined而非「没有活动」
+    const wire = JSON.parse(JSON.stringify(st))
+    expect('lastActivityTime' in wire, 'JSON 往返后这个键必须还在').toBe(true)
+  })
+
+  it('② 订阅本身就算活动：exists true、lastActivityTime 是时间（与 `mem:` 同一笔）', async () => {
+    const { mailbox } = await harness()
+    const addr = address()
+    const sub = await mailbox.subscribe(addr, () => {})
+
+    const idle = await mailbox.status(addr)
+    expect(idle.exists).toBe(true)
+    expect(idle.state).toBe('online')
+    // 「认得但完全没活动」这个态两边都到不了（建队 / 订阅 / 收发都会刷时间），
+    // 所以 `null` 只从 ① 那一支出——但类型上它仍必须是 `string | null`。
+    expect(idle.lastActivityTime).toBeTypeOf('string')
+
+    await mailbox.post({ from: addr, to: addr, body: 'A' })
+    const busy = await mailbox.status(addr)
+    expect(busy.lastActivityTime).toBeTypeOf('string')
+
+    await sub.unsubscribe()
+  })
+})
+
 describe('TestProvider：主张的边界（这些不归 L0）', () => {
   it('[边界] 没有租约到期：ackTimeout 到期不重投，那份一直在飞', async () => {
     const { mailbox } = await harness()

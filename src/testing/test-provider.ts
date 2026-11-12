@@ -256,6 +256,10 @@ export class TestProvider extends MailboxProvider {
    * 策略，也就不写那些键。
    *
    * 没有活动记录、也没有任何一份信 → `exists: false` + `state: 'unknown'`，不是 `online` + 0。
+   *
+   * 三态按同一条规则写：**不答 = 键缺席；答「没有」= 显式 `null` / `false`**。所以下面两处都拿
+   * `?? null` 而不是直接递 `undefined`：`undefined` 过 `JSON.stringify` 会整键消失，诊断页拿到的
+   * 就分不出「没有活动」和「这个 provider 不答」。`mem:` 参考实现同一笔（`memory.ts` 的 `?? null`）。
    */
   protected async _status(address: URL): Promise<MailboxStatus> {
     const topic = this.topicOf(address)
@@ -280,10 +284,10 @@ export class TestProvider extends MailboxProvider {
         message: `No queue, subscription or activity is known for '${topic}'.`,
         unreadCount,
         inFlightCount,
-        lastActivityTime,
+        lastActivityTime: lastActivityTime ?? null,
       }
     }
-    return { state: 'online', exists: true, unreadCount, inFlightCount, lastActivityTime }
+    return { state: 'online', exists: true, unreadCount, inFlightCount, lastActivityTime: lastActivityTime ?? null }
   }
 
   /** 本实例认得的地址；唯一契约是这些串能原样喂回本 provider。 */

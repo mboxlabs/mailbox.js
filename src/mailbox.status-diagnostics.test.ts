@@ -135,6 +135,33 @@ describe('status() 认得「这个地址存不存在」', () => {
     expect(status.message).toBe("The 'nostatus' provider does not support status queries.");
   });
 
+  it('两个「问不到」出口形状一致：内核回退与基类回退都不冒充 exists', async () => {
+    /** 声明了 `status` 能力却没实现 `_status`：能力与实现漂移时要走基类回退，不能谎报。 */
+    class DeclaredButBare extends MailboxProvider {
+      protected async _send(): Promise<void> {}
+      protected async _subscribe(): Promise<any> {
+        return { id: 's', address: new URL('drift:a@b/i'), status: 'active', unsubscribe: async () => {} };
+      }
+      protected async _unsubscribe(): Promise<void> {}
+      protected async _fetch(): Promise<null> {
+        return null;
+      }
+    }
+
+    const drift = new DeclaredButBare('drift');
+    drift.supports.add('status'); // 声明有，实现没有
+    const box = new Mailbox();
+    box.registerProvider(drift);
+
+    const viaBase = await drift.status(new URL('drift:x@example.com/inbox'));
+    expect(viaBase.state).toBe('unknown');
+    expect(viaBase.exists).toBeUndefined();
+
+    // 两处回退必须同形：它们写的是同一句话，分头写就会漂
+    expect(Object.keys(viaBase).sort()).toEqual(Object.keys(await box.status('drift:x@example.com/inbox')).sort());
+    expect(viaBase.message).toBe(await box.status('drift:x@example.com/inbox').then((s) => s.message));
+  });
+
   it('地址解析与校验对 status() 同样生效（非法形式不会被当成「另一个地址」）', async () => {
     await expect(mailbox.status('mem:q@example.com/inbox?thread=1')).rejects.toThrowError(/MBX_INVALID_ADDRESS|Invalid mailbox address/);
     await expect(mailbox.status('definitely not a url')).rejects.toThrowError(/not a parseable URL/);

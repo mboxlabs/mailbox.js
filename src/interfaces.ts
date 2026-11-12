@@ -238,6 +238,16 @@ export interface FetchOptions {
 
 /**
  * 代表一个邮箱地址的状态信息。
+ *
+ * **三种「没有」怎么分（定稿规则）**：字段**缺席** = 这个 provider 对它**不答**；
+ * 字段**显式给 `null` / `false`** = 它答了「没有」。具体到读的人：
+ *
+ * - `state: 'unknown'` + `exists: false` → 地址不存在（provider 答过这句话）；
+ * - `state: 'unknown'` + **没有** `exists` 键 → 问不到（没声明 `status` 能力，或声明了却没实现）；
+ * - `lastActivityTime: null` → 没有活动记录；整个键消失 → 这一项不答。
+ *
+ * 所以读的顺序是**先看 `exists` 有没有值，再看 `state`**：`unknown` 一个值同时装
+ * 「没有任何记录」和「问不到」两种意思，只看它一定会猜错。
  */
 export interface MailboxStatus {
   /**
@@ -249,14 +259,16 @@ export interface MailboxStatus {
    * - `offline` / `degraded`：provider 自己连不上 / 只能给出部分答复。
    *
    * 不要把「地址不存在」报成 `online` + 0：诊断页区分不出「不存在」与「空闲」。
-   * 要区分「地址不存在」和「provider 答不了」，看 {@link MailboxStatus.exists}。
+   * 要区分「地址不存在」和「provider 答不了」，看 {@link MailboxStatus.exists}——
+   * 它是这一层唯一的区分手段（`unknown` 自己一词两用）。
    */
   state: 'online' | 'offline' | 'degraded' | 'unknown';
   /**
    * provider 是否认得这个地址（有过消息 / 订阅 / 活动记录）。
    *
    * 只有在 provider **明确回答了**状态查询时才有值；不支持 `status` 的 provider 不会把它
-   * 设成 `false`（那会把「问不到」误报成「不存在」）。
+   * 设成 `false`（那会把「问不到」误报成「不存在」）。声明了 `status` 却没实现 `_status` 的
+   * 同样不给——基类回退与内核回退同形，两个出口都不冒充 `exists`。
    */
   exists?: boolean;
   /**
