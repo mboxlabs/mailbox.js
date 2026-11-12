@@ -42,7 +42,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "typecheck:conformance": "tsc -p wiki/paper/conformance/tsconfig.json",
     "release": "pnpm run clean && pnpm run build && git add -f docs && (git diff --cached --quiet -- docs || git commit -m 'docs: update API docs' -- docs) && pnpm dlx commit-and-tag-version@12.7.3 -s",
-    "release.alpha": "pnpm run release -- --prerelease alpha"
+    "release.alpha": "pnpm run release -- --prerelease alpha",
+    "check:direction": "node scripts/check-dependency-direction.mjs"
   },
   "dependencies": {
     "@isdk/hash": "workspace:^"
