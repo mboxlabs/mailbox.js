@@ -74,38 +74,6 @@ export class UnsupportedCapabilityError extends MailboxError {
 }
 
 /**
- * 死信队列后缀非法。空后缀会让死信写回**原队列**（被放弃的消息重新变得可消费，
- * 等于无限重试），带 query / hash 的后缀会在地址规范化时被静默丢掉——两者都是配置错误，
- * 在 `enableDeadLetterQueue()` 的调用点直接抛。
- */
-export class InvalidDeadLetterSuffixError extends MailboxError {
-  /** 被拒绝的后缀原值。 */
-  public readonly suffix: unknown
-
-  constructor(suffix: unknown, message: string, options?: ErrorOptions) {
-    super('MBX_INVALID_DEAD_LETTER_SUFFIX', message, options)
-    this.name = 'InvalidDeadLetterSuffixError'
-    this.suffix = suffix
-  }
-}
-
-/**
- * 死信链深度上限（`maxNesting`）非法。小于 1 的上限等于「死信无处可去」，
- * 非整数 / NaN 等于「比较永远不成立，链永远不会封顶」——两者都是配置错误，
- * 在 `enableDeadLetterQueue()` 的调用点直接抛，不能静默放宽。
- */
-export class InvalidDeadLetterNestingError extends MailboxError {
-  /** 被拒绝的 `maxNesting` 原值。 */
-  public readonly maxNesting: unknown
-
-  constructor(maxNesting: unknown, message: string, options?: ErrorOptions) {
-    super('MBX_INVALID_DEAD_LETTER_NESTING', message, options)
-    this.name = 'InvalidDeadLetterNestingError'
-    this.maxNesting = maxNesting
-  }
-}
-
-/**
  * 没有 provider 认领这个协议（对齐 Python `ProviderNotFound` / Rust `ProviderNotFound`）。
  */
 export class NoProviderError extends MailboxError {

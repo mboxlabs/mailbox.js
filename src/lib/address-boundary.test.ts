@@ -9,11 +9,15 @@
  *    做折叠——换一种 scheme 那就是错的（query 参与寻址的 scheme 会把两个信箱判成一个）。
  * 2. 内核只 `parseMailboxAddress`：不折叠、不判等、不禁 query / fragment。
  *
+ * 拆包后这条门更强：核心仓里连折叠规则的**定义**都没有（`src/lib/scheme-address.ts` 已搬到
+ * `@mboxlabs/mailbox-memory`）。所以本测试钉的是「核心零调用 + 零定义」；memory 仓自己钉
+ * 「不把内部键导出出去」。
+ *
  * 用运行时 `in` 断言而不是读文件文本：导出面就是模块对象的键，扫描文本会漏（改名、re-export、
  * `export type`），而 `in` 不会说谎。
  */
 
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -52,14 +56,19 @@ describe('地址折叠的归属：`mem:` 的内部键写法不进核心导出面
     expect(barrel).not.toMatch(/scheme-address/)
   })
 
-  it('除了 `mem:` 自己，核心代码没人调折叠（内核一次都不能用）', () => {
-    const callers = sourceFiles(new URL('..', import.meta.url).pathname)
+  it('[现状] 核心仓里没有折叠模块，也没有一处折叠调用', () => {
+    // 定义不在核心：它是 memory 的内部键写法（§11 政策出核）。
+    expect(existsSync(new URL('./scheme-address.ts', import.meta.url)), '折叠定义不该在核心仓').toBe(false)
+
+    const src = new URL('..', import.meta.url).pathname
+    const callers = sourceFiles(src)
       .filter((file) => FOLDING.some((name) => readFileSync(file, 'utf8').includes(name)))
-      .map((file) => relative(new URL('..', import.meta.url).pathname, file))
+      .map((file) => relative(src, file))
       .sort()
 
-    // `providers/memory.ts` = 唯一使用者；`lib/scheme-address.ts` = 定义处本身。
-    expect(callers).toEqual(['lib/scheme-address.ts', 'providers/memory.ts'])
+    // 拆包前这里是 `['lib/scheme-address.ts', 'providers/memory.ts']`；搬走之后核心应当**零**。
+    // 不是「越少越好」——是内核没有能力判断 scheme 语法，调一次就是越权。
+    expect(callers).toEqual([])
   })
 
   it('内核门面只解析地址，不折叠字段', () => {

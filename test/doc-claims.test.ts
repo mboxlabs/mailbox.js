@@ -20,6 +20,9 @@ import { join, relative } from 'node:path'
 const ROOTS = ['src', 'wiki', 'README.md', 'README.cn.md']
 // 用例与报告已随 paper 迁到 `wiki/paper/conformance/`，被 SKIP_DIRS 里的 'paper' 跳过
 const SKIP_DIRS = ['paper'] // 论文笔记里这些词是作为“不许这样主张”的反面例子出现的
+// 见到目录名就剪枝。`node_modules` 不是「慢」而是会炸：`wiki/` 现在是 workspace 成员，
+// 它的 node_modules 里有一条软链指回核心仓，跟进去就是无限循环（实测 ELOOP）。
+const PRUNE_DIRS = ['node_modules', 'dist', 'docs', 'web']
 
 const BANNED: Array<[string, string]> = [
   ['内容' + '重复的信件', '内核不按 id 丢弃重复信件（那是发送边界上未实现的显式策略）'],
@@ -32,7 +35,11 @@ const BANNED: Array<[string, string]> = [
 const walk = (path: string, out: string[] = []): string[] => {
   const st = statSync(path)
   if (st.isDirectory()) {
-    if (SKIP_DIRS.some((skip) => relative('.', path).split(/[\\/]/).includes(skip))) {
+    const parts = relative('.', path).split(/[\\/]/)
+    if (SKIP_DIRS.some((skip) => parts.includes(skip))) {
+      return out
+    }
+    if (PRUNE_DIRS.some((skip) => parts.includes(skip))) {
       return out
     }
     for (const entry of readdirSync(path)) {

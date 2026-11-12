@@ -1,4 +1,3 @@
-export * from './MessageQueue';
 export * from './capability';
 export * from './delivery';
 export * from './disposition';

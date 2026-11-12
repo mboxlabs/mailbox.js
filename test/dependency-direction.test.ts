@@ -59,16 +59,25 @@ describe('方向锁：今天的真实方向', () => {
 
     // 防空转：核心那几条必须真的落到成员上
     expect(report.members.map((m) => m.dir)).toEqual(
-      expect.arrayContaining(['mailbox', 'mailbox-queue', 'mailbox-input', 'mailbox-terminal', 'tool-rpc']),
+      expect.arrayContaining([
+        'mailbox',
+        'mailbox-queue',
+        'mailbox-memory',
+        'mailbox/wiki',
+        'mailbox-input',
+        'mailbox-terminal',
+        'tool-rpc',
+      ]),
     )
     const ids = report.checks.map((c) => c.id)
     expect(ids).toContain('R1.core-dependencies')
     expect(ids).toContain('R1.core-production-imports')
-    expect(report.checksRun).toBeGreaterThanOrEqual(8)
+    expect(ids).toContain('R5.paper-not-depended-on')
+    expect(report.checksRun).toBeGreaterThanOrEqual(15)
 
-    // 缺席要**说出来**，不许静默少查。`mailbox-queue` 已经是成员（骨架已建），只剩 memory 缺席；
+    // 缺席要**说出来**，不许静默少查。拆到这里为止全家都在场（queue / memory / wiki 已建）；
     // 这条写成精确清单是有意的：目录被动了会直接响，而不是默默少查一项。
-    expect(report.checks.filter((c) => c.status === 'skip:absent').map((c) => c.subject)).toEqual(['mailbox-memory'])
+    expect(report.checks.filter((c) => c.status === 'skip:absent').map((c) => c.subject)).toEqual([])
 
     // 队列仓进图了 ⇒ 它自己的方向也得在查
     const queue = report.checks.find((c) => c.id === 'R2.derivative-deps' && c.subject === '@mboxlabs/mailbox-queue')
@@ -100,6 +109,9 @@ describe('方向锁：反向控制（脚本必须能抓到破坏）', () => {
       write(root, 'mailbox-memory/package.json', pkg('@mboxlabs/mailbox-memory', { dependencies: { '@mboxlabs/input': 'workspace:^' } }))
       // provider 包漏进下游 dependencies
       write(root, 'mailbox-input/package.json', pkg('@mboxlabs/input', { dependencies: { '@mboxlabs/mailbox-memory': 'workspace:^' } }))
+      // 下游依赖论文仓（用例与报告）⇒ 核心编译程序会被 provider 包拖进来，方向锁的另一种破坏
+      write(root, 'mailbox/wiki/package.json', pkg('@mboxlabs/mailbox-wiki', { private: true }))
+      write(root, 'mailbox-terminal/package.json', pkg('@mboxlabs/input-inquirer', { devDependencies: { '@mboxlabs/mailbox-wiki': 'workspace:^' } }))
 
       const { code, report } = check(root)
       expect(code, '有违规必须非 0 退出').toBe(1)
@@ -113,13 +125,15 @@ describe('方向锁：反向控制（脚本必须能抓到破坏）', () => {
           'R3.provider-not-in-runtime-deps',
           'R4.core-devdep-not-derivative',
           'R4.no-package-cycle',
+          'R5.paper-not-depended-on',
         ].sort(),
       )
       // 没在场的包不许被凭空造出来
       expect(report.members.map((m) => m.dir).sort()).toEqual(
-        ['mailbox', 'mailbox-input', 'mailbox-memory', 'mailbox-queue'].sort(),
+        ['mailbox', 'mailbox-input', 'mailbox-memory', 'mailbox-queue', 'mailbox/wiki', 'mailbox-terminal'].sort(),
       )
-      expect(report.skipped).toContain('mailbox-terminal')
+      // 缺席还是得点名：这个 fixture 里没建 tool-rpc
+      expect(report.skipped).toEqual(['tool-rpc'])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

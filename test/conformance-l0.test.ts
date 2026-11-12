@@ -18,8 +18,6 @@ import { dirname, join } from 'node:path'
 
 import { describe, it, expect } from 'vitest'
 
-import { contractIdentityLine, runtimeStampLines } from './report-hygiene'
-
 const here = dirname(fileURLToPath(import.meta.url))
 const CASES_DIR = join(here, '../wiki/paper/conformance/cases')
 const REPORT_DIR = join(here, '../wiki/paper/conformance/report')
@@ -43,6 +41,13 @@ interface RunnerModule {
 // 守卫之外不能有静态 import，所以路径留成运行期的值。
 const suitePresent = existsSync(CASES_DIR)
 const runnerSpec = new URL('../wiki/paper/conformance/runner/ts.ts', import.meta.url).href
+const hygieneSpec = new URL('../wiki/paper/conformance/report-hygiene.ts', import.meta.url).href
+
+/** 报告卫生检查的形状（paper 树在独立仓，只声明用到的字段）。 */
+interface HygieneModule {
+  runtimeStampLines(report: string): string[]
+  contractIdentityLine(report: string): string
+}
 
 /**
  * 「L0 主张」清单：这些用例在 `TestProvider` 上**必须**绿。
@@ -182,6 +187,7 @@ describe.skipIf(!suitePresent)('conformance [L0 基座 `TestProvider` 跑同一�
 
   it('L0 矩阵带身份行、不写运行时刻', async () => {
     const fs = await import('node:fs')
+    const { runtimeStampLines, contractIdentityLine } = (await import(hygieneSpec)) as HygieneModule
     const version = (
       JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
     ).version

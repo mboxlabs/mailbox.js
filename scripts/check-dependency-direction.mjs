@@ -29,11 +29,14 @@ const ROLE = {
   mailbox: 'core',
   'mailbox-queue': 'queue',
   'mailbox-memory': 'memory',
+  'mailbox/wiki': 'paper',
   'mailbox-input': 'downstream',
   'mailbox-terminal': 'downstream',
   'tool-rpc': 'downstream',
 }
 const PROVIDER_PACKAGES = new Set(['@mboxlabs/mailbox-memory'])
+/** 论文 / 用例 / 报告那个仓（不发布）。它看得见全家，谁也不许看见它。 */
+const PAPER_PACKAGES = new Set(['@mboxlabs/mailbox-wiki'])
 /** 允许出现在衍生包 `dependencies` 里的上游（§1 依赖图）。 */
 const ALLOWED_DEPS = {
   '@mboxlabs/mailbox': new Set(),
@@ -136,6 +139,13 @@ for (const m of members) {
     if (back.includes(m.name)) {
       record('R4.no-package-cycle', `${m.name} ⇄ ${target.name}`, 'violation', `${m.name} → ${target.name} 且反向也在`)
     }
+  }
+  // R5：paper 包（用例与报告）可以依赖家族任何上游，但**谁也不许依赖它**。
+  // 一旦核心 import 论文，编译程序就得把 provider 包拖进来（方向锁要红），或者核心 devDep 它——
+  // 那正是 pnpm 实测 `ERR_PNPM_TASK_CYCLE` 的那条坑。
+  if (m.role !== 'paper' && !PAPER_PACKAGES.has(m.name)) {
+    const hits = [...deps, ...devDeps].filter((d) => PAPER_PACKAGES.has(d))
+    record('R5.paper-not-depended-on', m.name, hits.length ? 'violation' : 'ok', hits.length ? `依赖了论文仓：${hits.join(', ')}` : '不依赖论文仓')
   }
 }
 
