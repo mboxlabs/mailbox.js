@@ -200,14 +200,23 @@ only ways to read them or get rid of them — §2 lists the three dispositions, 
 chain that parks them. Without that count, "0 unread" is indistinguishable from "a poison record is
 parked here".
 
-`state` describes the provider's view **of that address**. An address the provider has never
-seen (never posted to, never subscribed, no recorded activity) reports `state: 'unknown'` and
-`exists: false` — reporting `online` + 0 for it would make a dashboard unable to tell
-"this address does not exist" from "this address is idle". A drained but real address stays
-`online`; so does an address that only has subscribers. `exists` is left unset when the provider
-cannot answer status queries at all: "I cannot ask" is not "it does not exist".
-`lastActivityTime` is `null` when there is no record — never `undefined`, which would vanish
-entirely from `JSON.stringify`.
+`state` describes the provider's view **of that address**. Three kinds of "no" are told apart by one
+rule: **a missing key means the provider does not answer that item; an explicit `null` / `false` means
+it answered "there is none"**. Concretely:
+
+- `state: 'unknown'` + `exists: false` → the address does not exist (the provider answered that much);
+- `state: 'unknown'` + **no `exists` key** → the question could not be asked at all (no `status`
+  capability declared — or declared without an implementation behind it);
+- `lastActivityTime: null` → no activity record; key missing → that item is not answered.
+
+Read `exists` **before** `state`: `unknown` carries both "no record at all" and "cannot answer", so
+looking at `state` alone always forces a guess. An address the provider has never seen (never posted
+from or to, never subscribed, no recorded activity) reports `state: 'unknown'` and `exists: false` —
+reporting `online` + 0 for it would make a dashboard unable to tell "this address does not exist" from
+"this address is idle". A drained but real address stays `online`; so does an address that only has
+subscribers. Both places that answer "cannot ask" (the kernel facade and the provider base class) omit
+`exists` on purpose rather than fake `false`, and `lastActivityTime` is `null` when there is no record —
+never `undefined`, which would vanish entirely from `JSON.stringify`.
 
 Diagnostics pages and tests usually want the whole picture at once. Call `status()` with no
 arguments (or `snapshot()`, same view) to get every topic of every registered provider:
@@ -713,6 +722,38 @@ Those are delivery policies a provider owns, not part of the hand-off — code t
 to be tested against `MemoryProvider` (or a real broker) as well. Its capability declaration states
 that boundary (`status` / `peek` / `clear` / `settle` / `listAddresses`, nothing else), so diagnostics
 say “this one was not done” instead of pretending the queue is empty.
+
+## 🚚 One message takes one road (but a failed delivery comes back)
+
+Can one address be read by both `subscribe()` (push) and `fetch()` (pull)? **Not in the same round.**
+The reference `mem:` provider looks at exactly one thing when `post()` runs: does this address have
+subscribers right now? If yes the message goes only to the subscribers and is never enqueued; if not,
+it is enqueued and waits for `fetch()`. (In `1.0.0` both roads ran, which produced two real bugs: a
+subscriber that never calls `fetch()` left `unreadCount` growing forever, and after re-subscribing a
+single `fetch()` redelivered already-processed messages — side effects executed twice.)
+
+But **a failed delivery puts that copy back in the queue**, so a push address becomes pull-visible
+once every consumer fails:
+
+```ts
+await mailbox.subscribe(addr, handler) // addr is now a push address
+await mailbox.post({ from, to: addr, body: 'A' }) // handed to handler, never enqueued
+// handler throws a retriable error ⇒ the copy returns to addr's queue:
+// measured `unreadCount` = 1, `inFlightCount` = 0
+await mailbox.fetch(addr) // a pull reader can now take it
+```
+
+This is not a configurable strategy and not a capability switch: **the provider chooses the routing**
+(`mem:` chooses subscriber-first). The kernel guarantees two things only — **one copy travels one road
+per round**, and **a failed delivery is settled against the same copy's account** (the queue does not
+receive a fresh copy, and the first consumer to fail does not decide whether it is requeued). Measured:
+all consumers fail retriable ⇒ requeued (`unreadCount` 1); one succeeds, one fails ⇒ not requeued (that
+copy already landed); all fail fatally ⇒ not requeued.
+
+If you want push and pull side by side, use two addresses (`mem:h@x/inbox` and `mem:h@x/inbox/pull`),
+or `unsubscribe()` first and then drain. To see which road an address is on: `unreadCount` /
+`inFlightCount` / `exists` from `status()`, plus the `mem:` extension key `mem.subscriberCount`
+(`> 0` means this `post()` will not enqueue).
 
 ## 🔄 Lifecycle Management
 

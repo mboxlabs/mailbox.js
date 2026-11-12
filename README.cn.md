@@ -93,7 +93,7 @@ flowchart LR
 
 **query 与 fragment 不属于地址。** 地址在成为 topic 之前会被规范化为 `protocol://user@host/path`，
 `?` 与 `#` 后面的内容会被静默丢掉——`mem:sales@example.com/inbox?thread=1` 和
-`mem:sales@example.com/inbox` 会溻成同一个 topic，共用一条队列与一条投递路径。库不会把两个逻辑
+`mem:sales@example.com/inbox` 会塌成同一个 topic，共用一条队列与一条投递路径。库不会把两个逻辑
 地址合并，而是在**每个**入口（`post()` / `subscribe()` / `fetch()` / `status()`）直接拒绝这种写法
 （`InvalidMailboxAddressError`）。逻辑分区的区别请写进 path：`mem:sales@example.com/inbox/thread-1`。
 
@@ -191,10 +191,18 @@ flowchart LR
    `purgeParked()` 排走——§2 讲三个处置动作，§4 讲会把它们停放的死信链。没有这个数，「未读 0」
    和「有一条毒记录停在这儿」就完全分不开。
 
-   `state` 描述的是 provider 对**这个地址**的看法。从未被碰过的地址（没投过、没订阅过、没有
-   活动记录）会报 `state: 'unknown'` + `exists: false`——统一报 `online` + 0 会让诊断页分不出
-   “这个地址不存在”和“这个地址空闲”。取空但确实存在的地址仍然 `online`；只有订阅者的地址也仍然
-   `online`。provider 完全不支持状态查询时不会设 `exists`：“问不到”不等于“不存在”。
+   `state` 描述的是 provider 对**这个地址**的看法。三种「没有」按同一条规则分：**键缺席 = 这一项不答；
+   显式给 `null` / `false` = 答了「没有」**。具体到读的人：
+
+   - `state: 'unknown'` + `exists: false` → 地址不存在（provider 答过这句话）；
+   - `state: 'unknown'` + **没有** `exists` 键 → 根本问不到（没声明 `status` 能力，或声明了却没实现）；
+   - `lastActivityTime: null` → 没有活动记录；整个键消失 → 这一项不答。
+
+   读的顺序是**先看 `exists` 有没有值，再看 `state`**：`unknown` 一个值同时装「没有任何记录」和
+   「问不到」两种意思，只看它一定要猜。从未被碰过的地址（没投过、没订阅过、没有活动记录）会报
+   `state: 'unknown'` + `exists: false`——统一报 `online` + 0 会让诊断页分不出“这个地址不存在”和
+   “这个地址空闲”。取空但确实存在的地址仍然 `online`；只有订阅者的地址也仍然 `online`。两个
+   「问不到」的出口（内核门面与 provider 基类）都故意不设 `exists`，而不是冒充 `false`；
    `lastActivityTime` 没有记录时是 `null`，而不是 `undefined`——后者在 `JSON.stringify` 后会让整个
    字段消失。
 
@@ -654,6 +662,31 @@ failedDeliveries)`（继承 `MemoryProvider`）。
 > **一份规范，三种实现。** 地址格式、订阅与取回二选一、投递级结算、opt-in 重试与 ACK 超时只在本
 > README 里定义一次，TypeScript、Python、Rust 三端等价实现；改动语义时三套测试（`vitest` / `pytest`
 > / `cargo test`）必须同时通过。
+
+## 🚚 一条消息只走一条路（但失败会退回，记的是同一份账）
+
+一个地址能不能同时被 `subscribe()`（推）和 `fetch()`（拉）读到？**同一轮不能**。`mem:` 参考实现在
+`post()` 时只看一件事：这个地址当时有没有订阅者。有，就只交给订阅者，不入队；没有，才入队等 `fetch()`。
+（`1.0.0` 两条路都走，结果是：订阅者从不 `fetch()` 时 `unreadCount` 只涨不消；重新订阅后一次 `fetch()`
+又把处理过的消息投第二遍——副作用执行两次。）
+
+但**投递失败会把这一份退回队列**，所以一个「推」地址在消费者全失败时会变成「拉」可见：
+
+```ts
+await mailbox.subscribe(addr, handler) // addr 从此是推地址
+await mailbox.post({ from, to: addr, body: 'A' }) // 直接交给 handler，不入队
+// handler 抛可重试错误 ⇒ 这一份回到 addr 的队列：实测 `unreadCount` = 1、`inFlightCount` = 0
+await mailbox.fetch(addr) // 换一个 `fetch` 也拿得到它
+```
+
+它不是可配置的策略，也不是一条能力开关：**路由怎么选由 provider 决定**（`mem:` 选「订阅者优先」），
+内核只保证两件事——**同一份副本在同一轮里只走一条路**，以及**失败退回记的是同一份账**（不会退回一份
+新的，也不会由先失败的那个消费者决定回不回队）。实测三例：全可重试失败 ⇒ 回队（`unreadCount` 1）；
+一个成功一个失败 ⇒ 不回队（这一份已经落地）；全致命失败 ⇒ 不回队。
+
+想要推与拉同时并存，用两个地址（`mem:h@x/inbox` 与 `mem:h@x/inbox/pull`），或者先 `unsubscribe()`
+再 drain。自查这个地址现在走哪条路：`status()` 里的 `unreadCount` / `inFlightCount` / `exists`，
+加上 `mem:` 的扩展键 `mem.subscriberCount`（`> 0` 就说明这次 `post()` 不会入队）。
 
 ## 🧪 自己写 provider：`@mboxlabs/mailbox/testing`
 
