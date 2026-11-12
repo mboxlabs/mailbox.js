@@ -154,8 +154,9 @@ export class Mailbox {
    * 仍是**同步 throw**（所以本方法不是 `async`）；只有 `_subscribe` 异步 reject 才是 rejection。
    *
    * @param address 订阅地址（带 query / hash 是否合法由该 scheme 的 provider 判定）。
-   * @param onReceive 投递回调。内核会 **await** 它：resolve = 隐式 ACK，reject = nack（
-   *                  可重试判定决定回队还是放弃）。返回 Promise 就是让内核等你。
+   * @param onReceive 投递回调。内核会 **await** 它：resolve = 隐式 ACK（`handled`），reject =
+   *                  交回队列（`unhandled`）或放弃（`discard`）——由可重试判定决定哪一种。
+   *                  返回 Promise 就是让内核等你。
    * @returns 已生效的订阅句柄；若在这期间已被 `stop()` / `unsubscribe()` 拆掉，
    *          拿到的是一个 `status: 'closed'` 的句柄（不报错）。
    */
