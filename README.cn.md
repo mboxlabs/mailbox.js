@@ -104,13 +104,19 @@ flowchart LR
 1. **安装**
 
    ```bash
-   npm install @mboxlabs/mailbox
+   npm install @mboxlabs/mailbox @mboxlabs/mailbox-memory
    ```
+
+   Mailbox 是三个包。`@mboxlabs/mailbox` 是契约与内核——它不拥有队列、不拥有 broker、也不拥有
+   地址语法。`@mboxlabs/mailbox-memory` 是参考实现 `mem:` provider（一张进程内事件总线，外加队列
+   之上的租约、死信归档、停放）。`@mboxlabs/mailbox-queue` 是它们共同踩在下面的队列原语；只有你
+   要自己搭 provider 时才会直接用到它。装你真正要用的那几个。
 
 2. **编写代码**
 
    ```ts
-   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox'
+   import { Mailbox } from '@mboxlabs/mailbox'
+   import { MemoryProvider } from '@mboxlabs/mailbox-memory'
 
    // 1. 创建 Mailbox 实例并注册内存 Provider
    const mailbox = new Mailbox()
@@ -416,7 +422,7 @@ failedDeliveries)`（继承 `MemoryProvider`）。
    `fetch()` 消费者决定。想让库自己重投，就显式开启重试：
 
    ```ts
-   import { MemoryProvider } from '@mboxlabs/mailbox'
+   import { MemoryProvider } from '@mboxlabs/mailbox-memory'
 
    const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }) // 毫秒
    mailbox.registerProvider(provider)
@@ -495,7 +501,7 @@ failedDeliveries)`（继承 `MemoryProvider`）。
    永久泄漏这条消息，因此未 ack 的消息默认在 `DEFAULT_ACK_TIMEOUT`（30 秒）后重新入队：
 
    ```ts
-   import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
+   import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox-queue'
 
    await mailbox.fetch(addr, { manualAck: true }) // 这份取信的租约：30 秒
    await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // 自定义这份的租期
@@ -616,7 +622,7 @@ failedDeliveries)`（继承 `MemoryProvider`）。
 
    ## 🧵 实例隔离与状态重置（`mem:` Provider）
 
-   `MemoryProvider` 用内存总线模拟一个“服务端”。默认情况下，所有 `MemoryProvider` 共用进程级
+   在 `@mboxlabs/mailbox-memory` 里。`MemoryProvider` 用内存总线模拟一个“服务端”。默认情况下，所有 `MemoryProvider` 共用进程级
    单例总线，因此同进程里所有 `Mailbox` 实例看到的是同一份 `mem:` 队列与订阅表，而且这份状态
    在 `stop()` 之后仍然存在。这是有意的设计——跨 `Mailbox` 投递就靠它——但当你需要彼此独立
    （宿主 + 插件、kernel + provider、不得互相串台的测试）时，必须显式选定边界：

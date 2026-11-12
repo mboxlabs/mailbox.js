@@ -76,6 +76,34 @@
 
 项目使用 Prettier 和 ESLint 来统一代码风格。提交前请运行 `pnpm style:fix` 自动格式化代码。
 
+## 🗺️ 家族仓与门槛
+
+拆包后一共四个仓（都在同一个 pnpm workspace 里）：
+
+| 仓 | 包名 | 它拥有什么 |
+| --- | --- | --- |
+| `mailbox`（本仓） | `@mboxlabs/mailbox` | 契约 + 内核 + `@mboxlabs/mailbox/testing`（L0 基座） |
+| `mailbox-queue` | `@mboxlabs/mailbox-queue` | `MailMessageQueue`：队列、租约、停放 |
+| `mailbox-memory` | `@mboxlabs/mailbox-memory` | `MemoryProvider`（`mem:`）：总线、死信、地址语法 |
+| `wiki`（挂在本仓 `wiki/` 下，独立仓） | `@mboxlabs/mailbox-wiki`（不发布） | 论文、用例集、conformance 报告 |
+
+方向前只能从上往下（核心 ← 队列 ← provider ← 下游），而且谁也不许依赖 `wiki`。这条不是风格：
+核心依赖 provider 包会让 pnpm 直接 `ERR_PNPM_TASK_CYCLE`。拿脚本查，别靠眼睛：
+
+```bash
+pnpm run check:direction   # 核心、队列、memory 都有这个 script
+```
+
+**门槛在哪仓跑就在哪仓跑**，改完代码要跑到那个仓去：
+
+- 核心：契约与内核测试 + L0 档案的用例门（`test/conformance-l0.test.ts`）。
+- `mailbox-queue`：队列层测试 + 队列基座（`QueueTestProvider`）。
+- `mailbox-memory`：`mem:` 档案的用例门（`test/conformance.test.ts`）与实验 E1。
+- `wiki`：`pnpm run typecheck`（论文 runner 的类型门）与 `pnpm run conformance`（写报告）。
+
+报告写在 `wiki/paper/conformance/report/`：跑 `memory` 档案出 `ts.md|json`，跑 `testing` 档案出
+`ts-testing.md|json`。两张表量的是不同的东西，不合并。
+
 ## 🧪 测试要求
 
 我们使用 [Vitest](https://vitest.dev/) 进行单元测试。

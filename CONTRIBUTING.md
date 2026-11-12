@@ -77,6 +77,36 @@ Based on your interests and experience, you can start with any of the following:
 
 The project uses Prettier and ESLint to enforce a consistent code style. Before committing, please run `pnpm style:fix` to automatically format your code.
 
+## 🗺️ The Family of Repos and Where Each Gate Runs
+
+After the split there are four repos, all in one pnpm workspace:
+
+| Repo | Package | What it owns |
+| --- | --- | --- |
+| `mailbox` (this one) | `@mboxlabs/mailbox` | the contract, the kernel, and `@mboxlabs/mailbox/testing` (the L0 base) |
+| `mailbox-queue` | `@mboxlabs/mailbox-queue` | `MailMessageQueue`: the queue, leasing, parking |
+| `mailbox-memory` | `@mboxlabs/mailbox-memory` | `MemoryProvider` (`mem:`): the bus, dead letters, address grammar |
+| `wiki` (lives under `wiki/` here, its own repo) | `@mboxlabs/mailbox-wiki` (not published) | the paper, the case set, the conformance reports |
+
+Dependencies may only point upward (core ← queue ← provider ← downstream), and nobody may depend
+on `wiki`. That is not a style rule: a core dependency on a provider package is a real
+`ERR_PNPM_TASK_CYCLE` in pnpm. Check it with a script instead of by eye:
+
+```bash
+pnpm run check:direction   # available in core, queue and memory
+```
+
+**A gate runs in the repo that owns it**, so move to that repo after changing code:
+
+- core: contract and kernel tests, plus the case gate for the `testing` profile (`test/conformance-l0.test.ts`).
+- `mailbox-queue`: queue-layer tests and the `QueueTestProvider` base.
+- `mailbox-memory`: the case gate for the `memory` profile (`test/conformance.test.ts`) and experiment E1.
+- `wiki`: `pnpm run typecheck` (the type gate for the paper runner) and `pnpm run conformance` (writes reports).
+
+Reports land in `wiki/paper/conformance/report/`: the `memory` profile writes `ts.md|json`, the
+`testing` profile writes `ts-testing.md|json`. The two tables measure different things and are
+never merged.
+
 ## 🧪 Testing Requirements
 
 We use [Vitest](https://vitest.dev/) for unit testing.

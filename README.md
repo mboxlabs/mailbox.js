@@ -105,13 +105,20 @@ Get a taste of Mailbox's core power in just three steps:
 1. **Installation**
 
    ```bash
-   npm install @mboxlabs/mailbox
+   npm install @mboxlabs/mailbox @mboxlabs/mailbox-memory
    ```
+
+   Mailbox is three packages. `@mboxlabs/mailbox` is the contract and the kernel — it owns no
+   queue, no broker, no address scheme. `@mboxlabs/mailbox-memory` is the reference `mem:` provider
+   (an in-process event bus, plus leasing, dead-letter archiving and parking on top of the queue).
+   `@mboxlabs/mailbox-queue` is the queue primitive both of them stand on; you only need it
+   directly if you are building your own provider on top of it. Install what you actually use.
 
 2. **Write Code**
 
    ```ts
-   import { Mailbox, MemoryProvider } from '@mboxlabs/mailbox'
+   import { Mailbox } from '@mboxlabs/mailbox'
+   import { MemoryProvider } from '@mboxlabs/mailbox-memory'
 
    // 1. Create a Mailbox instance and register a memory provider
    const mailbox = new Mailbox()
@@ -469,7 +476,7 @@ and a `fetch()` consumer decides what happens next. Opt into automatic redeliver
 want the library to retry the callback itself:
 
 ```ts
-import { MemoryProvider } from '@mboxlabs/mailbox'
+import { MemoryProvider } from '@mboxlabs/mailbox-memory'
 
 const provider = new MemoryProvider({ maxAttempts: 3, baseDelay: 1_000 }) // milliseconds
 mailbox.registerProvider(provider)
@@ -562,7 +569,7 @@ timeout a crashed consumer leaks the message forever, so an unacknowledged messa
 requeued after `DEFAULT_ACK_TIMEOUT` (30s) by default:
 
 ```ts
-import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox'
+import { DEFAULT_ACK_TIMEOUT } from '@mboxlabs/mailbox-queue'
 
 await mailbox.fetch(addr, { manualAck: true }) // 30s lease for *this* fetch
 await mailbox.fetch(addr, { manualAck: true, ackTimeout: 5_000 }) // custom lease
@@ -770,7 +777,7 @@ For robust production systems, explicit lifecycle management is crucial:
 
 ## 🧵 Instance isolation and state reset (`mem:` provider)
 
-`MemoryProvider` simulates a broker on an in-memory event bus. By default every
+In `@mboxlabs/mailbox-memory`. `MemoryProvider` simulates a broker on an in-memory event bus. By default every
 `MemoryProvider` shares one process-wide bus, so all `Mailbox` instances in the process see the
 same `mem:` queues and subscription tables, and that state outlives `stop()`. This is
 intentional — it is what lets two `Mailbox` instances talk to each other — but it means you have
