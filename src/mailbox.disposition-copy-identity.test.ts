@@ -23,82 +23,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Mailbox } from './mailbox';
 import { MailboxProvider } from './providers/MailboxProvider';
-import { MailMessageQueue } from './lib/MessageQueue';
+import { QueueTestProvider } from '../test/support/queue-test-provider';
 import { MBX_ATTEMPT_HEADER, MBX_MAX_ATTEMPTS_HEADER, MBX_ROUND_HEADER } from './lib/delivery';
 import type { MailMessage } from './interfaces';
 import type { DeliveryResult } from './lib/delivery';
-import type { RetryPolicy } from './lib/retry';
 
 const tick = (ms = 50) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const retriable = () => Object.assign(new Error('upstream down'), { isRetriable: true });
 
 let seq = 0;
 const addrOf = (name: string): string => `q://t${seq++}-${name}@broker/inbox`;
-const canonicalOf = (address: URL | string): string => {
-  const url = typeof address === 'string' ? new URL(address) : address;
-  const userInfo = url.username ? `${url.username}@` : '';
-  return `${url.protocol}//${userInfo}${url.host}${url.pathname}`;
-};
 
 const countersOf = (message?: MailMessage | null) => ({
   attempt: message?.headers?.[MBX_ATTEMPT_HEADER],
   max: message?.headers?.[MBX_MAX_ATTEMPTS_HEADER],
   round: message?.headers?.[MBX_ROUND_HEADER],
 });
-
-/**
- * 队列 / 传输型 provider（`broadcastDeliveries = false`，基类默认）：一次投递 = broker 的一次 ack。
- * 这里把每个环节**实际收到的对象**都存下来，用来对照同一性，而不是对照文档措辞。
- */
-class IdentityProvider extends MailboxProvider {
-  readonly queue = new MailMessageQueue<MailMessage>();
-  /** `_send` 收到的那份（= `send()` 的浅拷贝，带 `mbx-sent-at`；`post()` 返回的就是它） */
-  sent: MailMessage | undefined;
-  /** 每次尝试交给订阅回调的对象 */
-  readonly handedTo: MailMessage[] = [];
-  /** 隐式 ack 收到的对象 */
-  readonly acked: MailMessage[] = [];
-  /** 处置信号收到的对象 */
-  readonly nacked: { message: MailMessage; requeue: boolean }[] = [];
-
-  constructor(retry?: RetryPolicy | null) {
-    super('q', retry);
-  }
-
-  protected async _send(message: MailMessage): Promise<void> {
-    this.sent = message;
-    this.queue.enqueue(canonicalOf(message.to), message);
-    // broker 主动 push：走基类投递入口，才有副本与计数记账（第三方 provider 必须这样接）。
-    for (const sub of Array.from(this.subscriptions.values())) {
-      void this._deliverToLocalSubscription(sub.id, message);
-    }
-  }
-
-  protected _subscribe(_address: URL, _onReceive: any): any {
-    return null;
-  }
-
-  protected async _unsubscribe(): Promise<void> {}
-
-  protected async _fetch(): Promise<MailMessage | null> {
-    return null;
-  }
-
-  /** broker 式 provider 的结算口径：按份号（系统发的 `mbx-send-id`），不按发送方的名字。 */
-  private flightKey(message: MailMessage): string {
-    return this.queue.locate(message.id).find((c) => c.state === 'inFlight')?.key ?? message.id
-  }
-
-  protected async _ack(message: MailMessage): Promise<void> {
-    this.acked.push(message);
-    this.queue.ack(this.flightKey(message));
-  }
-
-  protected async _nack(message: MailMessage, requeue: boolean): Promise<void> {
-    this.nacked.push({ message, requeue });
-    this.queue.nack(this.flightKey(message), requeue);
-  }
-}
 
 describe('交给 provider 的 message 是副本：对象同一性不可依赖', () => {
   beforeEach(() => {
@@ -108,7 +48,7 @@ describe('交给 provider 的 message 是副本：对象同一性不可依赖', 
   afterEach(() => vi.restoreAllMocks());
 
   it('[语义] `_ack` 收到的是当次尝试的副本：与回调那次同一对象，但不是 `_send` 那份', async () => {
-    const provider = new IdentityProvider();
+    const provider = new QueueTestProvider();
     const mailbox = new Mailbox();
     mailbox.registerProvider(provider);
     const address = addrOf('ack-copy');
@@ -148,7 +88,7 @@ describe('交给 provider 的 message 是副本：对象同一性不可依赖', 
   });
 
   it('[语义] 每次尝试是新副本；`_nack` 收到最后一次尝试的那份（趟数是真的）', async () => {
-    const provider = new IdentityProvider({ maxAttempts: 3, baseDelay: 1 });
+    const provider = new QueueTestProvider({ maxAttempts: 3, baseDelay: 1 });
     const mailbox = new Mailbox();
     mailbox.registerProvider(provider);
     const address = addrOf('nack-copy');
