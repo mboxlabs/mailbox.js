@@ -63,7 +63,7 @@ export interface OutgoingMail {
    * - `mbx-sent-at`: 发送时间戳 (ISO 8601)。由 Provider 在发送时自动注入。
    *   代表消息正式进入传输系统的时刻，是审计消息时效、监控传输延迟的权威标准。
    * - `mbx-attempt`: **本轮投递链内**是第几趟（1 起算，字符串）。由基类在把消息交给订阅回调前
-   *   注入到投递**副本**上，所以重投中的回调、`_nack` 与死信记录都能看到「这一轮试了几次」。
+   *   注入到投递**副本**上，所以重投中的回调、`_settle` 与死信记录都能看到「这一轮试了几次」。
    *   它是链内计数，**不是重投计数**：消息回队、下一轮投递重新从 `'1'` 数（跨轮累积看
    *   `mbx-round`）。没开重试策略时本轮恒为 `'1'`。
    * - `mbx-max-attempts`: 只在 provider 开了重试策略时注入（= `RetryPolicy.maxAttempts`）。
@@ -159,6 +159,12 @@ export interface Ackable {
   /**
    * 结束这次交付，并说明怎么结束它（见 {@link CORE_DISPOSITIONS}）。
    *
+   * 这是处置的**唯一**入口（3.0.0 起）。退回队列就是 `ack('unhandled')`，结束它就是
+   * `ack('discard')`。以前的 `nack(requeue?)` 不是第二个动作，而是同一件事的另一种写法：
+   * `nack(true)` ≡ `ack('unhandled')`、`nack(false)` ≡ `ack('discard')`。留着它的代价不是多一个
+   * 方法，而是默认值：`nack()` 在 2.x 默认「丢弃」，参数拿掉后同一个无参调用就只能读成「退回」——
+   * 编译照过、语义从丢弃换成无限重投。所以上面那个 `ack(where)` 直接接处置值，不兼容写法。
+   *
    * 省略 = `handled`：这一份到此为止，系统不留任何东西。`ack` 不是「处理成功了」的意思——
    * 你怎么处理的、还是干脆判定这封信不合格，provider 不知道也不问。
    *
@@ -172,21 +178,6 @@ export interface Ackable {
    * 处置值不被认得时**先抛错、不动消息**：句柄的「一次处置」机会不会被一个失败的调用消耗掉。
    */
   ack(where?: Disposition): Promise<boolean | void>;
-
-  /**
-   * @deprecated 用 {@link Ackable.ack} 的处置值：`nack(true)` = `ack('unhandled')`，
-   *   `nack(false)` = `ack('discard')`。
-   *
-   *   为什么还留着：布尔参数在 `v1.0.0` 就发布了，直接把参数去掉会让老代码里的 `nack(false)`
-   *   （= 丢弃）静默变成「退回队列」——从丢弃变成无限重投，这是语义漂移而不是编译错误。
-   *   它会在拆包那一版（`3.0.0`）与拆包同时删除；整个 2.x 里它都是完整 alias。
-   *
-   * @param requeue `true` = 放回队列（还会再交给我一次）；`false`（默认）= 结束它，
-   *   **不会再交给我**，由 provider 按自己协议的规矩善后（死信 / bounce / 打标记…
-   *   没实现就等同于丢弃，**不要指望 `nack(false)` 自带 DLQ**）。
-   * @returns 语义同 {@link Ackable.ack}：这次处置有没有生效。
-   */
-  nack(requeue?: boolean): Promise<boolean | void>;
 }
 export type AckableMailMessage = MailMessage & Ackable;
 
@@ -475,13 +466,13 @@ export interface IMailboxProvider {
    *
    * 回调抛错时，内核只做两件事：
    *   1. 把错误分类成可重试 / 不可重试（见 `isRetriableError`）；
-   *   2. 发出**处置信号**：`_nack(message, true)` = 回队（不是放弃），
-   *      `_nack(message, false)` = 放弃，并在之后调 `_onDeliveryDeadLettered`。
+   *   2. 发出**处置信号**：`_settle(message, 'unhandled')` = 回队（不是放弃），
+   *      `_settle(message, 'discard')` = 放弃，并在之后调 `_onDeliveryDeadLettered`。
    *
    * 内核**不**保证的事（均归 provider）：重投几次、回到队列的哪个位置、放弃之后留下什么。
    * 但处置信号里的 `message` 是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`），
    * 不是 `send()` 那个共享对象——所以回队的那份在队列里也带着次数，`fetch()` 兜底消费者看得见。
-   * 隐式 ACK 收到的也是副本（带计数的投递副本，见基类 `_ack`）。
+   * 隐式 ACK 收到的也是副本（带计数的投递副本，见基类的投递副本记账）。
    * 推论：provider **不得按对象同一性记账**（`Map<MailMessage, handle>` / `WeakMap` / `set.has(message)`）——
    * 查不到不报错，只会静默不 ack。用 `message.id` 或 broker 自己的投递句柄记账。
    * （广播 barrier 没记到副本时会退回 `send()` 那份不带计数的副本：投递没走基类入口 / 同 id

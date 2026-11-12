@@ -83,9 +83,9 @@ interface PendingDelivery {
   /**
    * 本次投递的消息，始终是一份带 `mbx-attempt` / `mbx-round`（开了重试还有 `mbx-max-attempts`）
    * 的**副本**，不是发送侧那个共享对象——否则 A 的重投次数会串给 B。
-   * 每次尝试换一份新副本；同一次尝试里，回调 / `_ack` / `_nack` 拿的是同一个对象。
-   * 结算后的 `nack` / 死信钩子都用这份（广播 barrier 也一样），所以 provider 在 `_nack(false)`
-   * 里落 DLQ 时能看到真实次数，而 `_nack(true)` 退回队列的那一份也带着次数与轮次。
+   * 每次尝试换一份新副本；同一次尝试里，回调 / `_settle` 拿的是同一个对象。
+   * 处置与死信钩子都用这份（广播 barrier 也一样），所以 provider 在 `_settle(message, 'discard')`
+   * 里落 DLQ 时能看到真实次数，而 `_settle(message, 'unhandled')` 退回队列的那一份也带着次数与轮次。
    */
   message: MailMessage;
   /** 投递身份（`subscriptionId + messageId`）。`key` 只是内部 map 键，可能带并发序号后缀。 */
@@ -120,7 +120,7 @@ type DeliveryOutcome = 'ok' | 'retriable' | 'fatal' | 'cancelled';
  *
  * 基类拥有那些第三方最容易做错、又最难自己做对的记账：发送边界发 `mbx-send-id` 与系统头、投递级
  * 结算与重试、广播的 barrier、处置与尝试记账、能力探测，以及**关闭时拆掉全部订阅**。子类要填的是
- * `_xxx()` 那一层钩子：`_send()` / `_subscribe()` / `_fetch()` / `_peek()` / `_ack()` / `_nack()` /
+ * `_xxx()` 那一层钩子：`_send()` / `_subscribe()` / `_fetch()` / `_peek()` / `_settle()` /
  * `_init()` / `_close()` / `_status()`。
  *
  * 直接实现 {@link IMailboxProvider} 不是受支持的写法：接口只是内核调你的结构面，上面那些记账一分都
@@ -161,7 +161,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
   /**
    * 这个 provider 的 `subscribe` 是不是广播（一条消息投递给 N 个订阅者）。
    *
-   * 广播型（`true`，如 MemoryProvider）：单次投递失败**不再**自动 `nack(requeue)` 整条消息 ——
+   * 广播型（`true`，如 MemoryProvider）：单次投递失败**不再**自动把整条消息按 `unhandled` 回队 ——
    * 已成功订阅者的副作用不该再执行一次。回不回队由发送侧的结算 barrier 按
    * `shouldRequeueAfterBroadcast()` 统一判定（全部投递都失败才回队）。
    *
@@ -202,10 +202,10 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
   /** 已经告过警的「漏接 barrier」消息 id，避免一条消息警 N 次。 */
   private readonly barrierlessWarned: Set<string> = new Set();
   /**
-   * 「provider 没实现 `_nack`」只告一次：没这个钩子，内核发出的回队 / 放弃决定会静默落空，
+   * 「provider 没实现 `_settle`」只告一次：没这个钩子，内核发出的回队 / 放弃决定会静默落空，
    * 但每条消息都警一遍就是刷屏。
    */
-  private nacklessWarned = false;
+  private settlelessWarned = false;
 
   constructor(protocol: string, retry?: RetryPolicy | null) {
     if (!protocol) {
@@ -605,9 +605,9 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * `discard`，见 `CORE_DISPOSITIONS`）。
    *
    * 首选钩子是 {@link _settle}。没接它的子类（包括按 `v1.0.0` 写的第三方 provider）转发到
-   * 已发布的 {@link _ack} / {@link _nack}：`handled` → `_ack(message)`；
-   * `unhandled` → `_nack(message, true)`；`discard` → `_nack(message, false)`。
-   * 少这层转发，旧子类会收不到处置；留着它，新旧两种写法也能共存。
+   * 唯一入口是 {@link _settle}。`_ack` / `_nack` 那对老钩子在 3.0.0 已经删了：它们把处置拆成
+   * 「ack 一存在」与「nack 带布尔」两件事，而处置是个词汇（`handled` / `unhandled` / `discard`，
+   * 加 provider 自己声明的自定义值）。子类只该接一个入口：`_settle(message, where)`。
    *
    * 自定义处置值先过能力声明：没声明过就抛 `UnsupportedCapabilityError`，而不是递给一个
    * 不认得这个值的钩子（那会把「不知道拿它怎么办」变成「当成 ack 处理」）。
@@ -618,39 +618,9 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
     if (typeof this._settle === 'function') {
       return this._settle(message, where);
     }
-    if (where === 'handled') {
-      await this._ack?.(message);
-      return;
-    }
-    if (!this._nack) {
-      this._warnMissingNack();
-      return;
-    }
-    return this._nack(message, where === 'unhandled');
-  }
-
-  /**
-   * @deprecated 用 {@link settleDelivery}(message, 'handled')。本方法保留是因为 `v1.0.0` 就有它：
-   *   整个 2.x 里它都是 `settleDelivery(message, 'handled')` 的完整 alias，到拆包的 `3.0.0` 再删。
-   */
-  protected async ack(message: MailMessage) {
-    await this.settleDelivery(message, 'handled');
-  }
-
-  /**
-   * 向 provider 发出处置决定：`requeue = true` 回队（`unhandled`），`requeue = false` **放弃**
-   * （`discard`：丢弃或落死信，由 provider 定）。
-   *
-   * `_nack` 是可选钩子（内存型 provider 本来就没有 broker 可 nack），但「内核已经判定要回队 /
-   * 要放弃，provider 却没接」是另一回事：消息会停在 broker 把它放的位置上——真实 broker
-   * 里就是 visibility timeout 后无限重投。所以这里告警一次，把落空的决定挑明。
-   *
-   * @deprecated 用 {@link settleDelivery}(message, 'unhandled' | 'discard')。布尔参数在
-   *   `v1.0.0` 就发布了，直接去掉会让老代码里的 `nack(false)` 静默变成回队（从丢弃变无限
-   *   重投），所以它在 2.x 里必须是完整 alias，到拆包的 `3.0.0` 再删。
-   */
-  protected async nack(message: MailMessage, requeue: boolean) {
-    await this.settleDelivery(message, requeue ? 'unhandled' : 'discard');
+    // 没接 `_settle`，也没有可转发的老钩子了。告警而不是静默：内核已经做出判定，而落点没人接。
+    // `handled` 同样要告警——真实 broker 上那意味着没人 basic.ack，可见性超时后又重投一轮。
+    this._warnMissingSettle(where);
   }
 
   // --- Protected Abstract Methods (to be implemented by subclasses) ---
@@ -699,70 +669,21 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
   protected async _close?(): Promise<void>;
 
   /**
-   * [Subclass Responsibility - Optional] 处置一次交付（新入口，取代 {@link _ack} / {@link _nack}）。
+   * [Subclass Responsibility - Optional] 处置一次交付：3.0.0 起这是 provider 侧唯一的结算入口。
    *
    * `where` 是内核词汇：
    * - `handled`：这一份到此为止，不留痕；
    * - `unhandled`：交回队列，还会再交出去；
    * - `discard`：结束它，并按这个协议的规矩**善后**（死信 / bounce / 打标记——做什么由协议定）。
    *
-   * 与已发布钩子的关系：没接 `_settle` 的子类继续走 {@link _ack} / {@link _nack}（基类转发，
-   * 语义等价），所以第三方 provider 不会因为这个改名而断。接了 `_settle` 就以它为准。
+   * 它是唯一的入口：`_ack` / `_nack` 那对老钩子已删（它们把同一件事拆成两个动词加一个布尔）。
+   * 没接 `_settle` 的 provider 不会静默落空——基类按处置值**告警一次**（{@link _warnMissingSettle}）。
    * 声明了它 = 能力 `settle`（见 {@link supports}）。
    *
    * @returns 这次处置有没有落定（`false` = 没落定，例如这份已经不归这次交付了）；
    *   不报告就返 `undefined`，内核不会替你编一个 `true`。
    */
   protected _settle?(message: MailMessage, where: Disposition): Promise<boolean | void>;
-
-  /**
-   * [Subclass Responsibility - Optional] Provides implicit ACK capability for the `subscribe` mode.
-   * For providers that don't support ACK (like in-memory), this can be an empty async function.
-   *
-   * @deprecated 用 {@link _settle}(message, 'handled')。它在 `v1.0.0` 就发布了，所以 2.x 里
-   *   继续支持（基类会把 `handled` 转给它），拆包的 `3.0.0` 删。
-   *
-   * `message` 是**本次投递的副本**（浅拷贝，带 `mbx-attempt` / `mbx-round`，开了重试还有
-   * `mbx-max-attempts`），与交给订阅回调的是同一份；**不是** `_send` 那个对象，也不是 `post()`
-   * 的入参。重试链里每次尝试换一份新副本，只有当次尝试的回调 / `_ack` / `_nack` 拿到同一个对象。
-   *
-   * 因此 provider **不得按对象同一性记账**（`Map<MailMessage, handle>` / `WeakMap` / `set.has(message)`）：
-   * 查不到不会抛错，只会静默不 ack，消息停在 broker 里等 visibility timeout 后无限重投。
-   * 记账用 `message.id`（消息级）或 broker 自己的投递句柄；投递级身份（`subscriptionId + messageId`）
-   * 只在 `DeliveryResult.deliveryId`（死信钩子的 `failed[]` 里）拿得到。
-   *
-   * 浅拷贝的边界：`headers` 是新对象（改它不回落到 `_send` 那份），`body` / `meta` / `from` / `to`
-   * 仍是同一引用（改了会串到发送方）。
-   */
-  protected _ack?(message: MailMessage): Promise<void>;
-
-  /**
-   * [Subclass Responsibility - Optional] Provides NACK capability.
-   *
-   * @deprecated 用 {@link _settle}(message, 'unhandled' | 'discard')。布尔参数在 `v1.0.0` 就发布了，
-   *   所以 2.x 里它仍是完整入口（`requeue = true` ≡ `unhandled`，`false` ≡ `discard`），拆包的 `3.0.0` 删。
-   *
-   * 这是 provider 表达「放弃」的**唯一**入口，两个参数合起来就是内核的全部判定：
-   * - `requeue = true`：回队（回到哪个位置、重投几次，由 provider 定，内核不管）；
-   * - `requeue = false`：**放弃**——永久移出队列；丢弃还是落 DLQ 由 provider 定。
-   *
-   * `message` 是**本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`）：回队时它带着
-   * 「本轮试了几次 / 这是第几轮」落回队列，`requeue=false` 落 DLQ 时同样有次数可写。
-   * 例外照实说：广播 barrier 在**没记到投递副本**时会退回 `_send` 那份（没有任何计数）——
-   * `_send` 接了 barrier 但投递没走 `_startDelivery` / `_deliverToLocalSubscription`、同 id 并发广播时
-   * 后落定的那个 barrier、或副本表撞上 `MAX_SETTLED_COPIES` 被淘汰。所以 provider 侧别假设头一定在。
-   *
-   * 与 {@link _ack} 同理：这是副本，**不能按对象同一性记账**（用 `message.id` 或 broker 句柄）。
-   *
-   * 广播型 provider 里它只会在**广播全部投递都结算之后**被调用一次（由发送侧的结算判定决定
-   * `requeue` 与否），不会再在每个订阅者失败时各回队一次。队列 / 传输型 provider 里它按投递
-   * 调用：可重试失败 `requeue = true`，不可重试失败 `requeue = false`（先永久移出队列，
-   * 再走 `_onDeliveryDeadLettered`，见 wiki/mailbox-arch.md 里「先 nack 后 DLQ」的顺序）。
-   *
-   * 不实现这个钩子（基类会告警一次）= 内核的回队 / 放弃决定落空：消息停在 broker 把它
-   * 放的地方，通常就是无限重投。
-   */
-  protected _nack?(message: MailMessage, requeue: boolean): Promise<void>;
 
   /**
    * [Subclass Responsibility - Optional] Performs the actual status query logic.
@@ -888,7 +809,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       async () => {
         try {
           // On successful execution, implicitly acknowledge the message.
-          await this.ack(stamped);
+          await this.settleDelivery(stamped, 'handled');
           this.attempts.reset(key);
           this._settleAndFallback(key, 'ok');
         } catch (error) {
@@ -912,8 +833,8 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * 广播型 provider 不在这里 `nack`：整条消息回不回队由发送侧在所有投递结算后统一判定
    * （见 `shouldRequeueAfterBroadcast`）。没接 barrier 的广播 provider 由
    * `_fallbackForMissingBarrier` 兜底（整条回队 + 告警），否则可重试失败就静默消失了。
-   * 非广播（队列 / 传输）型 provider 每次投递对应 broker 的一次 ack：可重试失败
-   * `nack(requeue=true)`；不可重试失败 `nack(requeue=false)`——不发这个信号，broker 就会在
+   * 非广播（队列 / 传输）型 provider 每次投递对应 broker 的一次处置：可重试失败
+   * `_settle(message, 'unhandled')`；不可重试失败 `_settle(message, 'discard')`——不发这个信号，broker 就会在
    * visibility timeout 后把同一条坏消息无限重投（见 {@link _giveUpDelivery}）。
    */
   protected _handleDeliveryError(subscriptionId: string, message: MailMessage, key: string, error: any): void {
@@ -969,7 +890,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
 
     if (isRetriable && !this.broadcastDeliveries) {
       // Crucial: NACK the message first to prevent reprocessing, then handle other tasks.
-      this.nack(settledMessage, true).catch(nackError => {
+      this.settleDelivery(settledMessage, 'unhandled').catch(nackError => {
         console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${message.id}. Risk of message duplication.`, nackError);
       });
     }
@@ -989,8 +910,8 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    *
    * 触发时机（两类 provider 都触发）：
    * - 广播型：全部投递都不可重试，或部分失败（已有订阅者成功，失败的那些不回队）——
-   *   在 `nack(requeue)` **之后**调用；
-   * - 队列 / 传输型：单次投递不可重试失败——在 `nack(message, false)` **之后**调用
+   *   在处置信号（`_settle`） **之后**调用；
+   * - 队列 / 传输型：单次投递不可重试失败——在 `_settle(message, 'discard')` **之后**调用
    *   （先永久移出队列，再落 DLQ，见 wiki/mailbox-arch.md）。不回队是为了不把已成功者
    *   处理过的消息再投一次，代价是失败的投递从此隐形——这个钩子就是补上那个可观测性缺口。
    *
@@ -1044,7 +965,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
   }
 
   /**
-   * 放弃一条投递（传输 / 队列型 provider）：先 `nack(false)` 把消息永久移出队列，再走死信钩子。
+   * 放弃一条投递（传输 / 队列型 provider）：先 `_settle(message, 'discard')` 把消息永久移出队列，再走死信钩子。
    *
    * 顺序不能倒：钩子往 DLQ 写之前，broker 必须已经不再重投，否则 DLQ 和队列里会同时出现
    * 同一条消息（wiki/mailbox-arch.md 「不可重试错误的处理流程」）。不发这个信号，
@@ -1052,7 +973,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    */
   private async _giveUpDelivery(message: MailMessage, result: DeliveryResult): Promise<void> {
     try {
-      await this.nack(message, false);
+      await this.settleDelivery(message, 'discard');
     } catch (error) {
       console.error(
         `[${this.protocol}] CRITICAL: Failed to NACK (discard) message ${message.id}; the transport may redeliver it.`,
@@ -1062,23 +983,25 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
     this._invokeDeadLetteredHook(message, [result]);
   }
 
-  /** provider 没实现 `_nack` 时告警一次：内核的处置决定落空了。 */
-  private _warnMissingNack(): void {
-    if (this.nacklessWarned) {
+  /** provider 没接 `_settle` 时告警一次：内核已经做出的处置决定落空了。 */
+  private _warnMissingSettle(where: Disposition): void {
+    if (this.settlelessWarned) {
       return;
     }
-    this.nacklessWarned = true;
+    this.settlelessWarned = true;
     console.warn(
-      `[${this.protocol}] A delivery settled with a disposition (requeue or discard), but this provider does not implement ` +
-      '`_nack(message, requeue)`, so the decision was dropped and the message stays where the transport left it ' +
-      '(typically: redelivered forever after the visibility timeout). Implement `_nack`: requeue=true puts the message ' +
-      'back (position and attempt cap are yours to choose), requeue=false means give up (drop it or dead-letter it).',
+      `[${this.protocol}] A delivery was settled as '${where}', but this provider implements neither ` +
+        '`_settle(message, where)` nor a fetch-mode handle for it, so the decision was dropped and the ' +
+        'message stays where the transport left it (typically: redelivered forever after the visibility timeout). ' +
+        'Implement `_settle(message, where)`: `unhandled` means put it back (position and attempt cap are yours to choose), ' +
+        '`_settle(message, where)`: `unhandled` means put it back (position and attempt cap are yours to choose), ' +
+        '`discard` means give up (drop it or dead-letter it), `handled` means the delivery is accepted.',
     );
   }
 
   /**
    * 广播的结算 barrier：把 `publish` 返回的每次投递绑成一个后台任务，全部投递
-   * （含重试链）落定后统一判定要不要 `nack(requeue)`。给广播型 provider 的 `_send` 用。
+   * （含重试链）落定后统一判定这一份怎么处置：`unhandled` 回队 / `discard` 结束。给广播型 provider 的 `_send` 用。
    *
    * **处置信号里的消息是本轮结算后的投递副本**（带 `mbx-attempt` / `mbx-round`），不是
    * `_send` 传进来的那份共享对象——否则回队的那一份不带任何计数，`fetch()` 兜底消费者与
@@ -1109,8 +1032,8 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
         const disposition = this._takeSettledCopy(message) ?? message;
 
         // 先发处置信号，再落死信：钩子写 DLQ 时，队列侧的处置必须已经落定，
-        // 否则同一消息会同时出现在队列和 DLQ 里（与传输型的 `nack(false)` → 钩子同一顺序）。
-        await this.nack(disposition, requeue);
+        // 否则同一消息会同时出现在队列和 DLQ 里（与传输型的 `discard` → 钩子同一顺序）。
+        await this.settleDelivery(disposition, requeue ? 'unhandled' : 'discard');
 
         if (!requeue && failed.length > 0) {
           this._invokeDeadLetteredHook(disposition, failed);
@@ -1159,11 +1082,11 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       }
       this._warnMissingBarrier(message.id);
       if (result.reason === 'fatal') {
-        // 放弃：先把消息永久移出队列（`nack(false)`），再走死信钩子。
+        // 放弃：先把这一份永久移出队列（`discard`），再走死信钩子。
         void this._giveUpDelivery(message, result);
         return;
       }
-      this.nack(message, true).catch(nackError => {
+      this.settleDelivery(message, 'unhandled').catch(nackError => {
         console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${message.id}. Risk of message duplication.`, nackError);
       });
     });
@@ -1188,11 +1111,11 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
    * 结算一条投递，并按 provider 类型把**处置信号**发出去：
    *
    * - 广播型：交给 `_fallbackForMissingBarrier`（接了 barrier 的由 barrier 统一判定）；
-   * - 队列 / 传输型：`fatal` = 放弃 → `nack(false)` + 死信钩子；`cancelled`（退订 / 看门狗）
-   *   = 交回传输层重投 → `nack(true)`。
+   * - 队列 / 传输型：`fatal` = 放弃 → `discard` + 死信钩子；`cancelled`（退订 / 看门狗）
+   *   = 交回传输层重投 → `unhandled`。
    *
    * 这两类分支以前分开写在 `_settleAndFallback` / `_abandonDelivery` 里，导致传输型的 `fatal`
-   * 既没 nack 也没钩子（消息停在 in-flight，stale 扫描后又回来，无限循环）。
+   * 既没处置也没钩子（消息停在 in-flight，stale 扫描后又回来，无限循环）。
    */
   private _settleAndFallback(key: string, outcome: DeliveryOutcome): DeliveryResult | undefined {
     const pending = this.pendingDeliveries.get(key);
@@ -1213,7 +1136,7 @@ export abstract class MailboxProvider implements IMailboxProvider, CapabilityDec
       void this._giveUpDelivery(pending.message, result);
     } else if (outcome === 'cancelled') {
       // 非广播（传输型）：每次投递对应 broker 的一次 ack，交回传输层重投。
-      this.nack(pending.message, true).catch(nackError => {
+      this.settleDelivery(pending.message, 'unhandled').catch(nackError => {
         console.error(`[${this.protocol}] CRITICAL: Failed to NACK message ${pending.message.id}. Risk of message duplication.`, nackError);
       });
     }

@@ -301,7 +301,7 @@ flowchart LR
 
    **取到的信怎么处置：三个处置值。** `fetch(addr, { manualAck: true })` 给你的句柄用
    `ack(where)` 结算。区别**不是“成功 / 失败”**——这个读法坑过真人在生产上：它暗示“判定不合格
-   想扔掉的信不配 `ack`”，于是排空脚本全写成 `nack(false)`，然后空转。真实的差别只有两个问题：
+   想扔掉的信不配 `ack`”，于是排空脚本去够一个 `3.0.0` 已经没有的第二个动词，然后空转。真实的差别只有两个问题：
    **还会不会再交给我**、**要不要 provider 顺手做点什么**。
 
    | 处置值 | 这一份 | 还会交给我吗 | provider 按协议善后 |
@@ -321,8 +321,9 @@ flowchart LR
 
    别的处置值属于 provider 自己的词汇表，必须先声明（`provider.supports` 里的
    `disposition:<值>`）；没声明的值会抛 `UnsupportedCapabilityError`，**而且发生在任何状态改动
-   之前**——绝不静默降级成某个内置值。`nack(requeue?)` 保留为 deprecated 别名
-   （`nack(true)` ≡ `unhandled`、`nack(false)` ≡ `discard`），拆包那一版（`3.0.0`）删除。
+   之前**——绝不静默降级成某个内置值。没有第二个动词：老的 `nack(requeue?)` 别名在拆包那一版
+   （`3.0.0`）已删。它从来不是第二个动作，只是同一个选择的另一种写法——而且它带默认值，
+   坑就在这个默认值上：`2.x` 里 `nack()` 默认「丢弃」，布尔拿掉后同一个无参调用只能读成「退回」。
 
    **一次取信 = 一次处置。** 句柄代表一次交付：重复处置、或租约已被收回的旧句柄迟到处置，都
    **不生效**并返回 `false`（不抛错、不静默、也不给开关）。想“先占着再定”用的是租约
@@ -351,7 +352,7 @@ flowchart LR
    可重试指 `error.isRetriable === true`，或 `error.code` 属于 `503 / 504 / ECONNRESET /
 ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，可用 `fetch()` 取回）；其余就是
    **放弃**——在自带 provider 上默认是丢弃（只有开了死信队列才会归档），而在队列 / 传输型
-   provider 上，内核会先告诉传输层别再重投（`nack(message, false)`）。
+   provider 上，内核会先告诉传输层别再重投（`_settle(message, 'discard')`）。
    [Rust 移植版](https://github.com/mboxlabs/mailbox.rust)对回调返回的 `Result<()>`
    做同样的判定。
 
@@ -372,18 +373,18 @@ ETIMEDOUT`。可重试失败会把消息退回队列（计入 `unreadCount`，�
    读 `status()` 看不出结果；要观察被丢弃的投递，就重写 `_onDeliveryDeadLettered(message,
 failedDeliveries)`（继承 `MemoryProvider`）。
 
-   **内核不裁决的三件事。** 内核只决定要不要把投递交回去（`_nack(message, requeue)` +
+   **内核不裁决的三件事。** 内核只决定要不要把投递交回去（`_settle(message, where)` +
    `shouldRequeueAfterBroadcast`）；重投几次、回到队列的哪个位置、放弃之后留下什么，都是
    provider 的事。几个直接后果：
    - 队列 / 传输型 provider（`broadcastDeliveries = false`，基类默认）上，不可重试失败会发出
-     放弃信号：`nack(message, false)`。不发这个信号，真实 broker 就会在 visibility timeout
+     放弃处置：`_settle(message, 'discard')`。不发这个处置，真实 broker 就会在 visibility timeout
      后把同一条毒药消息无限重投。
-   - 完全没实现 `_nack` 的 provider 收不到任何处置决定：基类会告警一次，而不是让决定静默落空。
+   - 完全没实现 `_settle` 的 provider 收不到任何处置决定：基类会告警一次，而不是让决定静默落空。
    - 死信队列默认不存在，除非你接上。`MemoryProvider#enableDeadLetterQueue()` 就是随包提供的
-     参考接法；钩子在处置（`nack`）**之后**被调，因此消息不会同时出现在队列和 DLQ 里；钩子自己
+     参考接法；钩子在处置落定**之后**被调，因此消息不会同时出现在队列和 DLQ 里；钩子自己
      抛错 / reject 会被记录，且不会吞掉处置判定。
-   - 拉取侧（`fetch()` 消费者自己 `ack` / `nack`，内核看不到）照同样的两条：一次 fetch 只算
-     一次处置（同一个 handle 上第二次 `ack` / `nack` 不再作数），处置没落定（消息已被 stale
+   - 拉取侧（`fetch()` 消费者自己 `ack(where)`，内核看不到）照同样的两条：一次 fetch 只算
+     一次处置（同一个 handle 上第二次 `ack()` 不再作数），处置没落定（消息已被 stale
      重投、已被 `clear()` 丢弃、或已归另一个消费者）就不算放弃。因此一次放弃只留一条死信，
      补偿脚本不会重复补偿。
    - 每次投递都在 `headers['mbx-attempt']` 上带**本轮重试链内**的趟数（开了重试策略还带
@@ -458,7 +459,7 @@ failedDeliveries)`（继承 `MemoryProvider`）。
    const dead = await mailbox.fetch(
      provider.deadLetterTopic('mem://sales@bus/inbox')!
    )
-   // dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-nack'
+   // dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-discard'
    // dead.headers['mbx-dead-letter-attempts'] -> '3'  // 死掉那条链试了几次
    // dead.headers['mbx-dead-letter-round']    -> '1'  // 这条消息在进行第几轮投递
    // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
@@ -477,10 +478,10 @@ failedDeliveries)`（继承 `MemoryProvider`）。
 
    它是 opt-in 的：死信队列是运维决定，不是内核默认——它会往一个总得有人消费的 topic 里多写
    一份消息。关掉时行为照旧（直接丢弃）。它覆盖两种放弃：订阅侧的失败投递，以及 `fetch()`
-   消费者自己 `nack(false)`。归档按**消息真正被取出的那条队列**定位，不按 `message.to`：归档副本
+   消费者自己 `ack('discard')`。归档按**消息真正被取出的那条队列**定位，不按 `message.to`：归档副本
    故意保留原来的 `to`（这样它还能被重放进业务队列），`mbx-dead-letter-topic` 写的才是它来的那一跳。
    后者同样**先处置、后留痕**，而且一次 fetch 只有一次处置：重复
-   `nack(false)` 不会留下第二条记录，`ack()` 之后的 `nack(false)` 也不会给处理成功的消息留记录。
+   `ack('discard')` 不会留下第二条记录，`ack('handled')` 之后的 `ack('discard')` 也不会给处理成功的消息留记录。
 
    后缀接在地址 **path 的末尾**，而且必须**已经是规范形式**：会被地址规范化改写的后缀（非 ASCII、
    ``" < > ` { }``、`.` / `..` 路径段）会在 `enableDeadLetterQueue()` 直接被拒——否则死信会落进
@@ -550,12 +551,12 @@ failedDeliveries)`（继承 `MemoryProvider`）。
      消费者再跑一次。
    - **同 `id` 的并发投递各自独立结算。** `post({ id })` 允许调用方指定 id，因此同一个订阅者上并发的
      两次投递绝不共用结算记账。该去重的地方仍然去重：已在队列或 in-flight 的消息不会被二次入队。
-   - **漏实现 `_nack` 不会静默致命。** 所有处置决定（`requeue = true` 回队、`requeue = false` 放弃）
-     都走 `nack()`。完全不实现 `_nack` 的 provider 一个都收不到，消息会停在传输层把它放的地方；
+   - **漏实现 `_settle` 不会静默致命。** 所有处置决定（`unhandled` 回队、`discard` 放弃）
+     都走这一个钩子。完全不实现 `_settle` 的 provider 一个都收不到，消息会停在传输层把它放的地方；
      基类会按 provider 告警一次，而不是假装决定已经执行。
-   - **交给 `_ack` / `_nack` 的 `message` 是副本，不是你发出去那份。** 每次投递尝试都换一份浅拷贝，
+   - **交给 `_settle` 的 `message` 是副本，不是你发出去那份。** 每次投递尝试都换一份浅拷贝，
      带 `mbx-attempt` / `mbx-round`（开了重试还带 `mbx-max-attempts`）：同一次尝试的回调、`_ack`、
-     `_nack` 拿的是同一个对象，但它永远不是 `_send` 看到的那一份，重试链里每次尝试还是新的。
+     `_settle` 拿的是同一个对象，但它永远不是 `_send` 看到的那一份，重试链里每次尝试还是新的。
      所以 provider **不得按对象同一性记账**（`Map<MailMessage, handle>` / `WeakMap` / `set.has(message)`）：
      查不到不报错也不告警，只会静默不 ack，真实 broker 就会无限重投。记账用 `message.id`、自己的
      broker 句柄，或投递级身份 `DeliveryResult.deliveryId`（副本会换，deliveryId 不会）。浅拷贝的含义：

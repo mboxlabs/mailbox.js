@@ -326,7 +326,7 @@ silently falling back to a consuming fetch.
 **Settling a fetched message: three dispositions.** `fetch(addr, { manualAck: true })` hands you a
 handle, and settling is not "success / failure" — that reading costs people real downtime, because
 it suggests a message you decided to discard does not deserve `ack`, so drain scripts get written
-with `nack(false)` and then spin. The vocabulary is `ack(where)`, and the three core values answer
+so drain scripts reach for a second verb that `3.0.0` no longer has, and then spin. The vocabulary is `ack(where)`, and the three core values answer
 two questions: _will this be handed to me again_, and _should the provider do something on its way
 out_:
 
@@ -346,9 +346,11 @@ off it degrades to a plain silent drop — identical to `handled`, because the p
 reject/bounce, for IMAP a `\Deleted` flag plus expunge, for MQTT there is no such thing. Never
 assume `discard` implies a DLQ — ask with `provider.can('dead-letter', address)`.
 
-`ack()` with no argument means `handled`. `nack(requeue?)` is kept as a deprecated alias of the
-same thing (`nack(true)` ≡ `unhandled`, `nack(false)` ≡ `discard`) and disappears in `3.0.0`, the
-release that unbundles the providers.
+`ack()` with no argument means `handled`. There is no second verb: the old `nack(requeue?)` alias
+is gone in `3.0.0`, the release that unbundles the providers. It was never a second action, only a
+second spelling of the same choice — and it carried a default, which is exactly the part that got
+people hurt (`nack()` meant _discard_ in `2.x`, and the same call in `3.0.0` could only read as
+_requeue_ once the flag was removed).
 
 Any other value is the provider's own vocabulary and must be declared
 (`disposition:<value>` in `provider.supports`); an undeclared value fails with
@@ -386,7 +388,7 @@ Retriable means `error.isRetriable === true`, or `error.code` in `503 / 504 / EC
 ETIMEDOUT`. A retriable failure requeues the message (visible in `unreadCount`, retrievable
 with `fetch()`); anything else is **given up** — on the shipped providers that means discarded
 (archived only if you turn on a dead-letter queue), and on a queue / transport provider the
-kernel first tells the transport to stop redelivering it (`nack(message, false)`). The [Rust
+kernel first tells the transport to stop redelivering it (`_settle(message, 'discard')`). The [Rust
 port](https://github.com/mboxlabs/mailbox.rust) makes the same call on the `Result<()>` that a
 callback returns.
 
@@ -410,21 +412,21 @@ use `_onDeliveryDeadLettered(message, failedDeliveries)` (subclass `MemoryProvid
 or dead-letter what was dropped.
 
 **What the kernel does not decide.** It decides _whether_ a delivery is handed back
-(`_nack(message, requeue)` + `shouldRequeueAfterBroadcast`). It does not decide how many times a
+(`_settle(message, where)` + `shouldRequeueAfterBroadcast`). It does not decide how many times a
 message is redelivered, where it goes back in the queue, or what is left behind once it is given
 up — those belong to the provider. Consequences worth knowing:
 
 - On a queue / transport provider (`broadcastDeliveries = false`, the base-class default) a
-  non-retriable failure now emits the give-up signal: `nack(message, false)`. Without it a real
+  non-retriable failure now emits the give-up disposition: `_settle(message, 'discard')`. Without it a real
   broker redelivers the same poison message forever after its visibility timeout.
-- A provider that does not implement `_nack` at all cannot receive either decision: the base
+- A provider that does not implement `_settle` at all cannot receive either decision: the base
   class warns once instead of dropping the decision silently.
 - Nothing lands in a dead-letter queue unless you wire one. `MemoryProvider#enableDeadLetterQueue()`
-  is the shipped reference wiring; the hook is called **after** the disposition (`nack`) so a
+  is the shipped reference wiring; the hook is called **after** the disposition is applied, so a
   message never sits in the queue and the DLQ at the same time. A hook that throws (or rejects)
   is logged and cannot swallow the disposition.
-- The pull side (`fetch()` consumers settling with their own `ack` / `nack`, invisible to the kernel)
-  follows the same two rules: one `fetch()` is one disposition (a second `ack` / `nack` on the same
+- The pull side (`fetch()` consumers settling with `ack(where)`, invisible to the kernel)
+  follows the same two rules: one `fetch()` is one disposition (a second `ack()` on the same
   handle is a no-op), and a disposition that did not land — the message was already requeued by the
   stale sweep, dropped by `clear()`, or belongs to another consumer — is not a give-up. One give-up
   therefore leaves exactly one dead-letter record, so a compensation script cannot compensate twice.
@@ -516,7 +518,7 @@ mailbox.registerProvider(provider)
 const dead = await mailbox.fetch(
   provider.deadLetterTopic('mem://sales@bus/inbox')!
 )
-// dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-nack'
+// dead.headers['mbx-dead-letter-reason']   -> 'fatal' | 'retriable' | 'consumer-discard'
 // dead.headers['mbx-dead-letter-attempts'] -> '3'  // attempts in the chain that died
 // dead.headers['mbx-dead-letter-round']    -> '1'  // which delivery round this message was on
 // dead.headers['mbx-dead-letter-error']    -> 'Error: bad payload'
@@ -545,12 +547,12 @@ spelling (`_死信` → `_%E6%AD%BB%E4%BF%A1`) or plain ASCII.
 It is opt-in because a dead-letter queue is an operational decision, not a kernel default: it
 writes a second copy of the message into a topic somebody has to consume. Off, the default stays
 what it always was — dropped. It covers both ways a message gets given up: a subscriber's failed
-delivery, and a `fetch()` consumer calling `nack(false)`. Archiving is keyed to **the queue the
+delivery, and a `fetch()` consumer calling `ack('discard')`. Archiving is keyed to **the queue the
 message was actually taken out of**, not to `message.to`: an archived copy keeps its original `to`
 (so it can be replayed into the business queue), and `mbx-dead-letter-topic` names the hop it came
 from. The pull side disposes **first** and
-archives afterwards, and one `fetch()` settles only once: repeating `nack(false)` does not add a
-second record, and `nack(false)` after an `ack()` does not dead-letter a message that succeeded.
+archives afterwards, and one `fetch()` settles only once: repeating `ack('discard')` does not add a
+second record, and `ack('discard')` after `ack('handled')` does not dead-letter a message that succeeded.
 
 The same policy — same retriable check, same backoff formula, same "never queue twice" rule — is
 implemented in the [Python](https://github.com/mboxlabs/mailbox.py) and
@@ -629,13 +631,13 @@ per-delivery requeue rule in §3 work, and it is also where the hazards hide. Si
   caller-supplied ids, so two in-flight deliveries to one subscriber never share settlement
   bookkeeping. Dedup still applies where it belongs: a message already queued or in flight is
   never queued twice.
-- **A missing `_nack` is not silently fatal.** Every disposition (`requeue = true` back to the
-  queue, `requeue = false` give up) goes through `nack()`. A provider that never implements
-  `_nack` receives none of them, and the message stays wherever the transport left it; the base
+- **A missing `_settle` is not silently fatal.** Every disposition (`unhandled` back to the
+  queue, `discard` give up) goes through that one hook. A provider that never implements
+  `_settle` receives none of them, and the message stays wherever the transport left it; the base
   class warns once per provider instead of pretending the decision was carried out.
-- **The `message` handed to `_ack` / `_nack` is a copy, not the one you sent.** Each delivery
+- **The `message` handed to `_settle` is a copy, not the one you sent.** Each delivery
   attempt gets its own shallow copy stamped with `mbx-attempt` / `mbx-round` (plus
-  `mbx-max-attempts` under a retry policy). The callback, `_ack` and `_nack` of one attempt share
+  `mbx-max-attempts` under a retry policy). The callback and `_settle` of one attempt share
   that single object, but it is never the object `_send` saw, and a retry chain makes a new copy
   per attempt. So a provider must **not** key bookkeeping by object identity
   (`Map<MailMessage, handle>`, `WeakMap`, `set.has(message)`): a miss throws nothing and warns

@@ -214,10 +214,10 @@ export class TestProvider extends MailboxProvider {
     this.inFlight.set(recordId, { topic, message: handed })
     this.touch(topic)
     return Object.assign({}, handed, {
+      // L0 句柄只接一个入口：处置值说怎么结束它。这里**故意不接 `nack`**——内核按
+      // 「句柄有没有 `nack`」决定路由（见 `lib/handle.ts`）：没有它就意味着这个句柄自己认得处置值。
       ack: (where?: Disposition) => this.settleFetched(recordId, where ?? 'handled'),
-      // deprecated alias：省略 = `discard`（与 `Ackable.nack` 的公开语义一致）。
-      nack: (requeue?: boolean) => this.settleFetched(recordId, requeue === true ? 'unhandled' : 'discard'),
-    } satisfies Pick<Ackable, 'ack' | 'nack'>) as AckableMailMessage
+    } satisfies Pick<Ackable, 'ack'>) as AckableMailMessage
   }
 
   /**
