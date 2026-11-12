@@ -1,6 +1,4 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { Mailbox } from '../mailbox'
-import { MemoryProvider } from '../providers/memory'
 import { MailMessageQueue } from './MessageQueue'
 
 /**
@@ -14,9 +12,10 @@ import { MailMessageQueue } from './MessageQueue'
  * 于是**省略参数的那一批调用会静默从「丢弃」翻成「退回」**——带参数的调用会在类型层被挡住，
  * 无参调用挡不住（编译照过，语义换了）。所以 2.x 先警告一次，把翻转挑明，行为一律不动。
  *
- * 注意消费者句柄（`MemoryProvider` 的 `wrapConsumerSettlement`）那一面**故意不警告**：
- * 它的 `nack(requeue?)` 命运是整体消失（已声明在 3.0.0 删除），调用会变成「方法不存在」/编译错误，
- * 本来就响亮，不需要再加一条噪音。这条不对称由最后一个用例钉住。
+ * 消费者句柄（`MemoryProvider` 的 `wrapConsumerSettlement`）那一面**故意不警告**：它的 `nack(requeue?)`
+ * 命运是整体消失（已声明在 3.0.0 删除），调用会变成「方法不存在」/编译错误，本来就响亮。
+ * 那条不对称由 `src/providers/memory.consumer-settlement.test.ts` 钉住——它在 `mailbox-memory` 那一侧，
+ * 因为「句柄不警告」讲的是 provider 的句柄，不是队列的句柄（拆包计划 §5 分派规则）。
  */
 
 type M = { id: string; body: string }
@@ -120,19 +119,4 @@ describe('无参 nack() 的告警（3.0.0 会把它从「丢弃」翻成「退�
     expect(nackWarns(spy)).toHaveLength(0)
   })
 
-  it('[边界] 消费者句柄的无参 nack() 不额外警告——它的 3.0.0 命运是消失，本来就响亮', async () => {
-    const spy = watchWarn()
-    const mailbox = new Mailbox()
-    mailbox.registerProvider(new MemoryProvider())
-    await mailbox.start()
-    const address = 'mem://test/nack-consumer-no-warn/inbox'
-
-    await mailbox.post({ from: 'mem://a', to: address, body: 'x' })
-    const handle = (await mailbox.fetch(address, {
-      manualAck: true,
-    })) as unknown as { nack(requeue?: boolean): Promise<boolean> }
-
-    expect(await handle.nack()).toBe(true) // 默认丢弃，行为不动
-    expect(nackWarns(spy)).toHaveLength(0) // 不警告：删除会让它变成编译错误 / 方法不存在
-  })
 })
